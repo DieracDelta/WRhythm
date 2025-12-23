@@ -72,14 +72,22 @@ class AudioPlayer: NSObject, ObservableObject {
     }
 
     func playSong(_ song: Song) {
+        print("🎵 AudioPlayer: playSong called")
+        print("🎵 Song: \(song.title) by \(song.artist ?? "Unknown")")
+        print("🎵 Song ID: \(song.id)")
+        print("🎵 Content type: \(song.contentType ?? "unknown")")
+        print("🎵 Suffix: \(song.suffix ?? "unknown")")
+
         self.currentSong = song
         self.queue = [song]
         self.currentIndex = 0
 
         guard let streamURL = NavidromeAPI.shared.getStreamURL(id: song.id) else {
-            print("Failed to get stream URL")
+            print("❌ Failed to get stream URL")
             return
         }
+
+        print("🎵 Stream URL: \(streamURL.absoluteString)")
 
         let playerItem = AVPlayerItem(url: streamURL)
         player = AVPlayer(playerItem: playerItem)
@@ -151,8 +159,17 @@ class AudioPlayer: NSObject, ObservableObject {
     private func observePlayerItem(_ item: AVPlayerItem) {
         item.publisher(for: \.status)
             .sink { [weak self] status in
+                print("🎵 Player item status: \(status.rawValue)")
                 if status == .readyToPlay {
+                    print("✅ Player ready to play, duration: \(item.duration.seconds)s")
                     self?.duration = item.duration.seconds
+                } else if status == .failed {
+                    print("❌ Player item failed!")
+                    if let error = item.error {
+                        print("❌ Error: \(error.localizedDescription)")
+                        print("❌ Error domain: \((error as NSError).domain)")
+                        print("❌ Error code: \((error as NSError).code)")
+                    }
                 }
             }
             .store(in: &cancellables)

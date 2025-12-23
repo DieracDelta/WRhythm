@@ -9,6 +9,60 @@ import Foundation
 import CryptoKit
 import Combine
 
+class DownloadProgressDelegate: NSObject, URLSessionDataDelegate {
+    private let progressHandler: (Double, Int64, Int64) -> Void
+    private var expectedBytes: Int64 = 0
+    private var receivedBytes: Int64 = 0
+    private var receivedData = Data()
+    private var urlResponse: URLResponse?
+
+    init(progressHandler: @escaping (Double, Int64, Int64) -> Void) {
+        self.progressHandler = progressHandler
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+        urlResponse = response
+        expectedBytes = response.expectedContentLength
+        print("📊 Expected bytes: \(expectedBytes)")
+        Task { @MainActor in
+            progressHandler(0, 0, expectedBytes)
+        }
+        completionHandler(.allow)
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        receivedData.append(data)
+        receivedBytes += Int64(data.count)
+        let progress = expectedBytes > 0 ? Double(receivedBytes) / Double(expectedBytes) : 0
+        print("📊 Progress: \(receivedBytes)/\(expectedBytes) = \(Int(progress * 100))%")
+        Task { @MainActor in
+            progressHandler(progress, receivedBytes, expectedBytes)
+        }
+    }
+
+    func download(with request: URLRequest) async throws -> (Data, URLResponse) {
+        return try await withCheckedThrowingContinuation { continuation in
+            let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
+            let task = session.dataTask(with: request) { data, response, error in
+                print("📊 Download completed - data: \(data?.count ?? 0) bytes, response: \(response != nil), error: \(error?.localizedDescription ?? "none")")
+
+                if let error = error {
+                    print("❌ Download error: \(error)")
+                    continuation.resume(throwing: error)
+                } else if let data = data, let response = response {
+                    print("✅ Download successful: \(data.count) bytes")
+                    continuation.resume(returning: (data, response))
+                } else {
+                    print("❌ Download completed but missing data or response")
+                    continuation.resume(throwing: NavidromeError.unknown)
+                }
+            }
+            print("📊 Starting download task...")
+            task.resume()
+        }
+    }
+}
+
 class NavidromeAPI: ObservableObject {
     static let shared = NavidromeAPI()
 
@@ -111,7 +165,7 @@ class NavidromeAPI: ObservableObject {
         return false
     }
 
-    func getArtists() async throws -> [Artist] {
+    func getArtists(progressHandler: ((Double, Int64, Int64) -> Void)? = nil) async throws -> [Artist] {
         guard let url = buildURL(endpoint: "getArtists") else {
             print("❌ Invalid URL for getArtists")
             throw NavidromeError.invalidURL
@@ -122,7 +176,15 @@ class NavidromeAPI: ObservableObject {
         var request = URLRequest(url: url)
         request.timeoutInterval = 30
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        // Use custom delegate for progress tracking if handler provided
+        let (data, response): (Data, URLResponse)
+        if let progressHandler = progressHandler {
+            print("📊 Using progress tracking delegate")
+            let delegate = DownloadProgressDelegate(progressHandler: progressHandler)
+            (data, response) = try await delegate.download(with: request)
+        } else {
+            (data, response) = try await URLSession.shared.data(for: request)
+        }
 
         guard let httpResponse = response as? HTTPURLResponse else {
             print("❌ Invalid response type")
@@ -171,6 +233,59 @@ class NavidromeAPI: ObservableObject {
         return artist
     }
 
+    func getAlbumList(type: String = "newest", size: Int = 20, offset: Int = 0, progressHandler: ((Double, Int64, Int64) -> Void)? = nil) async throws -> [AlbumSummary] {
+        guard let url = buildURL(endpoint: "getAlbumList2", additionalParams: [
+            "type": type,
+            "size": String(size),
+            "offset": String(offset)
+        ]) else {
+            print("❌ Invalid URL for getAlbumList2")
+            throw NavidromeError.invalidURL
+        }
+
+        print("🔍 Fetching albums: type=\(type), size=\(size), offset=\(offset)")
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 30
+
+        // Use custom delegate for progress tracking if handler provided
+        let (data, response): (Data, URLResponse)
+        if let progressHandler = progressHandler {
+            print("📊 Using progress tracking delegate for albums")
+            let delegate = DownloadProgressDelegate(progressHandler: progressHandler)
+            (data, response) = try await delegate.download(with: request)
+        } else {
+            (data, response) = try await URLSession.shared.data(for: request)
+        }
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            print("❌ Invalid response type")
+            throw NavidromeError.unknown
+        }
+
+        print("📡 Response status: \(httpResponse.statusCode)")
+
+        if httpResponse.statusCode != 200 {
+            print("❌ HTTP error: \(httpResponse.statusCode)")
+            throw NavidromeError.apiError("HTTP \(httpResponse.statusCode)")
+        }
+
+        let result = try JSONDecoder().decode(SubsonicResponse<AlbumListResponse>.self, from: data)
+
+        guard result.subsonicResponse.status == "ok" else {
+            if let error = result.subsonicResponse.error {
+                print("❌ API error: \(error.message)")
+                throw NavidromeError.apiError(error.message)
+            }
+            print("❌ Unknown API error")
+            throw NavidromeError.unknown
+        }
+
+        let albums = result.subsonicResponse.albumList2?.album ?? []
+        print("✅ Loaded \(albums.count) albums")
+        return albums
+    }
+
     func getAlbum(id: String) async throws -> Album {
         guard let url = buildURL(endpoint: "getAlbum", additionalParams: ["id": id]) else {
             throw NavidromeError.invalidURL
@@ -194,8 +309,13 @@ class NavidromeAPI: ObservableObject {
         return buildURL(endpoint: "getCoverArt", additionalParams: ["id": id, "size": String(size)])
     }
 
-    func getStreamURL(id: String) -> URL? {
-        return buildURL(endpoint: "stream", additionalParams: ["id": id])
+    func getStreamURL(id: String, format: String = "raw") -> URL? {
+        let url = buildURL(endpoint: "stream", additionalParams: [
+            "id": id,
+            "format": format
+        ])
+        print("🔊 Stream URL built: \(url?.absoluteString ?? "nil")")
+        return url
     }
 }
 
@@ -292,6 +412,17 @@ struct AlbumSummary: Decodable, Identifiable {
     let duration: Int
     let created: String
     let year: Int?
+}
+
+struct AlbumListResponse: Decodable {
+    let status: String
+    let version: String
+    let error: SubsonicError?
+    let albumList2: AlbumList2?
+}
+
+struct AlbumList2: Decodable {
+    let album: [AlbumSummary]
 }
 
 struct AlbumResponse: Decodable {

@@ -16,6 +16,13 @@ struct ContentView: View {
             if api.isAuthenticated {
                 TabView {
                     NavigationView {
+                        AlbumsView()
+                    }
+                    .tabItem {
+                        Label("Albums", systemImage: "square.stack")
+                    }
+
+                    NavigationView {
                         ArtistsView()
                     }
                     .tabItem {
