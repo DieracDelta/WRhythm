@@ -12,6 +12,7 @@ struct FavouritesView: View {
     @State private var isLoading = false
     @State private var errorMessage = ""
     @ObservedObject var player = AudioPlayer.shared
+    @ObservedObject var downloadManager = DownloadManager.shared
 
     var body: some View {
         Group {
@@ -102,6 +103,23 @@ struct FavouritesView: View {
                                                 }
 
                                                 Spacer()
+
+                                                if downloadManager.isDownloading(song.id) {
+                                                    VStack(spacing: 2) {
+                                                        ProgressView()
+                                                            .scaleEffect(0.7)
+                                                        let progress = downloadManager.downloadProgress(song.id)
+                                                        if progress > 0 {
+                                                            Text("\(Int(progress * 100))%")
+                                                                .font(.system(size: 8))
+                                                                .foregroundColor(.secondary)
+                                                        }
+                                                    }
+                                                } else if downloadManager.isDownloaded(song.id) {
+                                                    Image(systemName: "arrow.down.circle.fill")
+                                                        .font(.caption2)
+                                                        .foregroundColor(.green)
+                                                }
 
                                                 if player.currentSong?.id == song.id && player.isPlaying {
                                                     Image(systemName: "speaker.wave.2.fill")

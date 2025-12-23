@@ -14,6 +14,31 @@ struct DownloadsView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
+                // Show active downloads if any
+                if !downloadManager.activeDownloads.isEmpty {
+                    NavigationLink(destination: ActiveDownloadsView()) {
+                        HStack {
+                            Image(systemName: "arrow.down.circle")
+                                .foregroundColor(.accentColor)
+                            VStack(alignment: .leading) {
+                                Text("\(downloadManager.activeDownloads.count) downloading")
+                                    .font(.caption)
+                                Text("Tap to view progress")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.vertical, 8)
+                    }
+                    .buttonStyle(.plain)
+
+                    Divider()
+                }
+
                 if downloadManager.downloadedSongs.isEmpty {
                     VStack(spacing: 8) {
                         Image(systemName: "arrow.down.circle")

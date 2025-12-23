@@ -19,7 +19,7 @@ struct DownloadedSong: Codable {
     let fileSize: Int64
 }
 
-class DownloadManager: ObservableObject {
+class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     static let shared = DownloadManager()
 
     @Published var downloadedSongs: [String: DownloadedSong] = [:]
@@ -27,6 +27,12 @@ class DownloadManager: ObservableObject {
 
     private let fileManager = FileManager.default
     private var downloadTasks: [String: URLSessionDownloadTask] = [:]
+    private var taskToSongId: [URLSessionDownloadTask: String] = [:]
+    private var songMetadata: [String: Song] = [:]
+    private lazy var downloadSession: URLSession = {
+        let config = URLSessionConfiguration.default
+        return URLSession(configuration: config, delegate: self, delegateQueue: nil)
+    }()
 
     private var documentsDirectory: URL {
         fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -42,7 +48,8 @@ class DownloadManager: ObservableObject {
         documentsDirectory.appendingPathComponent("downloads.json")
     }
 
-    init() {
+    override init() {
+        super.init()
         loadMetadata()
     }
 
@@ -110,67 +117,96 @@ class DownloadManager: ObservableObject {
 
         print("📥 Starting download: \(song.title)")
 
-        let config = URLSessionConfiguration.default
-        let session = URLSession(configuration: config, delegate: nil, delegateQueue: nil)
-
-        let task = session.downloadTask(with: streamURL) { [weak self] tempURL, response, error in
-            guard let self = self else { return }
-
-            DispatchQueue.main.async {
-                self.activeDownloads.removeValue(forKey: song.id)
-            }
-
-            if let error = error {
-                print("❌ Download failed for \(song.title): \(error)")
-                return
-            }
-
-            guard let tempURL = tempURL else {
-                print("❌ No temp URL for download")
-                return
-            }
-
-            // Save file
-            let filename = "\(song.id).\(song.suffix ?? "mp3")"
-            let destinationURL = self.downloadsDirectory.appendingPathComponent(filename)
-
-            do {
-                // Remove existing file if present
-                if self.fileManager.fileExists(atPath: destinationURL.path) {
-                    try self.fileManager.removeItem(at: destinationURL)
-                }
-
-                try self.fileManager.moveItem(at: tempURL, to: destinationURL)
-
-                // Get file size
-                let attributes = try self.fileManager.attributesOfItem(atPath: destinationURL.path)
-                let fileSize = attributes[.size] as? Int64 ?? 0
-
-                // Save metadata
-                let downloadedSong = DownloadedSong(
-                    songId: song.id,
-                    title: song.title,
-                    artist: song.artist,
-                    album: song.album,
-                    coverArt: song.coverArt,
-                    filePath: filename,
-                    downloadedAt: Date(),
-                    fileSize: fileSize
-                )
-
-                DispatchQueue.main.async {
-                    self.downloadedSongs[song.id] = downloadedSong
-                    self.saveMetadata()
-                    print("✅ Downloaded: \(song.title) (\(self.formatBytes(fileSize)))")
-                }
-            } catch {
-                print("❌ Failed to save downloaded file: \(error)")
-            }
-        }
+        let task = downloadSession.downloadTask(with: streamURL)
 
         activeDownloads[song.id] = 0
         downloadTasks[song.id] = task
+        taskToSongId[task] = song.id
+        songMetadata[song.id] = song
         task.resume()
+    }
+
+    // MARK: - URLSessionDownloadDelegate
+
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
+        guard let songId = taskToSongId[downloadTask] else { return }
+
+        let progress = totalBytesExpectedToWrite > 0 ? Double(totalBytesWritten) / Double(totalBytesExpectedToWrite) : 0
+
+        DispatchQueue.main.async {
+            self.activeDownloads[songId] = progress
+        }
+    }
+
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
+        guard let songId = taskToSongId[downloadTask],
+              let song = songMetadata[songId] else {
+            print("❌ No song info for completed download")
+            return
+        }
+
+        let filename = "\(song.id).\(song.suffix ?? "mp3")"
+        let destinationURL = downloadsDirectory.appendingPathComponent(filename)
+
+        do {
+            // Remove existing file if present
+            if fileManager.fileExists(atPath: destinationURL.path) {
+                try fileManager.removeItem(at: destinationURL)
+            }
+
+            try fileManager.moveItem(at: location, to: destinationURL)
+
+            // Get file size
+            let attributes = try fileManager.attributesOfItem(atPath: destinationURL.path)
+            let fileSize = attributes[.size] as? Int64 ?? 0
+
+            // Save metadata
+            let downloadedSong = DownloadedSong(
+                songId: song.id,
+                title: song.title,
+                artist: song.artist,
+                album: song.album,
+                coverArt: song.coverArt,
+                filePath: filename,
+                downloadedAt: Date(),
+                fileSize: fileSize
+            )
+
+            DispatchQueue.main.async {
+                self.downloadedSongs[song.id] = downloadedSong
+                self.activeDownloads.removeValue(forKey: song.id)
+                self.downloadTasks.removeValue(forKey: song.id)
+                self.taskToSongId.removeValue(forKey: downloadTask)
+                self.songMetadata.removeValue(forKey: song.id)
+                self.saveMetadata()
+                print("✅ Downloaded: \(song.title) (\(self.formatBytes(fileSize)))")
+            }
+        } catch {
+            print("❌ Failed to save downloaded file: \(error)")
+            DispatchQueue.main.async {
+                self.activeDownloads.removeValue(forKey: song.id)
+                self.downloadTasks.removeValue(forKey: song.id)
+                self.taskToSongId.removeValue(forKey: downloadTask)
+                self.songMetadata.removeValue(forKey: song.id)
+            }
+        }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        guard let downloadTask = task as? URLSessionDownloadTask,
+              let songId = taskToSongId[downloadTask] else {
+            return
+        }
+
+        if let error = error {
+            print("❌ Download failed for song \(songId): \(error)")
+            DispatchQueue.main.async {
+                self.activeDownloads.removeValue(forKey: songId)
+                self.downloadTasks.removeValue(forKey: songId)
+                self.taskToSongId.removeValue(forKey: downloadTask)
+                self.songMetadata.removeValue(forKey: songId)
+            }
+        }
     }
 
     // MARK: - Download Collections
