@@ -66,10 +66,19 @@ struct AlbumDetailView: View {
                             Button(action: {
                                 player.playQueue(album.song, startingAt: 0)
                             }) {
-                                Label("Play All", systemImage: "play.fill")
+                                Label("Play", systemImage: "play.fill")
                             }
                             .buttonStyle(.borderedProminent)
 
+                            Button(action: {
+                                player.playQueueShuffled(album.song)
+                            }) {
+                                Image(systemName: "shuffle")
+                            }
+                            .buttonStyle(.bordered)
+                        }
+
+                        HStack(spacing: 8) {
                             if isAlbumDownloaded(album) {
                                 Button(action: {
                                     downloadManager.deleteAlbum(album)

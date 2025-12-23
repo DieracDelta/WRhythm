@@ -19,10 +19,13 @@ class AudioPlayer: NSObject, ObservableObject {
     @Published var duration: TimeInterval = 0
     @Published var queue: [Song] = []
     @Published var currentIndex: Int = 0
+    @Published var isShuffled = false
 
     private var player: AVPlayer?
     private var timeObserver: Any?
     private var cancellables = Set<AnyCancellable>()
+    private var originalQueue: [Song] = []
+    private var originalIndex: Int = 0
 
     override init() {
         super.init()
@@ -80,9 +83,59 @@ class AudioPlayer: NSObject, ObservableObject {
     func playQueue(_ songs: [Song], startingAt index: Int = 0) {
         guard !songs.isEmpty, index < songs.count else { return }
 
+        self.isShuffled = false
+        self.originalQueue = []
         self.queue = songs
         self.currentIndex = index
         startPlayback(songs[index])
+    }
+
+    func playQueueShuffled(_ songs: [Song]) {
+        guard !songs.isEmpty else { return }
+
+        self.isShuffled = true
+        self.originalQueue = songs
+        self.originalIndex = 0
+
+        // Shuffle the queue
+        var shuffled = songs
+        shuffled.shuffle()
+
+        self.queue = shuffled
+        self.currentIndex = 0
+        startPlayback(shuffled[0])
+    }
+
+    func toggleShuffle() {
+        if isShuffled {
+            // Turn off shuffle - restore original queue
+            guard let currentSong = currentSong,
+                  let originalIdx = originalQueue.firstIndex(where: { $0.id == currentSong.id }) else {
+                return
+            }
+            self.queue = originalQueue
+            self.currentIndex = originalIdx
+            self.isShuffled = false
+            self.originalQueue = []
+        } else {
+            // Turn on shuffle - save current queue and shuffle
+            guard let currentSong = currentSong else { return }
+
+            self.originalQueue = queue
+            self.originalIndex = currentIndex
+            self.isShuffled = true
+
+            var shuffled = queue
+            shuffled.shuffle()
+
+            // Find current song in shuffled queue
+            if let newIdx = shuffled.firstIndex(where: { $0.id == currentSong.id }) {
+                self.currentIndex = newIdx
+            } else {
+                self.currentIndex = 0
+            }
+            self.queue = shuffled
+        }
     }
 
     private func startPlayback(_ song: Song) {
@@ -93,6 +146,16 @@ class AudioPlayer: NSObject, ObservableObject {
         print("🎵 Suffix: \(song.suffix ?? "unknown")")
 
         self.currentSong = song
+        self.currentTime = 0
+
+        // Use song metadata duration if available, otherwise will try to get from stream
+        if let songDuration = song.duration, songDuration > 0 {
+            self.duration = TimeInterval(songDuration)
+            print("🔄 Set duration from song metadata: \(songDuration)s")
+        } else {
+            self.duration = 0
+            print("🔄 Reset duration to 0, will try to get from stream")
+        }
 
         // Check if song is downloaded first
         let playURL: URL
@@ -108,6 +171,12 @@ class AudioPlayer: NSObject, ObservableObject {
         }
 
         print("🎵 Playback URL: \(playURL.absoluteString)")
+
+        // Remove old time observer if exists
+        if let observer = timeObserver {
+            player?.removeTimeObserver(observer)
+            timeObserver = nil
+        }
 
         let playerItem = AVPlayerItem(url: playURL)
         player = AVPlayer(playerItem: playerItem)
@@ -164,17 +233,49 @@ class AudioPlayer: NSObject, ObservableObject {
     private func addPeriodicTimeObserver() {
         let interval = CMTime(seconds: 0.5, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
         timeObserver = player?.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
-            self?.currentTime = time.seconds
+            guard let self = self else { return }
+            self.currentTime = time.seconds
+
+            // Update duration if it's available and we don't have it yet
+            if let item = self.player?.currentItem {
+                let itemDuration = item.duration
+                print("⏱️ Time observer - currentTime: \(time.seconds)s, published duration: \(self.duration)s")
+                print("⏱️ Item duration - seconds: \(itemDuration.seconds), isNumeric: \(itemDuration.isNumeric), isIndefinite: \(itemDuration.isIndefinite)")
+
+                if (self.duration == 0 || self.duration.isNaN),
+                   itemDuration.isNumeric && itemDuration.seconds > 0 {
+                    self.duration = itemDuration.seconds
+                    print("✅ Duration updated from time observer to: \(self.duration)s")
+                }
+            } else {
+                print("⚠️ No current item in time observer")
+            }
         }
     }
 
     private func observePlayerItem(_ item: AVPlayerItem) {
         item.publisher(for: \.status)
             .sink { [weak self] status in
-                print("🎵 Player item status: \(status.rawValue)")
+                print("🎵 Player item status changed: \(status.rawValue) (0=unknown, 1=ready, 2=failed)")
                 if status == .readyToPlay {
-                    print("✅ Player ready to play, duration: \(item.duration.seconds)s")
-                    self?.duration = item.duration.seconds
+                    let dur = item.duration
+                    print("✅ Player ready to play")
+                    print("📊 Duration details - seconds: \(dur.seconds), isNumeric: \(dur.isNumeric), isIndefinite: \(dur.isIndefinite), isValid: \(dur.isValid)")
+
+                    // Only update duration from stream if we don't already have it from song metadata
+                    if dur.isNumeric && dur.seconds > 0 {
+                        if let currentDuration = self?.duration, currentDuration == 0 {
+                            self?.duration = dur.seconds
+                            print("✅ Duration set from stream: \(dur.seconds)s")
+                        } else {
+                            print("ℹ️ Already have duration from metadata, ignoring stream duration")
+                        }
+                    } else {
+                        print("⚠️ Stream duration not available (isIndefinite: \(dur.isIndefinite))")
+                        if let currentDuration = self?.duration, currentDuration > 0 {
+                            print("ℹ️ Using song metadata duration: \(currentDuration)s")
+                        }
+                    }
                 } else if status == .failed {
                     print("❌ Player item failed!")
                     if let error = item.error {

@@ -94,9 +94,18 @@ struct NowPlayingView: View {
                     }
 
                     if player.queue.count > 1 {
-                        Text("Track \(player.currentIndex + 1) of \(player.queue.count)")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
+                        HStack(spacing: 8) {
+                            Text("Track \(player.currentIndex + 1) of \(player.queue.count)")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+
+                            Button(action: player.toggleShuffle) {
+                                Image(systemName: player.isShuffled ? "shuffle.circle.fill" : "shuffle.circle")
+                                    .font(.caption)
+                                    .foregroundColor(player.isShuffled ? .accentColor : .secondary)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
                 .padding()

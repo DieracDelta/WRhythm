@@ -54,11 +54,19 @@ struct FavouritesView: View {
                                             .font(.headline)
                                         Spacer()
                                         if songs.count > 1 {
-                                            Button(action: {
-                                                player.playQueue(songs, startingAt: 0)
-                                            }) {
-                                                Image(systemName: "play.fill")
-                                                    .font(.caption)
+                                            HStack(spacing: 8) {
+                                                Button(action: {
+                                                    player.playQueue(songs, startingAt: 0)
+                                                }) {
+                                                    Image(systemName: "play.fill")
+                                                        .font(.caption)
+                                                }
+                                                Button(action: {
+                                                    player.playQueueShuffled(songs)
+                                                }) {
+                                                    Image(systemName: "shuffle")
+                                                        .font(.caption)
+                                                }
                                             }
                                         }
                                     }

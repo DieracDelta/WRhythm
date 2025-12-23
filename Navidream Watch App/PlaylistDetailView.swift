@@ -60,10 +60,19 @@ struct PlaylistDetailView: View {
                             Button(action: {
                                 player.playQueue(songs, startingAt: 0)
                             }) {
-                                Label("Play All", systemImage: "play.fill")
+                                Label("Play", systemImage: "play.fill")
                             }
                             .buttonStyle(.borderedProminent)
 
+                            Button(action: {
+                                player.playQueueShuffled(songs)
+                            }) {
+                                Image(systemName: "shuffle")
+                            }
+                            .buttonStyle(.bordered)
+                        }
+
+                        HStack(spacing: 8) {
                             if isPlaylistDownloaded(playlist) {
                                 Button(action: {
                                     downloadManager.deletePlaylist(playlist)
