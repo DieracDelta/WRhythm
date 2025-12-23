@@ -1,5 +1,5 @@
 //
-//  AlbumDetailView.swift
+//  PlaylistDetailView.swift
 //  Navidream Watch App
 //
 //  Created by Justin Restivo on 12/23/25.
@@ -7,10 +7,11 @@
 
 import SwiftUI
 
-struct AlbumDetailView: View {
-    let albumId: String
+struct PlaylistDetailView: View {
+    let playlistId: String
+    let playlistName: String
 
-    @State private var album: Album?
+    @State private var playlist: Playlist?
     @State private var isLoading = true
     @State private var errorMessage = ""
     @ObservedObject var player = AudioPlayer.shared
@@ -19,7 +20,7 @@ struct AlbumDetailView: View {
     var body: some View {
         Group {
             if isLoading {
-                ProgressView("Loading album...")
+                ProgressView("Loading playlist...")
             } else if !errorMessage.isEmpty {
                 VStack {
                     Text("Error")
@@ -28,13 +29,13 @@ struct AlbumDetailView: View {
                         .font(.caption)
                         .foregroundColor(.red)
                     Button("Retry") {
-                        loadAlbum()
+                        loadPlaylist()
                     }
                 }
-            } else if let album = album {
+            } else if let playlist = playlist, let songs = playlist.entry {
                 ScrollView {
                     VStack(spacing: 12) {
-                        if let coverArtId = album.coverArt,
+                        if let coverArtId = playlist.coverArt,
                            let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 300) {
                             AsyncImage(url: coverURL) { image in
                                 image
@@ -48,31 +49,24 @@ struct AlbumDetailView: View {
                         }
 
                         VStack(spacing: 4) {
-                            Text(album.name)
+                            Text(playlist.name)
                                 .font(.headline)
-                            if let artist = album.artist {
-                                Text(artist)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                            if let year = album.year {
-                                Text(String(year))
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                            }
+                            Text("\(playlist.songCount) songs")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
                         }
 
                         HStack(spacing: 8) {
                             Button(action: {
-                                player.playQueue(album.song, startingAt: 0)
+                                player.playQueue(songs, startingAt: 0)
                             }) {
                                 Label("Play All", systemImage: "play.fill")
                             }
                             .buttonStyle(.borderedProminent)
 
-                            if isAlbumDownloaded(album) {
+                            if isPlaylistDownloaded(playlist) {
                                 Button(action: {
-                                    downloadManager.deleteAlbum(album)
+                                    downloadManager.deletePlaylist(playlist)
                                 }) {
                                     Image(systemName: "trash")
                                 }
@@ -80,7 +74,7 @@ struct AlbumDetailView: View {
                                 .tint(.red)
                             } else {
                                 Button(action: {
-                                    downloadManager.downloadAlbum(album)
+                                    downloadManager.downloadPlaylist(playlist)
                                 }) {
                                     Image(systemName: "arrow.down.circle")
                                 }
@@ -91,26 +85,20 @@ struct AlbumDetailView: View {
                         Divider()
 
                         VStack(spacing: 8) {
-                            ForEach(Array(album.song.enumerated()), id: \.element.id) { index, song in
+                            ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
                                 Button(action: {
-                                    player.playQueue(album.song, startingAt: index)
+                                    player.playQueue(songs, startingAt: index)
                                 }) {
                                     HStack {
-                                        if let track = song.track {
-                                            Text("\(track)")
-                                                .font(.caption)
-                                                .foregroundColor(.secondary)
-                                                .frame(width: 20, alignment: .leading)
-                                        }
-
                                         VStack(alignment: .leading) {
                                             Text(song.title)
                                                 .font(.caption)
                                                 .lineLimit(1)
-                                            if let duration = song.duration {
-                                                Text(formatDuration(duration))
+                                            if let artist = song.artist {
+                                                Text(artist)
                                                     .font(.caption2)
                                                     .foregroundColor(.secondary)
+                                                    .lineLimit(1)
                                             }
                                         }
 
@@ -137,21 +125,21 @@ struct AlbumDetailView: View {
                 }
             }
         }
-        .navigationTitle("Album")
+        .navigationTitle("Playlist")
         .onAppear {
-            loadAlbum()
+            loadPlaylist()
         }
     }
 
-    private func loadAlbum() {
+    private func loadPlaylist() {
         isLoading = true
         errorMessage = ""
 
         Task {
             do {
-                let fetchedAlbum = try await NavidromeAPI.shared.getAlbum(id: albumId)
+                let fetchedPlaylist = try await NavidromeAPI.shared.getPlaylist(id: playlistId)
                 await MainActor.run {
-                    self.album = fetchedAlbum
+                    self.playlist = fetchedPlaylist
                     self.isLoading = false
                 }
             } catch {
@@ -163,13 +151,8 @@ struct AlbumDetailView: View {
         }
     }
 
-    private func formatDuration(_ seconds: Int) -> String {
-        let minutes = seconds / 60
-        let remainingSeconds = seconds % 60
-        return String(format: "%d:%02d", minutes, remainingSeconds)
-    }
-
-    private func isAlbumDownloaded(_ album: Album) -> Bool {
-        return album.song.allSatisfy { downloadManager.isDownloaded($0.id) }
+    private func isPlaylistDownloaded(_ playlist: Playlist) -> Bool {
+        guard let songs = playlist.entry else { return false }
+        return songs.allSatisfy { downloadManager.isDownloaded($0.id) }
     }
 }

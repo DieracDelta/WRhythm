@@ -23,10 +23,31 @@ struct ContentView: View {
                     }
 
                     NavigationView {
+                        PlaylistsView()
+                    }
+                    .tabItem {
+                        Label("Playlists", systemImage: "music.note.list")
+                    }
+
+                    NavigationView {
+                        FavouritesView()
+                    }
+                    .tabItem {
+                        Label("Favourites", systemImage: "star.fill")
+                    }
+
+                    NavigationView {
                         ArtistsView()
                     }
                     .tabItem {
-                        Label("Artists", systemImage: "music.note.list")
+                        Label("Artists", systemImage: "person.2")
+                    }
+
+                    NavigationView {
+                        DownloadsView()
+                    }
+                    .tabItem {
+                        Label("Downloads", systemImage: "arrow.down.circle")
                     }
 
                     NavigationView {

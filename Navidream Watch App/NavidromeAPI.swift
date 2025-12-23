@@ -309,13 +309,135 @@ class NavidromeAPI: ObservableObject {
         return buildURL(endpoint: "getCoverArt", additionalParams: ["id": id, "size": String(size)])
     }
 
-    func getStreamURL(id: String, format: String = "raw") -> URL? {
+    func getStreamURL(id: String, format: String = "mp3", maxBitRate: Int = 128) -> URL? {
         let url = buildURL(endpoint: "stream", additionalParams: [
             "id": id,
-            "format": format
+            "format": format,
+            "maxBitRate": String(maxBitRate)
         ])
         print("🔊 Stream URL built: \(url?.absoluteString ?? "nil")")
         return url
+    }
+
+    func getPlaylists() async throws -> [PlaylistSummary] {
+        guard let url = buildURL(endpoint: "getPlaylists") else {
+            print("❌ Invalid URL for getPlaylists")
+            throw NavidromeError.invalidURL
+        }
+
+        print("🔍 Fetching playlists from: \(url.absoluteString)")
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 30
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            print("❌ Invalid response type")
+            throw NavidromeError.unknown
+        }
+
+        print("📡 Response status: \(httpResponse.statusCode)")
+
+        if httpResponse.statusCode != 200 {
+            print("❌ HTTP error: \(httpResponse.statusCode)")
+            throw NavidromeError.apiError("HTTP \(httpResponse.statusCode)")
+        }
+
+        let result = try JSONDecoder().decode(SubsonicResponse<PlaylistsResponse>.self, from: data)
+
+        guard result.subsonicResponse.status == "ok" else {
+            if let error = result.subsonicResponse.error {
+                print("❌ API error: \(error.message)")
+                throw NavidromeError.apiError(error.message)
+            }
+            print("❌ Unknown API error")
+            throw NavidromeError.unknown
+        }
+
+        let playlists = result.subsonicResponse.playlists?.playlist ?? []
+        print("✅ Loaded \(playlists.count) playlists")
+        return playlists
+    }
+
+    func getPlaylist(id: String) async throws -> Playlist {
+        guard let url = buildURL(endpoint: "getPlaylist", additionalParams: ["id": id]) else {
+            print("❌ Invalid URL for getPlaylist")
+            throw NavidromeError.invalidURL
+        }
+
+        print("🔍 Fetching playlist: \(id)")
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 30
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            print("❌ Invalid response type")
+            throw NavidromeError.unknown
+        }
+
+        if httpResponse.statusCode != 200 {
+            print("❌ HTTP error: \(httpResponse.statusCode)")
+            throw NavidromeError.apiError("HTTP \(httpResponse.statusCode)")
+        }
+
+        let result = try JSONDecoder().decode(SubsonicResponse<PlaylistResponse>.self, from: data)
+
+        guard result.subsonicResponse.status == "ok",
+              let playlist = result.subsonicResponse.playlist else {
+            if let error = result.subsonicResponse.error {
+                print("❌ API error: \(error.message)")
+                throw NavidromeError.apiError(error.message)
+            }
+            print("❌ Unknown API error")
+            throw NavidromeError.unknown
+        }
+
+        print("✅ Loaded playlist with \(playlist.entry?.count ?? 0) songs")
+        return playlist
+    }
+
+    func getStarred() async throws -> StarredContent {
+        guard let url = buildURL(endpoint: "getStarred2") else {
+            print("❌ Invalid URL for getStarred2")
+            throw NavidromeError.invalidURL
+        }
+
+        print("🔍 Fetching starred content from: \(url.absoluteString)")
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 30
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            print("❌ Invalid response type")
+            throw NavidromeError.unknown
+        }
+
+        print("📡 Response status: \(httpResponse.statusCode)")
+
+        if httpResponse.statusCode != 200 {
+            print("❌ HTTP error: \(httpResponse.statusCode)")
+            throw NavidromeError.apiError("HTTP \(httpResponse.statusCode)")
+        }
+
+        let result = try JSONDecoder().decode(SubsonicResponse<StarredResponse>.self, from: data)
+
+        guard result.subsonicResponse.status == "ok" else {
+            if let error = result.subsonicResponse.error {
+                print("❌ API error: \(error.message)")
+                throw NavidromeError.apiError(error.message)
+            }
+            print("❌ Unknown API error")
+            throw NavidromeError.unknown
+        }
+
+        let starred = result.subsonicResponse.starred2 ?? StarredContent(artist: [], album: [], song: [])
+        print("✅ Loaded starred: \(starred.song?.count ?? 0) songs, \(starred.album?.count ?? 0) albums, \(starred.artist?.count ?? 0) artists")
+        return starred
     }
 }
 
@@ -463,4 +585,60 @@ struct Song: Decodable, Identifiable {
     let duration: Int?
     let bitRate: Int?
     let path: String?
+}
+
+struct PlaylistsResponse: Decodable {
+    let status: String
+    let version: String
+    let error: SubsonicError?
+    let playlists: Playlists?
+}
+
+struct Playlists: Decodable {
+    let playlist: [PlaylistSummary]
+}
+
+struct PlaylistSummary: Decodable, Identifiable {
+    let id: String
+    let name: String
+    let songCount: Int
+    let duration: Int
+    let created: String
+    let changed: String
+    let coverArt: String?
+    let owner: String?
+    let `public`: Bool?
+}
+
+struct PlaylistResponse: Decodable {
+    let status: String
+    let version: String
+    let error: SubsonicError?
+    let playlist: Playlist?
+}
+
+struct Playlist: Decodable, Identifiable {
+    let id: String
+    let name: String
+    let songCount: Int
+    let duration: Int
+    let created: String
+    let changed: String
+    let coverArt: String?
+    let owner: String?
+    let `public`: Bool?
+    let entry: [Song]?
+}
+
+struct StarredResponse: Decodable {
+    let status: String
+    let version: String
+    let error: SubsonicError?
+    let starred2: StarredContent?
+}
+
+struct StarredContent: Decodable {
+    let artist: [Artist]?
+    let album: [AlbumSummary]?
+    let song: [Song]?
 }

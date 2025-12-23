@@ -51,10 +51,13 @@ struct NowPlayingView: View {
                     VStack(spacing: 4) {
                         Slider(
                             value: Binding(
-                                get: { player.currentTime },
+                                get: {
+                                    let time = player.currentTime
+                                    return time.isNaN || time.isInfinite ? 0 : time
+                                },
                                 set: { player.seek(to: $0) }
                             ),
-                            in: 0...max(player.duration, 1)
+                            in: 0...max(1, player.duration.isNaN || player.duration.isInfinite ? 1 : player.duration)
                         )
 
                         HStack {
@@ -113,6 +116,9 @@ struct NowPlayingView: View {
     }
 
     private func formatTime(_ seconds: TimeInterval) -> String {
+        guard !seconds.isNaN && !seconds.isInfinite else {
+            return "0:00"
+        }
         let minutes = Int(seconds) / 60
         let remainingSeconds = Int(seconds) % 60
         return String(format: "%d:%02d", minutes, remainingSeconds)

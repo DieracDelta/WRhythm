@@ -72,24 +72,44 @@ class AudioPlayer: NSObject, ObservableObject {
     }
 
     func playSong(_ song: Song) {
-        print("🎵 AudioPlayer: playSong called")
+        self.queue = [song]
+        self.currentIndex = 0
+        startPlayback(song)
+    }
+
+    func playQueue(_ songs: [Song], startingAt index: Int = 0) {
+        guard !songs.isEmpty, index < songs.count else { return }
+
+        self.queue = songs
+        self.currentIndex = index
+        startPlayback(songs[index])
+    }
+
+    private func startPlayback(_ song: Song) {
+        print("🎵 AudioPlayer: startPlayback called")
         print("🎵 Song: \(song.title) by \(song.artist ?? "Unknown")")
         print("🎵 Song ID: \(song.id)")
         print("🎵 Content type: \(song.contentType ?? "unknown")")
         print("🎵 Suffix: \(song.suffix ?? "unknown")")
 
         self.currentSong = song
-        self.queue = [song]
-        self.currentIndex = 0
 
-        guard let streamURL = NavidromeAPI.shared.getStreamURL(id: song.id) else {
-            print("❌ Failed to get stream URL")
+        // Check if song is downloaded first
+        let playURL: URL
+        if let localURL = DownloadManager.shared.getLocalURL(song.id) {
+            playURL = localURL
+            print("🎵 Playing from local file: \(localURL.lastPathComponent)")
+        } else if let streamURL = NavidromeAPI.shared.getStreamURL(id: song.id) {
+            playURL = streamURL
+            print("🎵 Streaming from: \(streamURL.absoluteString)")
+        } else {
+            print("❌ Failed to get playback URL")
             return
         }
 
-        print("🎵 Stream URL: \(streamURL.absoluteString)")
+        print("🎵 Playback URL: \(playURL.absoluteString)")
 
-        let playerItem = AVPlayerItem(url: streamURL)
+        let playerItem = AVPlayerItem(url: playURL)
         player = AVPlayer(playerItem: playerItem)
 
         addPeriodicTimeObserver()
@@ -99,14 +119,6 @@ class AudioPlayer: NSObject, ObservableObject {
         isPlaying = true
 
         updateNowPlayingInfo()
-    }
-
-    func playQueue(_ songs: [Song], startingAt index: Int = 0) {
-        guard !songs.isEmpty, index < songs.count else { return }
-
-        self.queue = songs
-        self.currentIndex = index
-        playSong(songs[index])
     }
 
     func play() {
@@ -130,7 +142,7 @@ class AudioPlayer: NSObject, ObservableObject {
     func next() {
         guard currentIndex < queue.count - 1 else { return }
         currentIndex += 1
-        playSong(queue[currentIndex])
+        startPlayback(queue[currentIndex])
     }
 
     func previous() {
@@ -138,7 +150,7 @@ class AudioPlayer: NSObject, ObservableObject {
             seek(to: 0)
         } else if currentIndex > 0 {
             currentIndex -= 1
-            playSong(queue[currentIndex])
+            startPlayback(queue[currentIndex])
         } else {
             seek(to: 0)
         }
