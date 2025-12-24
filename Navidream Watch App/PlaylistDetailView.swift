@@ -13,6 +13,7 @@ struct PlaylistDetailView: View {
 
     @State private var playlist: Playlist?
     @State private var isLoading = true
+    @State private var isSyncing = false
     @State private var errorMessage = ""
     @ObservedObject var player = AudioPlayer.shared
     @ObservedObject var downloadManager = DownloadManager.shared
@@ -20,7 +21,129 @@ struct PlaylistDetailView: View {
 
     var body: some View {
         Group {
-            if isLoading {
+            if offlineMode {
+                // Offline mode: show only downloaded songs from cached playlist
+                let cachedPlaylist = downloadManager.cachedPlaylists.first { $0.id == playlistId }
+                let downloadedSongIds = cachedPlaylist?.songIds.filter { downloadManager.isDownloaded($0) } ?? []
+
+                ScrollView {
+                    VStack(spacing: 12) {
+                        Group {
+                            if let coverArtId = cachedPlaylist?.coverArt,
+                               let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 300) {
+                                AsyncImage(url: coverURL) { image in
+                                    image
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                } placeholder: {
+                                    Color.gray
+                                }
+                                .frame(height: 120)
+                                .cornerRadius(8)
+                            }
+                        }
+                        .id(playlistId)
+
+                        VStack(spacing: 4) {
+                            Text(playlistName)
+                                .font(.headline)
+                            if !downloadedSongIds.isEmpty {
+                                Text("\(downloadedSongIds.count) of \(cachedPlaylist?.songCount ?? 0) songs downloaded")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            } else {
+                                Text("\(cachedPlaylist?.songCount ?? 0) songs total")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+
+                        if downloadedSongIds.isEmpty {
+                            Divider()
+
+                            VStack {
+                                Image(systemName: "arrow.down.circle")
+                                    .font(.largeTitle)
+                                    .foregroundColor(.secondary)
+                                Text("No downloaded songs")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Text("Download songs while online to play them here")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                    .multilineTextAlignment(.center)
+                            }
+                            .padding()
+                        } else {
+                            Divider()
+
+                            VStack(spacing: 8) {
+                                ForEach(downloadedSongIds, id: \.self) { songId in
+                                    if let downloadedSong = downloadManager.downloadedSongs[songId] {
+                                        Button(action: {
+                                            // Build Song objects from downloaded songs
+                                            let songs = downloadedSongIds.compactMap { id in
+                                                downloadManager.downloadedSongs[id]
+                                            }.map { downloaded in
+                                                Song(
+                                                    id: downloaded.songId,
+                                                    title: downloaded.title,
+                                                    album: downloaded.album,
+                                                    albumId: downloaded.album,
+                                                    artist: downloaded.artist,
+                                                    artistId: nil,
+                                                    track: nil,
+                                                    year: nil,
+                                                    genre: nil,
+                                                    coverArt: downloaded.coverArt,
+                                                    size: Int(downloaded.fileSize),
+                                                    contentType: nil,
+                                                    suffix: nil,
+                                                    duration: nil,
+                                                    bitRate: nil,
+                                                    path: nil
+                                                )
+                                            }
+                                            if let index = songs.firstIndex(where: { $0.id == songId }) {
+                                                player.playQueue(songs, startingAt: index)
+                                            }
+                                        }) {
+                                            HStack {
+                                                VStack(alignment: .leading) {
+                                                    Text(downloadedSong.title)
+                                                        .font(.caption)
+                                                        .lineLimit(1)
+                                                    if let artist = downloadedSong.artist {
+                                                        Text(artist)
+                                                            .font(.caption2)
+                                                            .foregroundColor(.secondary)
+                                                            .lineLimit(1)
+                                                    }
+                                                }
+
+                                                Spacer()
+
+                                                Image(systemName: "arrow.down.circle.fill")
+                                                    .font(.caption2)
+                                                    .foregroundColor(.green)
+
+                                                if player.currentSong?.id == downloadedSong.songId && player.isPlaying {
+                                                    Image(systemName: "speaker.wave.2.fill")
+                                                        .font(.caption2)
+                                                        .foregroundColor(.accentColor)
+                                                }
+                                            }
+                                        }
+                                        .buttonStyle(.plain)
+                                        .id(songId)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding()
+                }
+            } else if isLoading {
                 ProgressView("Loading playlist...")
             } else if !errorMessage.isEmpty {
                 VStack {
@@ -36,18 +159,21 @@ struct PlaylistDetailView: View {
             } else if let playlist = playlist, let songs = playlist.entry {
                 ScrollView {
                     VStack(spacing: 12) {
-                        if let coverArtId = playlist.coverArt,
-                           let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 300) {
-                            AsyncImage(url: coverURL) { image in
-                                image
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fill)
-                            } placeholder: {
-                                Color.gray
+                        Group {
+                            if let coverArtId = playlist.coverArt,
+                               let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 300) {
+                                AsyncImage(url: coverURL) { image in
+                                    image
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                } placeholder: {
+                                    Color.gray
+                                }
+                                .frame(height: 120)
+                                .cornerRadius(8)
                             }
-                            .frame(height: 120)
-                            .cornerRadius(8)
                         }
+                        .id(playlist.id)
 
                         VStack(spacing: 4) {
                             Text(playlist.name)
@@ -139,6 +265,7 @@ struct PlaylistDetailView: View {
                                     }
                                 }
                                 .buttonStyle(.plain)
+                                .id(song.id)
                             }
                         }
                     }
@@ -147,6 +274,22 @@ struct PlaylistDetailView: View {
             }
         }
         .navigationTitle("Playlist")
+        .toolbar {
+            if !offlineMode && playlist != nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(action: {
+                        syncPlaylist()
+                    }) {
+                        if isSyncing {
+                            ProgressView()
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                    }
+                    .disabled(isSyncing)
+                }
+            }
+        }
         .onAppear {
             if !offlineMode {
                 loadPlaylist()
@@ -164,12 +307,37 @@ struct PlaylistDetailView: View {
                 await MainActor.run {
                     self.playlist = fetchedPlaylist
                     self.isLoading = false
+                    // Cache playlist details for offline mode
+                    self.downloadManager.cachePlaylistDetails(fetchedPlaylist)
                 }
             } catch {
                 await MainActor.run {
                     self.errorMessage = error.localizedDescription
                     self.isLoading = false
                 }
+            }
+        }
+    }
+
+    private func syncPlaylist() {
+        isSyncing = true
+
+        Task {
+            do {
+                let fetchedPlaylist = try await NavidromeAPI.shared.getPlaylist(id: playlistId)
+                await MainActor.run {
+                    self.playlist = fetchedPlaylist
+                    self.isSyncing = false
+                    // Update cached playlist details
+                    self.downloadManager.cachePlaylistDetails(fetchedPlaylist)
+                }
+                print("✅ Synced playlist: \(playlistName)")
+            } catch {
+                await MainActor.run {
+                    self.errorMessage = error.localizedDescription
+                    self.isSyncing = false
+                }
+                print("❌ Failed to sync playlist: \(error)")
             }
         }
     }

@@ -64,6 +64,7 @@ struct AlbumsView: View {
                                         }
                                         .frame(width: 40, height: 40)
                                         .cornerRadius(4)
+                                        .id(coverURL)
                                     }
 
                                     VStack(alignment: .leading) {
@@ -161,6 +162,7 @@ struct AlbumsView: View {
                                     }
                                     .frame(width: 40, height: 40)
                                     .cornerRadius(4)
+                                        .id(coverURL)
                                 }
 
                                 VStack(alignment: .leading) {

@@ -13,10 +13,28 @@ import MediaPlayer
 class AudioPlayer: NSObject, ObservableObject {
     static let shared = AudioPlayer()
 
-    @Published var currentSong: Song?
-    @Published var isPlaying = false
-    @Published var currentTime: TimeInterval = 0
-    @Published var duration: TimeInterval = 0
+    @Published var currentSong: Song? {
+        didSet {
+            print("🎵 AudioPlayer.currentSong changed to: \(currentSong?.title ?? "nil")")
+        }
+    }
+    @Published var isPlaying = false {
+        didSet {
+            print("▶️ AudioPlayer.isPlaying changed to: \(isPlaying)")
+        }
+    }
+    @Published var currentTime: TimeInterval = 0 {
+        didSet {
+            if Int(oldValue) != Int(currentTime) {
+                print("⏱️ AudioPlayer.currentTime changed to: \(Int(currentTime))s")
+            }
+        }
+    }
+    @Published var duration: TimeInterval = 0 {
+        didSet {
+            print("⏲️ AudioPlayer.duration changed to: \(duration)s")
+        }
+    }
     @Published var queue: [Song] = []
     @Published var currentIndex: Int = 0
     @Published var isShuffled = false

@@ -7,18 +7,83 @@
 
 import SwiftUI
 
+struct SongRowView: View {
+    let song: Song
+    let onTap: () -> Void
+    @ObservedObject var player = AudioPlayer.shared
+    @ObservedObject var downloadManager = DownloadManager.shared
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack {
+                if let track = song.track {
+                    Text("\(track)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .frame(width: 20, alignment: .leading)
+                }
+
+                VStack(alignment: .leading) {
+                    Text(song.title)
+                        .font(.caption)
+                        .lineLimit(1)
+                    if let duration = song.duration {
+                        Text(formatDuration(duration))
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                Spacer()
+
+                if downloadManager.isDownloading(song.id) {
+                    VStack(spacing: 2) {
+                        ProgressView()
+                            .scaleEffect(0.7)
+                        let progress = downloadManager.downloadProgress(song.id)
+                        if progress > 0 {
+                            Text("\(Int(progress * 100))%")
+                                .font(.system(size: 8))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                } else if downloadManager.isDownloaded(song.id) {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .font(.caption2)
+                        .foregroundColor(.green)
+                }
+
+                if player.currentSong?.id == song.id && player.isPlaying {
+                    Image(systemName: "speaker.wave.2.fill")
+                        .font(.caption2)
+                        .foregroundColor(.accentColor)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func formatDuration(_ seconds: Int) -> String {
+        let minutes = seconds / 60
+        let remainingSeconds = seconds % 60
+        return String(format: "%d:%02d", minutes, remainingSeconds)
+    }
+}
+
 struct AlbumDetailView: View {
     let albumId: String
 
     @State private var album: Album?
     @State private var isLoading = true
     @State private var errorMessage = ""
-    @ObservedObject var player = AudioPlayer.shared
     @ObservedObject var downloadManager = DownloadManager.shared
     @AppStorage("offlineMode") private var offlineMode = false
 
+    private var player: AudioPlayer { AudioPlayer.shared }
+
     var body: some View {
-        ZStack {
+        let _ = print("🔄 AlbumDetailView body recomputed for album: \(albumId)")
+        return ZStack {
             if offlineMode {
                 // Offline mode: build album from downloaded songs
                 let downloadedSongs = downloadManager.downloadedSongs.values.filter { $0.album == albumId }
@@ -33,18 +98,21 @@ struct AlbumDetailView: View {
                 } else {
                     ScrollView {
                         VStack(spacing: 12) {
-                            if let coverArtId = downloadedSongs.first?.coverArt,
-                               let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 300) {
-                                AsyncImage(url: coverURL) { image in
-                                    image
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fill)
-                                } placeholder: {
-                                    Color.gray
+                            Group {
+                                if let coverArtId = downloadedSongs.first?.coverArt,
+                                   let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 300) {
+                                    AsyncImage(url: coverURL) { image in
+                                        image
+                                            .resizable()
+                                            .aspectRatio(contentMode: .fill)
+                                    } placeholder: {
+                                        Color.gray
+                                    }
+                                    .frame(height: 120)
+                                    .cornerRadius(8)
                                 }
-                                .frame(height: 120)
-                                .cornerRadius(8)
                             }
+                            .id(albumId)
 
                             VStack(spacing: 4) {
                                 Text(downloadedSongs.first?.album ?? "Unknown Album")
@@ -161,6 +229,7 @@ struct AlbumDetailView: View {
                                         }
                                     }
                                     .buttonStyle(.plain)
+                                    .id(downloadedSong.songId)
                                 }
                             }
                         }
@@ -183,18 +252,29 @@ struct AlbumDetailView: View {
             } else if let album = album {
                 ScrollView {
                     VStack(spacing: 12) {
-                        if let coverArtId = album.coverArt,
-                           let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 300) {
-                            AsyncImage(url: coverURL) { image in
-                                image
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fill)
-                            } placeholder: {
-                                Color.gray
+                        Group {
+                            if let coverArtId = album.coverArt,
+                               let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 300) {
+                                AsyncImage(url: coverURL) { image in
+                                    let _ = print("🖼️ AlbumDetail AsyncImage rendering image for album: \(album.id)")
+                                    return image
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                } placeholder: {
+                                    let _ = print("🔲 AlbumDetail AsyncImage showing placeholder for album: \(album.id)")
+                                    return Color.gray
+                                }
+                                .frame(height: 120)
+                                .cornerRadius(8)
+                                .onAppear {
+                                    print("✅ AlbumDetail AsyncImage appeared for album: \(album.id), URL: \(coverURL)")
+                                }
+                                .onDisappear {
+                                    print("❌ AlbumDetail AsyncImage disappeared for album: \(album.id)")
+                                }
                             }
-                            .frame(height: 120)
-                            .cornerRadius(8)
                         }
+                        .id(album.id)
 
                         VStack(spacing: 4) {
                             Text(album.name)
@@ -250,55 +330,10 @@ struct AlbumDetailView: View {
 
                         VStack(spacing: 8) {
                             ForEach(Array(filteredSongs(album.song).enumerated()), id: \.element.id) { index, song in
-                                Button(action: {
+                                SongRowView(song: song) {
                                     player.playQueue(album.song, startingAt: index)
-                                }) {
-                                    HStack {
-                                        if let track = song.track {
-                                            Text("\(track)")
-                                                .font(.caption)
-                                                .foregroundColor(.secondary)
-                                                .frame(width: 20, alignment: .leading)
-                                        }
-
-                                        VStack(alignment: .leading) {
-                                            Text(song.title)
-                                                .font(.caption)
-                                                .lineLimit(1)
-                                            if let duration = song.duration {
-                                                Text(formatDuration(duration))
-                                                    .font(.caption2)
-                                                    .foregroundColor(.secondary)
-                                            }
-                                        }
-
-                                        Spacer()
-
-                                        if downloadManager.isDownloading(song.id) {
-                                            VStack(spacing: 2) {
-                                                ProgressView()
-                                                    .scaleEffect(0.7)
-                                                let progress = downloadManager.downloadProgress(song.id)
-                                                if progress > 0 {
-                                                    Text("\(Int(progress * 100))%")
-                                                        .font(.system(size: 8))
-                                                        .foregroundColor(.secondary)
-                                                }
-                                            }
-                                        } else if downloadManager.isDownloaded(song.id) {
-                                            Image(systemName: "arrow.down.circle.fill")
-                                                .font(.caption2)
-                                                .foregroundColor(.green)
-                                        }
-
-                                        if player.currentSong?.id == song.id && player.isPlaying {
-                                            Image(systemName: "speaker.wave.2.fill")
-                                                .font(.caption2)
-                                                .foregroundColor(.accentColor)
-                                        }
-                                    }
                                 }
-                                .buttonStyle(.plain)
+                                .id(song.id)
                             }
                         }
                     }

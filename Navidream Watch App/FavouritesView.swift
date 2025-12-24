@@ -116,6 +116,7 @@ struct FavouritesView: View {
                                                     }
                                                     .frame(width: 40, height: 40)
                                                     .cornerRadius(4)
+                                                    .id(coverURL)
                                                 }
 
                                                 VStack(alignment: .leading) {
@@ -186,6 +187,7 @@ struct FavouritesView: View {
                                                     }
                                                     .frame(width: 40, height: 40)
                                                     .cornerRadius(4)
+                                                    .id(coverURL)
                                                 }
 
                                                 VStack(alignment: .leading) {
@@ -230,6 +232,7 @@ struct FavouritesView: View {
                                                     }
                                                     .frame(width: 40, height: 40)
                                                     .cornerRadius(4)
+                                                    .id(coverURL)
                                                 }
 
                                                 VStack(alignment: .leading) {

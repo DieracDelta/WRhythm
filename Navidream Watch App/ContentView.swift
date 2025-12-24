@@ -9,7 +9,6 @@ import SwiftUI
 
 struct ContentView: View {
     @ObservedObject var api = NavidromeAPI.shared
-    @ObservedObject var player = AudioPlayer.shared
 
     var body: some View {
         Group {

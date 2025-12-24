@@ -19,10 +19,20 @@ struct DownloadedSong: Codable {
     let fileSize: Int64
 }
 
+struct CachedPlaylist: Codable {
+    let id: String
+    let name: String
+    let songCount: Int
+    let coverArt: String?
+    let songIds: [String]  // Store song IDs so we can filter in offline mode
+    let cachedAt: Date
+}
+
 class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     static let shared = DownloadManager()
 
     @Published var downloadedSongs: [String: DownloadedSong] = [:]
+    @Published var cachedPlaylists: [CachedPlaylist] = []
     @Published var activeDownloads: [String: Double] = [:] // songId -> progress (0-1)
     @Published var downloadBytesReceived: [String: Int64] = [:] // songId -> bytes downloaded
     @Published var maxConcurrentDownloads: Int = UserDefaults.standard.integer(forKey: "maxConcurrentDownloads") == 0 ? 8 : UserDefaults.standard.integer(forKey: "maxConcurrentDownloads") {
@@ -56,9 +66,14 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         documentsDirectory.appendingPathComponent("downloads.json")
     }
 
+    private var playlistsMetadataURL: URL {
+        documentsDirectory.appendingPathComponent("playlists.json")
+    }
+
     override init() {
         super.init()
         loadMetadata()
+        loadPlaylistsMetadata()
     }
 
     // MARK: - Metadata
@@ -87,6 +102,70 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         } catch {
             print("❌ Failed to save download metadata: \(error)")
         }
+    }
+
+    private func loadPlaylistsMetadata() {
+        guard fileManager.fileExists(atPath: playlistsMetadataURL.path) else {
+            print("📥 No playlist metadata found")
+            return
+        }
+
+        do {
+            let data = try Data(contentsOf: playlistsMetadataURL)
+            let playlists = try JSONDecoder().decode([CachedPlaylist].self, from: data)
+            self.cachedPlaylists = playlists
+            print("📥 Loaded \(playlists.count) cached playlists")
+        } catch {
+            print("❌ Failed to load playlist metadata: \(error)")
+        }
+    }
+
+    private func savePlaylistsMetadata() {
+        do {
+            let data = try JSONEncoder().encode(cachedPlaylists)
+            try data.write(to: playlistsMetadataURL)
+            print("💾 Saved playlist metadata")
+        } catch {
+            print("❌ Failed to save playlist metadata: \(error)")
+        }
+    }
+
+    func cachePlaylists(_ playlists: [PlaylistSummary]) {
+        self.cachedPlaylists = playlists.map { playlist in
+            CachedPlaylist(
+                id: playlist.id,
+                name: playlist.name,
+                songCount: playlist.songCount,
+                coverArt: playlist.coverArt,
+                songIds: [],  // Will be updated when playlist is loaded
+                cachedAt: Date()
+            )
+        }
+        savePlaylistsMetadata()
+    }
+
+    func cachePlaylistDetails(_ playlist: Playlist) {
+        // Update or add full playlist details with song IDs
+        if let index = cachedPlaylists.firstIndex(where: { $0.id == playlist.id }) {
+            cachedPlaylists[index] = CachedPlaylist(
+                id: playlist.id,
+                name: playlist.name,
+                songCount: playlist.songCount,
+                coverArt: playlist.coverArt,
+                songIds: playlist.entry?.map { $0.id } ?? [],
+                cachedAt: Date()
+            )
+        } else {
+            cachedPlaylists.append(CachedPlaylist(
+                id: playlist.id,
+                name: playlist.name,
+                songCount: playlist.songCount,
+                coverArt: playlist.coverArt,
+                songIds: playlist.entry?.map { $0.id } ?? [],
+                cachedAt: Date()
+            ))
+        }
+        savePlaylistsMetadata()
     }
 
     // MARK: - Download Status

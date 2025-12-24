@@ -122,6 +122,7 @@ struct NowPlayingView: View {
                     }
                 }
                 .padding()
+                .id(song.id)
             } else {
                 VStack(spacing: 8) {
                     Image(systemName: "music.note")
