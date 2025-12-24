@@ -24,11 +24,18 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
 
     @Published var downloadedSongs: [String: DownloadedSong] = [:]
     @Published var activeDownloads: [String: Double] = [:] // songId -> progress
+    @Published var maxConcurrentDownloads: Int = UserDefaults.standard.integer(forKey: "maxConcurrentDownloads") == 0 ? 8 : UserDefaults.standard.integer(forKey: "maxConcurrentDownloads") {
+        didSet {
+            UserDefaults.standard.set(maxConcurrentDownloads, forKey: "maxConcurrentDownloads")
+            processQueue()
+        }
+    }
 
     private let fileManager = FileManager.default
     private var downloadTasks: [String: URLSessionDownloadTask] = [:]
     private var taskToSongId: [URLSessionDownloadTask: String] = [:]
     private var songMetadata: [String: Song] = [:]
+    private var downloadQueue: [Song] = []
     private lazy var downloadSession: URLSession = {
         let config = URLSessionConfiguration.default
         return URLSession(configuration: config, delegate: self, delegateQueue: nil)
@@ -110,20 +117,41 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
             return
         }
 
-        guard let streamURL = NavidromeAPI.shared.getStreamURL(id: song.id) else {
-            print("❌ Failed to get stream URL for: \(song.title)")
+        // Check if song is already in queue
+        guard !downloadQueue.contains(where: { $0.id == song.id }) else {
+            print("⏳ Song already queued: \(song.title)")
             return
         }
 
-        print("📥 Starting download: \(song.title)")
+        downloadQueue.append(song)
+        print("📋 Added to queue: \(song.title) (queue size: \(downloadQueue.count))")
+        processQueue()
+    }
 
-        let task = downloadSession.downloadTask(with: streamURL)
+    private func processQueue() {
+        // Start downloads up to the concurrent limit
+        while activeDownloads.count < maxConcurrentDownloads && !downloadQueue.isEmpty {
+            let song = downloadQueue.removeFirst()
 
-        activeDownloads[song.id] = 0
-        downloadTasks[song.id] = task
-        taskToSongId[task] = song.id
-        songMetadata[song.id] = song
-        task.resume()
+            guard let streamURL = NavidromeAPI.shared.getStreamURL(id: song.id) else {
+                print("❌ Failed to get stream URL for: \(song.title)")
+                continue
+            }
+
+            print("📥 Starting download (\(activeDownloads.count + 1)/\(maxConcurrentDownloads)): \(song.title)")
+
+            let task = downloadSession.downloadTask(with: streamURL)
+
+            activeDownloads[song.id] = 0
+            downloadTasks[song.id] = task
+            taskToSongId[task] = song.id
+            songMetadata[song.id] = song
+            task.resume()
+        }
+
+        if !downloadQueue.isEmpty {
+            print("⏳ \(downloadQueue.count) songs waiting in queue")
+        }
     }
 
     // MARK: - URLSessionDownloadDelegate
@@ -180,6 +208,9 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
                 self.songMetadata.removeValue(forKey: song.id)
                 self.saveMetadata()
                 print("✅ Downloaded: \(song.title) (\(self.formatBytes(fileSize)))")
+
+                // Process next item in queue
+                self.processQueue()
             }
         } catch {
             print("❌ Failed to save downloaded file: \(error)")
@@ -188,6 +219,9 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
                 self.downloadTasks.removeValue(forKey: song.id)
                 self.taskToSongId.removeValue(forKey: downloadTask)
                 self.songMetadata.removeValue(forKey: song.id)
+
+                // Process next item in queue even on error
+                self.processQueue()
             }
         }
     }
@@ -205,6 +239,9 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
                 self.downloadTasks.removeValue(forKey: songId)
                 self.taskToSongId.removeValue(forKey: downloadTask)
                 self.songMetadata.removeValue(forKey: songId)
+
+                // Process next item in queue on error
+                self.processQueue()
             }
         }
     }

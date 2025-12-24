@@ -9,6 +9,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var api = NavidromeAPI.shared
+    @ObservedObject var downloadManager = DownloadManager.shared
     @State private var showingLogoutConfirmation = false
 
     var body: some View {
@@ -33,6 +34,31 @@ struct SettingsView: View {
                         Text(username)
                             .font(.caption2)
                     }
+                }
+            }
+
+            Section(header: Text("Downloads")) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Concurrent Downloads")
+                        .font(.caption)
+                    HStack {
+                        Text("\(downloadManager.maxConcurrentDownloads)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .monospacedDigit()
+                            .frame(width: 30, alignment: .leading)
+                        Slider(
+                            value: Binding(
+                                get: { Double(downloadManager.maxConcurrentDownloads) },
+                                set: { downloadManager.maxConcurrentDownloads = Int($0) }
+                            ),
+                            in: 1...16,
+                            step: 1
+                        )
+                    }
+                    Text("Maximum number of simultaneous downloads")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
                 }
             }
 
