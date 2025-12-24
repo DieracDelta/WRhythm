@@ -286,7 +286,13 @@ struct AlbumDetailView: View {
                         VStack(spacing: 4) {
                             Text(album.name)
                                 .font(.headline)
-                            if let artist = album.artist {
+                            if let artist = album.artist, let artistId = album.artistId {
+                                NavigationLink(destination: ArtistDetailView(artistId: artistId, artistName: artist)) {
+                                    Text(artist)
+                                        .font(.caption)
+                                        .foregroundColor(.blue)
+                                }
+                            } else if let artist = album.artist {
                                 Text(artist)
                                     .font(.caption)
                                     .foregroundColor(.secondary)

@@ -55,6 +55,18 @@ struct PlaylistSongRowView: View {
             }
         }
         .buttonStyle(.plain)
+        .contextMenu {
+            if let artistId = song.artistId, let artist = song.artist {
+                NavigationLink(destination: ArtistDetailView(artistId: artistId, artistName: artist)) {
+                    Label("Go to Artist", systemImage: "person.fill")
+                }
+            }
+            if let albumId = song.albumId {
+                NavigationLink(destination: AlbumDetailView(albumId: albumId)) {
+                    Label("Go to Album", systemImage: "square.stack")
+                }
+            }
+        }
     }
 }
 

@@ -47,6 +47,13 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     private var taskToSongId: [URLSessionDownloadTask: String] = [:]
     private(set) var songMetadata: [String: Song] = [:]  // Expose for reading
     @Published var downloadQueue: [Song] = []  // Expose queue for UI
+
+    // Throttling for progress updates
+    private var lastProgressUpdate: Date = .distantPast
+    private var pendingProgressUpdates: [String: Double] = [:]
+
+    // Track total bytes for downloads
+    private var downloadTotalBytes: [String: Int64] = [:] // songId -> total expected bytes
     private lazy var downloadSession: URLSession = {
         let config = URLSessionConfiguration.background(withIdentifier: "com.navidream.downloads")
         config.isDiscretionary = false // Download immediately, don't wait for optimal conditions
@@ -269,33 +276,49 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
             return
         }
 
+        // Calculate progress
+        let progress: Double
+        let estimatedTotal: Int64
+
+        if totalBytesExpectedToWrite > 0 {
+            estimatedTotal = totalBytesExpectedToWrite
+            progress = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
+
+            // Log progress at 25%, 50%, 75%, 100% milestones
+            let percentage = Int(progress * 100)
+            if percentage % 25 == 0 && percentage > 0 {
+                let timestamp = ISO8601DateFormatter().string(from: Date())
+                print("📊 [\(timestamp)] Progress \(percentage)% - \(song.title) - \(totalBytesWritten)/\(totalBytesExpectedToWrite) bytes")
+            }
+        } else {
+            // No Content-Length (transcoding) - estimate based on song duration
+            if let duration = song.duration, duration > 0 {
+                estimatedTotal = Int64(duration) * 16000 // 16KB/s * duration in seconds
+                progress = min(0.99, Double(totalBytesWritten) / Double(estimatedTotal))
+            } else {
+                // No duration either - just show indeterminate progress
+                estimatedTotal = 5_000_000 // 5MB estimate
+                progress = min(0.95, Double(totalBytesWritten) / Double(estimatedTotal))
+            }
+        }
+
         DispatchQueue.main.async {
             self.downloadBytesReceived[songId] = totalBytesWritten
+            self.downloadTotalBytes[songId] = estimatedTotal
 
-            // If server provides Content-Length, use it for accurate progress
-            if totalBytesExpectedToWrite > 0 {
-                let progress = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
-                self.activeDownloads[songId] = progress
+            // Store pending update
+            self.pendingProgressUpdates[songId] = progress
 
-                // Log progress at 25%, 50%, 75%, 100% milestones
-                let percentage = Int(progress * 100)
-                if percentage % 25 == 0 && percentage > 0 {
-                    let timestamp = ISO8601DateFormatter().string(from: Date())
-                    print("📊 [\(timestamp)] Progress \(percentage)% - \(song.title) - \(totalBytesWritten)/\(totalBytesExpectedToWrite) bytes")
+            // Throttle UI updates to once per second
+            let now = Date()
+            if now.timeIntervalSince(self.lastProgressUpdate) >= 1.0 {
+                self.lastProgressUpdate = now
+
+                // Apply all pending updates at once
+                for (id, prog) in self.pendingProgressUpdates {
+                    self.activeDownloads[id] = prog
                 }
-            } else {
-                // No Content-Length (transcoding) - estimate based on song duration
-                // Assume ~128kbps (16KB/s) for MP3 transcoding
-                if let duration = song.duration, duration > 0 {
-                    let estimatedSize = Int64(duration) * 16000 // 16KB/s * duration in seconds
-                    let progress = min(0.99, Double(totalBytesWritten) / Double(estimatedSize))
-                    self.activeDownloads[songId] = progress
-                } else {
-                    // No duration either - just show indeterminate progress
-                    // Fake progress that never reaches 100%
-                    let fakProgress = min(0.95, Double(totalBytesWritten) / 5_000_000.0)
-                    self.activeDownloads[songId] = fakProgress
-                }
+                self.pendingProgressUpdates.removeAll()
             }
         }
     }
@@ -335,9 +358,16 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
             )
 
             DispatchQueue.main.async {
+                // Apply any pending progress updates before removing
+                if let pendingProgress = self.pendingProgressUpdates[song.id] {
+                    self.activeDownloads[song.id] = pendingProgress
+                    self.pendingProgressUpdates.removeValue(forKey: song.id)
+                }
+
                 self.downloadedSongs[song.id] = downloadedSong
                 self.activeDownloads.removeValue(forKey: song.id)
                 self.downloadBytesReceived.removeValue(forKey: song.id)
+                self.downloadTotalBytes.removeValue(forKey: song.id)
                 self.downloadTasks.removeValue(forKey: song.id)
                 self.taskToSongId.removeValue(forKey: downloadTask)
                 self.songMetadata.removeValue(forKey: song.id)
@@ -355,6 +385,7 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
             DispatchQueue.main.async {
                 self.activeDownloads.removeValue(forKey: song.id)
                 self.downloadBytesReceived.removeValue(forKey: song.id)
+                self.downloadTotalBytes.removeValue(forKey: song.id)
                 self.downloadTasks.removeValue(forKey: song.id)
                 self.taskToSongId.removeValue(forKey: downloadTask)
                 self.songMetadata.removeValue(forKey: song.id)
@@ -386,6 +417,7 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
             DispatchQueue.main.async {
                 self.activeDownloads.removeValue(forKey: songId)
                 self.downloadBytesReceived.removeValue(forKey: songId)
+                self.downloadTotalBytes.removeValue(forKey: songId)
                 self.downloadTasks.removeValue(forKey: songId)
                 self.taskToSongId.removeValue(forKey: downloadTask)
                 self.songMetadata.removeValue(forKey: songId)
@@ -573,6 +605,38 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
 
     func getTotalSize() -> Int64 {
         return downloadedSongs.values.reduce(0) { $0 + $1.fileSize }
+    }
+
+    func getActiveDownloadCount() -> Int {
+        return activeDownloads.count
+    }
+
+    func getQueuedDownloadCount() -> Int {
+        return downloadQueue.count
+    }
+
+    func getTotalPendingDownloads() -> Int {
+        return activeDownloads.count + downloadQueue.count
+    }
+
+    func getAverageDownloadProgress() -> Double {
+        guard !activeDownloads.isEmpty else { return 0 }
+        let total = activeDownloads.values.reduce(0.0, +)
+        return total / Double(activeDownloads.count)
+    }
+
+    func getTotalBytesToDownload() -> Int64 {
+        return downloadTotalBytes.values.reduce(0, +)
+    }
+
+    func getTotalBytesDownloaded() -> Int64 {
+        return downloadBytesReceived.values.reduce(0, +)
+    }
+
+    func getBytesRemaining() -> Int64 {
+        let total = getTotalBytesToDownload()
+        let downloaded = getTotalBytesDownloaded()
+        return max(0, total - downloaded)
     }
 
     private func formatBytes(_ bytes: Int64) -> String {

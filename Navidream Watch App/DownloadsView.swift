@@ -15,27 +15,135 @@ struct DownloadsView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
-                // Show active downloads if any
-                if !downloadManager.activeDownloads.isEmpty {
-                    NavigationLink(destination: ActiveDownloadsView()) {
+                // Download Statistics Panel
+                let totalPending = downloadManager.getTotalPendingDownloads()
+                if totalPending > 0 {
+                    VStack(spacing: 8) {
                         HStack {
-                            Image(systemName: "arrow.down.circle")
-                                .foregroundColor(.accentColor)
-                            VStack(alignment: .leading) {
-                                Text("\(downloadManager.activeDownloads.count) downloading")
-                                    .font(.caption)
-                                Text("Tap to view progress")
+                            Image(systemName: "arrow.down.circle.fill")
+                                .foregroundColor(.blue)
+                            Text("Download Status")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                            Spacer()
+                        }
+
+                        VStack(spacing: 4) {
+                            HStack {
+                                Text("Active:")
                                     .font(.caption2)
                                     .foregroundColor(.secondary)
+                                Spacer()
+                                Text("\(downloadManager.getActiveDownloadCount())")
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                    .foregroundColor(.green)
                             }
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+
+                            HStack {
+                                Text("Queued:")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Text("\(downloadManager.getQueuedDownloadCount())")
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                    .foregroundColor(.orange)
+                            }
+
+                            HStack {
+                                Text("Total Pending:")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Text("\(totalPending)")
+                                    .font(.caption)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.blue)
+                            }
+
+                            if downloadManager.getActiveDownloadCount() > 0 {
+                                let avgProgress = downloadManager.getAverageDownloadProgress()
+                                HStack {
+                                    Text("Avg Progress:")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                    Spacer()
+                                    Text("\(Int(avgProgress * 100))%")
+                                        .font(.caption)
+                                        .fontWeight(.medium)
+                                }
+
+                                ProgressView(value: avgProgress)
+                                    .progressViewStyle(.linear)
+                                    .tint(.blue)
+
+                                Divider()
+                                    .padding(.vertical, 2)
+
+                                let totalBytes = downloadManager.getTotalBytesToDownload()
+                                let downloadedBytes = downloadManager.getTotalBytesDownloaded()
+                                let remainingBytes = downloadManager.getBytesRemaining()
+
+                                VStack(spacing: 4) {
+                                    HStack {
+                                        Text("Downloaded:")
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                        Spacer()
+                                        Text(formatBytes(downloadedBytes))
+                                            .font(.caption)
+                                            .fontWeight(.medium)
+                                            .foregroundColor(.green)
+                                    }
+
+                                    HStack {
+                                        Text("Total Size:")
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                        Spacer()
+                                        Text(formatBytes(totalBytes))
+                                            .font(.caption)
+                                            .fontWeight(.medium)
+                                    }
+
+                                    HStack {
+                                        Text("Remaining:")
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                        Spacer()
+                                        Text(formatBytes(remainingBytes))
+                                            .font(.caption)
+                                            .fontWeight(.bold)
+                                            .foregroundColor(.orange)
+                                    }
+
+                                    if totalBytes > 0 {
+                                        let bytesProgress = Double(downloadedBytes) / Double(totalBytes)
+                                        ProgressView(value: bytesProgress)
+                                            .progressViewStyle(.linear)
+                                            .tint(.green)
+                                    }
+                                }
+                            }
                         }
-                        .padding(.vertical, 8)
+                        .padding(.vertical, 4)
+
+                        NavigationLink(destination: ActiveDownloadsView()) {
+                            HStack {
+                                Text("View Details")
+                                    .font(.caption2)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption2)
+                            }
+                            .foregroundColor(.blue)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
+                    .padding(8)
+                    .background(Color.blue.opacity(0.1))
+                    .cornerRadius(8)
 
                     Divider()
                 }
