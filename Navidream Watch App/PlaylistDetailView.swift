@@ -110,6 +110,68 @@ struct PlaylistDetailView: View {
                             }
                         }
 
+                        if !downloadedSongIds.isEmpty {
+                            HStack(spacing: 8) {
+                                Button(action: {
+                                    let songs = downloadedSongIds.compactMap { id in
+                                        downloadManager.downloadedSongs[id]
+                                    }.map { downloaded in
+                                        Song(
+                                            id: downloaded.songId,
+                                            title: downloaded.title,
+                                            album: downloaded.album,
+                                            albumId: downloaded.album,
+                                            artist: downloaded.artist,
+                                            artistId: nil,
+                                            track: nil,
+                                            year: nil,
+                                            genre: nil,
+                                            coverArt: downloaded.coverArt,
+                                            size: Int(downloaded.fileSize),
+                                            contentType: nil,
+                                            suffix: nil,
+                                            duration: nil,
+                                            bitRate: nil,
+                                            path: nil
+                                        )
+                                    }
+                                    player.playQueue(songs, startingAt: 0)
+                                }) {
+                                    Label("Play", systemImage: "play.fill")
+                                }
+                                .buttonStyle(.borderedProminent)
+
+                                Button(action: {
+                                    let songs = downloadedSongIds.compactMap { id in
+                                        downloadManager.downloadedSongs[id]
+                                    }.map { downloaded in
+                                        Song(
+                                            id: downloaded.songId,
+                                            title: downloaded.title,
+                                            album: downloaded.album,
+                                            albumId: downloaded.album,
+                                            artist: downloaded.artist,
+                                            artistId: nil,
+                                            track: nil,
+                                            year: nil,
+                                            genre: nil,
+                                            coverArt: downloaded.coverArt,
+                                            size: Int(downloaded.fileSize),
+                                            contentType: nil,
+                                            suffix: nil,
+                                            duration: nil,
+                                            bitRate: nil,
+                                            path: nil
+                                        )
+                                    }
+                                    player.playQueueShuffled(songs)
+                                }) {
+                                    Image(systemName: "shuffle")
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                        }
+
                         if downloadedSongIds.isEmpty {
                             Divider()
 

@@ -226,6 +226,18 @@ class AudioPlayer: NSObject, ObservableObject {
         isPlaying = false
     }
 
+    func stop() {
+        player?.pause()
+        player?.replaceCurrentItem(with: nil)
+        isPlaying = false
+        currentSong = nil
+        queue = []
+        currentIndex = 0
+        currentTime = 0
+        duration = 0
+        print("⏹️ Playback stopped and queue cleared")
+    }
+
     func togglePlayPause() {
         if isPlaying {
             pause()

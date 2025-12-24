@@ -41,6 +41,22 @@ struct ArtistDetailView: View {
                             .foregroundColor(.secondary)
 
                         if !downloadedAlbums.isEmpty {
+                            HStack(spacing: 8) {
+                                Button(action: {
+                                    playAllDownloadedSongs(for: artistName)
+                                }) {
+                                    Label("Play", systemImage: "play.fill")
+                                }
+                                .buttonStyle(.borderedProminent)
+
+                                Button(action: {
+                                    shuffleAllDownloadedSongs(for: artistName)
+                                }) {
+                                    Image(systemName: "shuffle")
+                                }
+                                .buttonStyle(.bordered)
+                            }
+
                             Divider()
 
                             VStack(spacing: 8) {
@@ -308,5 +324,67 @@ struct ArtistDetailView: View {
                 player.playQueueShuffled(allSongs)
             }
         }
+    }
+
+    private func playAllDownloadedSongs(for artistName: String) {
+        let downloadedSongs = downloadManager.downloadedSongs.values.filter { $0.artist == artistName }
+        let songs = downloadedSongs.map { downloaded in
+            Song(
+                id: downloaded.songId,
+                title: downloaded.title,
+                album: downloaded.album,
+                albumId: downloaded.album,
+                artist: downloaded.artist,
+                artistId: nil,
+                track: nil,
+                year: nil,
+                genre: nil,
+                coverArt: downloaded.coverArt,
+                size: Int(downloaded.fileSize),
+                contentType: nil,
+                suffix: nil,
+                duration: nil,
+                bitRate: nil,
+                path: nil
+            )
+        }
+
+        guard !songs.isEmpty else {
+            print("⚠️ No downloaded songs found for artist: \(artistName)")
+            return
+        }
+
+        player.playQueue(songs, startingAt: 0)
+    }
+
+    private func shuffleAllDownloadedSongs(for artistName: String) {
+        let downloadedSongs = downloadManager.downloadedSongs.values.filter { $0.artist == artistName }
+        let songs = downloadedSongs.map { downloaded in
+            Song(
+                id: downloaded.songId,
+                title: downloaded.title,
+                album: downloaded.album,
+                albumId: downloaded.album,
+                artist: downloaded.artist,
+                artistId: nil,
+                track: nil,
+                year: nil,
+                genre: nil,
+                coverArt: downloaded.coverArt,
+                size: Int(downloaded.fileSize),
+                contentType: nil,
+                suffix: nil,
+                duration: nil,
+                bitRate: nil,
+                path: nil
+            )
+        }
+
+        guard !songs.isEmpty else {
+            print("⚠️ No downloaded songs found for artist: \(artistName)")
+            return
+        }
+
+        player.playQueueShuffled(songs)
     }
 }

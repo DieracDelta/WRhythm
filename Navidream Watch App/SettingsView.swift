@@ -10,7 +10,15 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var api = NavidromeAPI.shared
     @ObservedObject var downloadManager = DownloadManager.shared
-    @AppStorage("offlineMode") private var offlineMode = false
+    @AppStorage("offlineMode") private var offlineMode = false {
+        didSet {
+            if offlineMode {
+                // Stop playback when entering offline mode
+                AudioPlayer.shared.stop()
+                print("🔇 Stopped playback due to offline mode")
+            }
+        }
+    }
     @State private var showingLogoutConfirmation = false
 
     var body: some View {
