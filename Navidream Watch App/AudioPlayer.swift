@@ -20,6 +20,11 @@ class AudioPlayer: NSObject, ObservableObject {
     @Published var queue: [Song] = []
     @Published var currentIndex: Int = 0
     @Published var isShuffled = false
+    @Published var volume: Float = 1.0 {
+        didSet {
+            player?.volume = volume
+        }
+    }
 
     private var player: AVPlayer?
     private var timeObserver: Any?
@@ -35,10 +40,12 @@ class AudioPlayer: NSObject, ObservableObject {
 
     private func setupAudioSession() {
         do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
-            try AVAudioSession.sharedInstance().setActive(true)
+            let audioSession = AVAudioSession.sharedInstance()
+            try audioSession.setCategory(.playback, mode: .default, options: [])
+            try audioSession.setActive(true)
+            print("✅ Audio session configured for background playback")
         } catch {
-            print("Failed to set up audio session: \(error)")
+            print("❌ Failed to set up audio session: \(error)")
         }
     }
 
@@ -180,6 +187,7 @@ class AudioPlayer: NSObject, ObservableObject {
 
         let playerItem = AVPlayerItem(url: playURL)
         player = AVPlayer(playerItem: playerItem)
+        player?.volume = volume  // Apply current volume
 
         addPeriodicTimeObserver()
         observePlayerItem(playerItem)

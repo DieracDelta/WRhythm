@@ -93,6 +93,19 @@ struct NowPlayingView: View {
                         .disabled(player.currentIndex >= player.queue.count - 1)
                     }
 
+                    VStack(spacing: 4) {
+                        HStack {
+                            Image(systemName: "speaker.fill")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            Slider(value: $player.volume, in: 0...1)
+                            Image(systemName: "speaker.wave.3.fill")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.horizontal, 4)
+                    }
+
                     if player.queue.count > 1 {
                         HStack(spacing: 8) {
                             Text("Track \(player.currentIndex + 1) of \(player.queue.count)")
