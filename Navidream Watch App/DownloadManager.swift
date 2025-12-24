@@ -23,7 +23,8 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     static let shared = DownloadManager()
 
     @Published var downloadedSongs: [String: DownloadedSong] = [:]
-    @Published var activeDownloads: [String: Double] = [:] // songId -> progress
+    @Published var activeDownloads: [String: Double] = [:] // songId -> progress (0-1)
+    @Published var downloadBytesReceived: [String: Int64] = [:] // songId -> bytes downloaded
     @Published var maxConcurrentDownloads: Int = UserDefaults.standard.integer(forKey: "maxConcurrentDownloads") == 0 ? 8 : UserDefaults.standard.integer(forKey: "maxConcurrentDownloads") {
         didSet {
             UserDefaults.standard.set(maxConcurrentDownloads, forKey: "maxConcurrentDownloads")
@@ -157,12 +158,32 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     // MARK: - URLSessionDownloadDelegate
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
-        guard let songId = taskToSongId[downloadTask] else { return }
-
-        let progress = totalBytesExpectedToWrite > 0 ? Double(totalBytesWritten) / Double(totalBytesExpectedToWrite) : 0
+        guard let songId = taskToSongId[downloadTask],
+              let song = songMetadata[songId] else {
+            return
+        }
 
         DispatchQueue.main.async {
-            self.activeDownloads[songId] = progress
+            self.downloadBytesReceived[songId] = totalBytesWritten
+
+            // If server provides Content-Length, use it for accurate progress
+            if totalBytesExpectedToWrite > 0 {
+                let progress = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
+                self.activeDownloads[songId] = progress
+            } else {
+                // No Content-Length (transcoding) - estimate based on song duration
+                // Assume ~128kbps (16KB/s) for MP3 transcoding
+                if let duration = song.duration, duration > 0 {
+                    let estimatedSize = Int64(duration) * 16000 // 16KB/s * duration in seconds
+                    let progress = min(0.99, Double(totalBytesWritten) / Double(estimatedSize))
+                    self.activeDownloads[songId] = progress
+                } else {
+                    // No duration either - just show indeterminate progress
+                    // Fake progress that never reaches 100%
+                    let fakProgress = min(0.95, Double(totalBytesWritten) / 5_000_000.0)
+                    self.activeDownloads[songId] = fakProgress
+                }
+            }
         }
     }
 
@@ -203,6 +224,7 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
             DispatchQueue.main.async {
                 self.downloadedSongs[song.id] = downloadedSong
                 self.activeDownloads.removeValue(forKey: song.id)
+                self.downloadBytesReceived.removeValue(forKey: song.id)
                 self.downloadTasks.removeValue(forKey: song.id)
                 self.taskToSongId.removeValue(forKey: downloadTask)
                 self.songMetadata.removeValue(forKey: song.id)
@@ -216,6 +238,7 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
             print("❌ Failed to save downloaded file: \(error)")
             DispatchQueue.main.async {
                 self.activeDownloads.removeValue(forKey: song.id)
+                self.downloadBytesReceived.removeValue(forKey: song.id)
                 self.downloadTasks.removeValue(forKey: song.id)
                 self.taskToSongId.removeValue(forKey: downloadTask)
                 self.songMetadata.removeValue(forKey: song.id)
@@ -236,6 +259,7 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
             print("❌ Download failed for song \(songId): \(error)")
             DispatchQueue.main.async {
                 self.activeDownloads.removeValue(forKey: songId)
+                self.downloadBytesReceived.removeValue(forKey: songId)
                 self.downloadTasks.removeValue(forKey: songId)
                 self.taskToSongId.removeValue(forKey: downloadTask)
                 self.songMetadata.removeValue(forKey: songId)
