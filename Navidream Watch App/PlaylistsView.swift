@@ -11,6 +11,18 @@ struct PlaylistsView: View {
     @State private var playlists: [PlaylistSummary] = []
     @State private var isLoading = false
     @State private var errorMessage = ""
+    @ObservedObject var downloadManager = DownloadManager.shared
+    @AppStorage("offlineMode") private var offlineMode = false
+
+    private var filteredPlaylists: [PlaylistSummary] {
+        if offlineMode {
+            // Only show playlists that have at least one downloaded song
+            // This is approximate since we don't have song list in summary
+            // Users will see filtered content when they open the playlist
+            return playlists
+        }
+        return playlists
+    }
 
     var body: some View {
         Group {
@@ -36,7 +48,7 @@ struct PlaylistsView: View {
                     }
                 }
             } else {
-                List(playlists) { playlist in
+                List(filteredPlaylists) { playlist in
                     NavigationLink(destination: PlaylistDetailView(playlistId: playlist.id, playlistName: playlist.name)) {
                         HStack {
                             if let coverArtId = playlist.coverArt,
@@ -75,7 +87,7 @@ struct PlaylistsView: View {
         }
         .navigationTitle("Playlists")
         .onAppear {
-            if playlists.isEmpty {
+            if !offlineMode && playlists.isEmpty {
                 loadPlaylists()
             }
         }

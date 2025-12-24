@@ -10,6 +10,7 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var api = NavidromeAPI.shared
     @ObservedObject var downloadManager = DownloadManager.shared
+    @AppStorage("offlineMode") private var offlineMode = false
     @State private var showingLogoutConfirmation = false
 
     var body: some View {
@@ -59,6 +60,16 @@ struct SettingsView: View {
                     Text("Maximum number of simultaneous downloads")
                         .font(.caption2)
                         .foregroundColor(.secondary)
+                }
+
+                Toggle(isOn: $offlineMode) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Offline Mode")
+                            .font(.caption)
+                        Text("Only show downloaded content")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
 

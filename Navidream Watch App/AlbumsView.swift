@@ -19,11 +19,76 @@ struct AlbumsView: View {
     @State private var downloadProgress: Double = 0
     @State private var downloadedBytes: Int64 = 0
     @State private var totalBytes: Int64 = 0
+    @ObservedObject var downloadManager = DownloadManager.shared
+    @AppStorage("offlineMode") private var offlineMode = false
     private let pageSize = 20
+
+    private var filteredAlbums: [AlbumSummary] {
+        if offlineMode {
+            return albums.filter { downloadManager.hasDownloadedSongsForAlbum($0.id) }
+        }
+        return albums
+    }
 
     var body: some View {
         Group {
-            if albums.isEmpty && isLoading {
+            if offlineMode {
+                // Offline mode: show downloaded albums only
+                let downloadedAlbums = downloadManager.getDownloadedAlbums()
+                if downloadedAlbums.isEmpty {
+                    VStack {
+                        Image(systemName: "arrow.down.circle")
+                            .font(.largeTitle)
+                            .foregroundColor(.secondary)
+                        Text("No downloaded albums")
+                            .font(.headline)
+                        Text("Download albums while online to access them here")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
+                    }
+                } else {
+                    List {
+                        ForEach(downloadedAlbums, id: \.id) { album in
+                            NavigationLink(destination: AlbumDetailView(albumId: album.id)) {
+                                HStack {
+                                    if let coverArtId = album.coverArt,
+                                       let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 100) {
+                                        AsyncImage(url: coverURL) { image in
+                                            image
+                                                .resizable()
+                                                .aspectRatio(contentMode: .fill)
+                                        } placeholder: {
+                                            Color.gray
+                                        }
+                                        .frame(width: 40, height: 40)
+                                        .cornerRadius(4)
+                                    }
+
+                                    VStack(alignment: .leading) {
+                                        Text(album.name)
+                                            .font(.headline)
+                                            .lineLimit(1)
+                                        if let artist = album.artist {
+                                            Text(artist)
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                                .lineLimit(1)
+                                        }
+                                    }
+
+                                    Spacer()
+
+                                    Image(systemName: "arrow.down.circle.fill")
+                                        .font(.caption2)
+                                        .foregroundColor(.green)
+                                }
+                            }
+                        }
+                    }
+                }
+            } else if albums.isEmpty && isLoading {
                 VStack(spacing: 8) {
                     ProgressView("Loading albums...", value: downloadProgress, total: 1.0)
 
@@ -82,7 +147,7 @@ struct AlbumsView: View {
                 }
             } else {
                 List {
-                    ForEach(albums) { album in
+                    ForEach(filteredAlbums) { album in
                         NavigationLink(destination: AlbumDetailView(albumId: album.id)) {
                             HStack {
                                 if let coverArtId = album.coverArt,
@@ -130,7 +195,7 @@ struct AlbumsView: View {
         }
         .navigationTitle("Albums")
         .onAppear {
-            if albums.isEmpty {
+            if !offlineMode && albums.isEmpty {
                 loadInitialAlbums()
             }
         }

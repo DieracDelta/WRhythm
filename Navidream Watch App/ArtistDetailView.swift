@@ -15,10 +15,81 @@ struct ArtistDetailView: View {
     @State private var isLoading = true
     @State private var errorMessage = ""
     @ObservedObject var downloadManager = DownloadManager.shared
+    @ObservedObject var player = AudioPlayer.shared
+    @AppStorage("offlineMode") private var offlineMode = false
+
+    private func filteredAlbums(_ albums: [AlbumSummary]) -> [AlbumSummary] {
+        if offlineMode {
+            return albums.filter { downloadManager.hasDownloadedSongsForAlbum($0.id) }
+        }
+        return albums
+    }
 
     var body: some View {
         Group {
-            if isLoading {
+            if offlineMode {
+                // Offline mode: show downloaded albums for this artist
+                let downloadedAlbums = downloadManager.getDownloadedAlbums().filter { $0.artist == artistName }
+                ScrollView {
+                    VStack(spacing: 12) {
+                        Text(artistName)
+                            .font(.headline)
+
+                        Text("\(downloadedAlbums.count) album\(downloadedAlbums.count == 1 ? "" : "s")")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+
+                        if !downloadedAlbums.isEmpty {
+                            Divider()
+
+                            VStack(spacing: 8) {
+                                ForEach(downloadedAlbums, id: \.id) { album in
+                                    NavigationLink(destination: AlbumDetailView(albumId: album.id)) {
+                                        HStack {
+                                            if let coverArtId = album.coverArt,
+                                               let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 100) {
+                                                AsyncImage(url: coverURL) { image in
+                                                    image
+                                                        .resizable()
+                                                        .aspectRatio(contentMode: .fill)
+                                                } placeholder: {
+                                                    Color.gray
+                                                }
+                                                .frame(width: 40, height: 40)
+                                                .cornerRadius(4)
+                                            }
+
+                                            VStack(alignment: .leading) {
+                                                Text(album.name)
+                                                    .font(.caption)
+                                                    .lineLimit(1)
+                                            }
+
+                                            Spacer()
+
+                                            Image(systemName: "arrow.down.circle.fill")
+                                                .font(.caption2)
+                                                .foregroundColor(.green)
+                                        }
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        } else {
+                            VStack {
+                                Image(systemName: "arrow.down.circle")
+                                    .font(.title)
+                                    .foregroundColor(.secondary)
+                                Text("No downloaded albums")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding()
+                        }
+                    }
+                    .padding()
+                }
+            } else if isLoading {
                 ProgressView("Loading albums...")
             } else if !errorMessage.isEmpty {
                 VStack {
@@ -37,7 +108,8 @@ struct ArtistDetailView: View {
                         Text(artistName)
                             .font(.headline)
 
-                        Text("\(artist.album.count) albums")
+                        let albumsToShow = filteredAlbums(artist.album)
+                        Text("\(albumsToShow.count) albums")
                             .font(.caption)
                             .foregroundColor(.secondary)
 
@@ -79,7 +151,7 @@ struct ArtistDetailView: View {
                         Divider()
 
                         VStack(spacing: 8) {
-                            ForEach(artist.album) { album in
+                            ForEach(filteredAlbums(artist.album)) { album in
                                 NavigationLink(destination: AlbumDetailView(albumId: album.id)) {
                                     HStack {
                                         if let coverArtId = album.coverArt,
@@ -125,7 +197,9 @@ struct ArtistDetailView: View {
         }
         .navigationTitle(artistName)
         .onAppear {
-            loadArtist()
+            if !offlineMode {
+                loadArtist()
+            }
         }
     }
 

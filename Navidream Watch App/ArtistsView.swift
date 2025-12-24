@@ -19,11 +19,82 @@ struct ArtistsView: View {
     @State private var downloadProgress: Double = 0
     @State private var downloadedBytes: Int64 = 0
     @State private var totalBytes: Int64 = 0
+    @ObservedObject var downloadManager = DownloadManager.shared
+    @AppStorage("offlineMode") private var offlineMode = false
     private let batchSize = 20
+
+    private var filteredDisplayedArtists: [Artist] {
+        if offlineMode {
+            // Filter artists that have at least one downloaded song
+            return displayedArtists.filter { artist in
+                // Check if any album has downloaded songs
+                downloadManager.downloadedSongs.values.contains { song in
+                    song.artist == artist.name
+                }
+            }
+        }
+        return displayedArtists
+    }
 
     var body: some View {
         Group {
-            if isLoading {
+            if offlineMode {
+                // Offline mode: show downloaded artists only
+                let downloadedArtists = downloadManager.getDownloadedArtists()
+                if downloadedArtists.isEmpty {
+                    VStack {
+                        Image(systemName: "arrow.down.circle")
+                            .font(.largeTitle)
+                            .foregroundColor(.secondary)
+                        Text("No downloaded artists")
+                            .font(.headline)
+                        Text("Download music while online to access it here")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
+                    }
+                } else {
+                    List {
+                        ForEach(Array(downloadedArtists.enumerated()), id: \.element.name) { index, artist in
+                            NavigationLink(destination: ArtistDetailView(artistId: "offline-\(artist.name)", artistName: artist.name)) {
+                                HStack {
+                                    if let coverArtId = artist.coverArt,
+                                       let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 100) {
+                                        AsyncImage(url: coverURL) { image in
+                                            image
+                                                .resizable()
+                                                .aspectRatio(contentMode: .fill)
+                                        } placeholder: {
+                                            Color.gray
+                                        }
+                                        .frame(width: 40, height: 40)
+                                        .cornerRadius(4)
+                                    }
+
+                                    VStack(alignment: .leading) {
+                                        Text(artist.name)
+                                            .font(.headline)
+                                            .lineLimit(1)
+                                        let albumCount = downloadManager.getDownloadedAlbums().filter { $0.artist == artist.name }.count
+                                        if albumCount > 0 {
+                                            Text("\(albumCount) album\(albumCount == 1 ? "" : "s")")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        }
+                                    }
+
+                                    Spacer()
+
+                                    Image(systemName: "arrow.down.circle.fill")
+                                        .font(.caption2)
+                                        .foregroundColor(.green)
+                                }
+                            }
+                        }
+                    }
+                }
+            } else if isLoading {
                 VStack(spacing: 8) {
                     ProgressView("Loading all artists...", value: downloadProgress, total: 1.0)
 
@@ -90,7 +161,7 @@ struct ArtistsView: View {
                 }
             } else {
                 List {
-                    ForEach(displayedArtists) { artist in
+                    ForEach(filteredDisplayedArtists) { artist in
                         NavigationLink(destination: ArtistDetailView(artistId: artist.id, artistName: artist.name)) {
                             HStack {
                                 if let coverArtId = artist.coverArt,
@@ -138,15 +209,15 @@ struct ArtistsView: View {
                 }
             }
         }
-        .navigationTitle("Artists (\(displayedArtists.count))")
+        .navigationTitle(offlineMode ? "Artists (\(downloadManager.getDownloadedArtists().count))" : "Artists (\(filteredDisplayedArtists.count))")
         .onAppear {
             print("👀 ArtistsView appeared")
             print("👀 Current state - isLoading: \(isLoading), artists count: \(artists.count), displayed: \(displayedArtists.count)")
-            if artists.isEmpty && !isLoading {
+            if !offlineMode && artists.isEmpty && !isLoading {
                 print("👀 Triggering load because artists is empty")
                 loadArtists()
             } else {
-                print("👀 Not loading - artists: \(artists.count), isLoading: \(isLoading)")
+                print("👀 Not loading - offlineMode: \(offlineMode), artists: \(artists.count), isLoading: \(isLoading)")
             }
         }
     }

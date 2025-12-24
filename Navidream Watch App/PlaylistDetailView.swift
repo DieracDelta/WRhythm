@@ -16,6 +16,7 @@ struct PlaylistDetailView: View {
     @State private var errorMessage = ""
     @ObservedObject var player = AudioPlayer.shared
     @ObservedObject var downloadManager = DownloadManager.shared
+    @AppStorage("offlineMode") private var offlineMode = false
 
     var body: some View {
         Group {
@@ -94,7 +95,7 @@ struct PlaylistDetailView: View {
                         Divider()
 
                         VStack(spacing: 8) {
-                            ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
+                            ForEach(Array(filteredSongs(songs).enumerated()), id: \.element.id) { index, song in
                                 Button(action: {
                                     player.playQueue(songs, startingAt: index)
                                 }) {
@@ -147,7 +148,9 @@ struct PlaylistDetailView: View {
         }
         .navigationTitle("Playlist")
         .onAppear {
-            loadPlaylist()
+            if !offlineMode {
+                loadPlaylist()
+            }
         }
     }
 
@@ -174,5 +177,12 @@ struct PlaylistDetailView: View {
     private func isPlaylistDownloaded(_ playlist: Playlist) -> Bool {
         guard let songs = playlist.entry else { return false }
         return songs.allSatisfy { downloadManager.isDownloaded($0.id) }
+    }
+
+    private func filteredSongs(_ songs: [Song]) -> [Song] {
+        if offlineMode {
+            return songs.filter { downloadManager.isDownloaded($0.id) }
+        }
+        return songs
     }
 }

@@ -390,6 +390,47 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         }
     }
 
+    // MARK: - Offline Mode Filtering
+
+    func hasDownloadedSongsForAlbum(_ albumId: String) -> Bool {
+        return downloadedSongs.values.contains { $0.album == albumId }
+    }
+
+    func getDownloadedSongsForAlbum(_ albumId: String) -> [String] {
+        return downloadedSongs.values.filter { $0.album == albumId }.map { $0.songId }
+    }
+
+    func getDownloadedAlbums() -> [(id: String, name: String, artist: String?, coverArt: String?)] {
+        var albums: [String: (name: String, artist: String?, coverArt: String?)] = [:]
+
+        for song in downloadedSongs.values {
+            if let albumId = song.album {
+                // Use first song's data for the album
+                if albums[albumId] == nil {
+                    albums[albumId] = (song.album ?? "Unknown Album", song.artist, song.coverArt)
+                }
+            }
+        }
+
+        return albums.map { (id: $0.key, name: $0.value.name, artist: $0.value.artist, coverArt: $0.value.coverArt) }
+            .sorted { $0.name < $1.name }
+    }
+
+    func getDownloadedArtists() -> [(name: String, coverArt: String?)] {
+        var artists: [String: String?] = [:] // artistName -> coverArt
+
+        for song in downloadedSongs.values {
+            if let artistName = song.artist {
+                if artists[artistName] == nil {
+                    artists[artistName] = song.coverArt
+                }
+            }
+        }
+
+        return artists.map { (name: $0.key, coverArt: $0.value) }
+            .sorted { $0.name < $1.name }
+    }
+
     // MARK: - Statistics
 
     func getTotalDownloaded() -> Int {

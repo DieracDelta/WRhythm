@@ -13,6 +13,32 @@ struct FavouritesView: View {
     @State private var errorMessage = ""
     @ObservedObject var player = AudioPlayer.shared
     @ObservedObject var downloadManager = DownloadManager.shared
+    @AppStorage("offlineMode") private var offlineMode = false
+
+    private func filteredSongs(_ songs: [Song]) -> [Song] {
+        if offlineMode {
+            return songs.filter { downloadManager.isDownloaded($0.id) }
+        }
+        return songs
+    }
+
+    private func filteredAlbums(_ albums: [AlbumSummary]) -> [AlbumSummary] {
+        if offlineMode {
+            return albums.filter { downloadManager.hasDownloadedSongsForAlbum($0.id) }
+        }
+        return albums
+    }
+
+    private func filteredArtists(_ artists: [Artist]) -> [Artist] {
+        if offlineMode {
+            return artists.filter { artist in
+                downloadManager.downloadedSongs.values.contains { song in
+                    song.artist == artist.name
+                }
+            }
+        }
+        return artists
+    }
 
     var body: some View {
         Group {
@@ -49,21 +75,23 @@ struct FavouritesView: View {
                         VStack(spacing: 16) {
                             // Starred Songs
                             if let songs = starred.song, !songs.isEmpty {
+                                let songsToShow = filteredSongs(songs)
+                                if !songsToShow.isEmpty {
                                 VStack(alignment: .leading, spacing: 8) {
                                     HStack {
                                         Text("Songs")
                                             .font(.headline)
                                         Spacer()
-                                        if songs.count > 1 {
+                                        if songsToShow.count > 1 {
                                             HStack(spacing: 8) {
                                                 Button(action: {
-                                                    player.playQueue(songs, startingAt: 0)
+                                                    player.playQueue(songsToShow, startingAt: 0)
                                                 }) {
                                                     Image(systemName: "play.fill")
                                                         .font(.caption)
                                                 }
                                                 Button(action: {
-                                                    player.playQueueShuffled(songs)
+                                                    player.playQueueShuffled(songsToShow)
                                                 }) {
                                                     Image(systemName: "shuffle")
                                                         .font(.caption)
@@ -72,9 +100,9 @@ struct FavouritesView: View {
                                         }
                                     }
 
-                                    ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
+                                    ForEach(Array(songsToShow.enumerated()), id: \.element.id) { index, song in
                                         Button(action: {
-                                            player.playQueue(songs, startingAt: index)
+                                            player.playQueue(songsToShow, startingAt: index)
                                         }) {
                                             HStack {
                                                 if let coverArtId = song.coverArt,
@@ -133,15 +161,18 @@ struct FavouritesView: View {
                                 }
 
                                 Divider()
+                                }
                             }
 
                             // Starred Albums
                             if let albums = starred.album, !albums.isEmpty {
+                                let albumsToShow = filteredAlbums(albums)
+                                if !albumsToShow.isEmpty {
                                 VStack(alignment: .leading, spacing: 8) {
                                     Text("Albums")
                                         .font(.headline)
 
-                                    ForEach(albums) { album in
+                                    ForEach(albumsToShow) { album in
                                         NavigationLink(destination: AlbumDetailView(albumId: album.id)) {
                                             HStack {
                                                 if let coverArtId = album.coverArt,
@@ -174,15 +205,18 @@ struct FavouritesView: View {
                                 }
 
                                 Divider()
+                                }
                             }
 
                             // Starred Artists
                             if let artists = starred.artist, !artists.isEmpty {
+                                let artistsToShow = filteredArtists(artists)
+                                if !artistsToShow.isEmpty {
                                 VStack(alignment: .leading, spacing: 8) {
                                     Text("Artists")
                                         .font(.headline)
 
-                                    ForEach(artists) { artist in
+                                    ForEach(artistsToShow) { artist in
                                         NavigationLink(destination: ArtistDetailView(artistId: artist.id, artistName: artist.name)) {
                                             HStack {
                                                 if let coverArtId = artist.coverArt,
@@ -212,6 +246,7 @@ struct FavouritesView: View {
                                         }
                                     }
                                 }
+                                }
                             }
                         }
                         .padding()
@@ -221,7 +256,7 @@ struct FavouritesView: View {
         }
         .navigationTitle("Favourites")
         .onAppear {
-            if starred == nil {
+            if !offlineMode && starred == nil {
                 loadStarred()
             }
         }
