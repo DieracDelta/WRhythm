@@ -7,6 +7,57 @@
 
 import SwiftUI
 
+struct PlaylistSongRowView: View {
+    let song: Song
+    let onTap: () -> Void
+    @ObservedObject var player = AudioPlayer.shared
+    @ObservedObject var downloadManager = DownloadManager.shared
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack {
+                VStack(alignment: .leading) {
+                    Text(song.title)
+                        .font(.caption)
+                        .lineLimit(1)
+                    if let artist = song.artist {
+                        Text(artist)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+
+                Spacer()
+
+                if downloadManager.isDownloading(song.id) {
+                    VStack(spacing: 2) {
+                        ProgressView()
+                            .scaleEffect(0.7)
+                        let progress = downloadManager.downloadProgress(song.id)
+                        if progress > 0 {
+                            Text("\(Int(progress * 100))%")
+                                .font(.system(size: 8))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                } else if downloadManager.isDownloaded(song.id) {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .font(.caption2)
+                        .foregroundColor(.green)
+                }
+
+                if player.currentSong?.id == song.id && player.isPlaying {
+                    Image(systemName: "speaker.wave.2.fill")
+                        .font(.caption2)
+                        .foregroundColor(.accentColor)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 struct PlaylistDetailView: View {
     let playlistId: String
     let playlistName: String
@@ -15,9 +66,10 @@ struct PlaylistDetailView: View {
     @State private var isLoading = true
     @State private var isSyncing = false
     @State private var errorMessage = ""
-    @ObservedObject var player = AudioPlayer.shared
     @ObservedObject var downloadManager = DownloadManager.shared
     @AppStorage("offlineMode") private var offlineMode = false
+
+    private var player: AudioPlayer { AudioPlayer.shared }
 
     var body: some View {
         Group {
@@ -78,65 +130,34 @@ struct PlaylistDetailView: View {
                             Divider()
 
                             VStack(spacing: 8) {
-                                ForEach(downloadedSongIds, id: \.self) { songId in
-                                    if let downloadedSong = downloadManager.downloadedSongs[songId] {
-                                        Button(action: {
-                                            // Build Song objects from downloaded songs
-                                            let songs = downloadedSongIds.compactMap { id in
-                                                downloadManager.downloadedSongs[id]
-                                            }.map { downloaded in
-                                                Song(
-                                                    id: downloaded.songId,
-                                                    title: downloaded.title,
-                                                    album: downloaded.album,
-                                                    albumId: downloaded.album,
-                                                    artist: downloaded.artist,
-                                                    artistId: nil,
-                                                    track: nil,
-                                                    year: nil,
-                                                    genre: nil,
-                                                    coverArt: downloaded.coverArt,
-                                                    size: Int(downloaded.fileSize),
-                                                    contentType: nil,
-                                                    suffix: nil,
-                                                    duration: nil,
-                                                    bitRate: nil,
-                                                    path: nil
-                                                )
-                                            }
-                                            if let index = songs.firstIndex(where: { $0.id == songId }) {
-                                                player.playQueue(songs, startingAt: index)
-                                            }
-                                        }) {
-                                            HStack {
-                                                VStack(alignment: .leading) {
-                                                    Text(downloadedSong.title)
-                                                        .font(.caption)
-                                                        .lineLimit(1)
-                                                    if let artist = downloadedSong.artist {
-                                                        Text(artist)
-                                                            .font(.caption2)
-                                                            .foregroundColor(.secondary)
-                                                            .lineLimit(1)
-                                                    }
-                                                }
+                                let songs = downloadedSongIds.compactMap { id in
+                                    downloadManager.downloadedSongs[id]
+                                }.map { downloaded in
+                                    Song(
+                                        id: downloaded.songId,
+                                        title: downloaded.title,
+                                        album: downloaded.album,
+                                        albumId: downloaded.album,
+                                        artist: downloaded.artist,
+                                        artistId: nil,
+                                        track: nil,
+                                        year: nil,
+                                        genre: nil,
+                                        coverArt: downloaded.coverArt,
+                                        size: Int(downloaded.fileSize),
+                                        contentType: nil,
+                                        suffix: nil,
+                                        duration: nil,
+                                        bitRate: nil,
+                                        path: nil
+                                    )
+                                }
 
-                                                Spacer()
-
-                                                Image(systemName: "arrow.down.circle.fill")
-                                                    .font(.caption2)
-                                                    .foregroundColor(.green)
-
-                                                if player.currentSong?.id == downloadedSong.songId && player.isPlaying {
-                                                    Image(systemName: "speaker.wave.2.fill")
-                                                        .font(.caption2)
-                                                        .foregroundColor(.accentColor)
-                                                }
-                                            }
-                                        }
-                                        .buttonStyle(.plain)
-                                        .id(songId)
+                                ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
+                                    PlaylistSongRowView(song: song) {
+                                        player.playQueue(songs, startingAt: index)
                                     }
+                                    .id(song.id)
                                 }
                             }
                         }
@@ -222,49 +243,9 @@ struct PlaylistDetailView: View {
 
                         VStack(spacing: 8) {
                             ForEach(Array(filteredSongs(songs).enumerated()), id: \.element.id) { index, song in
-                                Button(action: {
+                                PlaylistSongRowView(song: song) {
                                     player.playQueue(songs, startingAt: index)
-                                }) {
-                                    HStack {
-                                        VStack(alignment: .leading) {
-                                            Text(song.title)
-                                                .font(.caption)
-                                                .lineLimit(1)
-                                            if let artist = song.artist {
-                                                Text(artist)
-                                                    .font(.caption2)
-                                                    .foregroundColor(.secondary)
-                                                    .lineLimit(1)
-                                            }
-                                        }
-
-                                        Spacer()
-
-                                        if downloadManager.isDownloading(song.id) {
-                                            VStack(spacing: 2) {
-                                                ProgressView()
-                                                    .scaleEffect(0.7)
-                                                let progress = downloadManager.downloadProgress(song.id)
-                                                if progress > 0 {
-                                                    Text("\(Int(progress * 100))%")
-                                                        .font(.system(size: 8))
-                                                        .foregroundColor(.secondary)
-                                                }
-                                            }
-                                        } else if downloadManager.isDownloaded(song.id) {
-                                            Image(systemName: "arrow.down.circle.fill")
-                                                .font(.caption2)
-                                                .foregroundColor(.green)
-                                        }
-
-                                        if player.currentSong?.id == song.id && player.isPlaying {
-                                            Image(systemName: "speaker.wave.2.fill")
-                                                .font(.caption2)
-                                                .foregroundColor(.accentColor)
-                                        }
-                                    }
                                 }
-                                .buttonStyle(.plain)
                                 .id(song.id)
                             }
                         }

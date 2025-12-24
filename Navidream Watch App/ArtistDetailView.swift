@@ -15,8 +15,9 @@ struct ArtistDetailView: View {
     @State private var isLoading = true
     @State private var errorMessage = ""
     @ObservedObject var downloadManager = DownloadManager.shared
-    @ObservedObject var player = AudioPlayer.shared
     @AppStorage("offlineMode") private var offlineMode = false
+
+    private var player: AudioPlayer { AudioPlayer.shared }
 
     private func filteredAlbums(_ albums: [AlbumSummary]) -> [AlbumSummary] {
         if offlineMode {

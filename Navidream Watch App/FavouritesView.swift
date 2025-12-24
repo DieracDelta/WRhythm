@@ -11,9 +11,10 @@ struct FavouritesView: View {
     @State private var starred: StarredContent?
     @State private var isLoading = false
     @State private var errorMessage = ""
-    @ObservedObject var player = AudioPlayer.shared
     @ObservedObject var downloadManager = DownloadManager.shared
     @AppStorage("offlineMode") private var offlineMode = false
+
+    private var player: AudioPlayer { AudioPlayer.shared }
 
     private func filteredSongs(_ songs: [Song]) -> [Song] {
         if offlineMode {

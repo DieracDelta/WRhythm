@@ -9,7 +9,8 @@ import SwiftUI
 
 struct DownloadsView: View {
     @ObservedObject var downloadManager = DownloadManager.shared
-    @ObservedObject var player = AudioPlayer.shared
+
+    private var player: AudioPlayer { AudioPlayer.shared }
 
     var body: some View {
         ScrollView {
