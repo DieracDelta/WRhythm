@@ -36,7 +36,7 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     private var downloadTasks: [String: URLSessionDownloadTask] = [:]
     private var taskToSongId: [URLSessionDownloadTask: String] = [:]
     private(set) var songMetadata: [String: Song] = [:]  // Expose for reading
-    private var downloadQueue: [Song] = []
+    @Published var downloadQueue: [Song] = []  // Expose queue for UI
     private lazy var downloadSession: URLSession = {
         let config = URLSessionConfiguration.default
         return URLSession(configuration: config, delegate: self, delegateQueue: nil)
@@ -299,6 +299,59 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
                 print("❌ Failed to fetch album \(albumSummary.name): \(error)")
             }
         }
+    }
+
+    // MARK: - Cancel & Retry
+
+    func cancelDownload(_ songId: String) {
+        // Cancel active download
+        if let task = downloadTasks[songId] {
+            task.cancel()
+            print("🛑 Cancelled download for song: \(songId)")
+
+            DispatchQueue.main.async {
+                self.activeDownloads.removeValue(forKey: songId)
+                self.downloadBytesReceived.removeValue(forKey: songId)
+                self.downloadTasks.removeValue(forKey: songId)
+                if let task = self.downloadTasks[songId] {
+                    self.taskToSongId.removeValue(forKey: task)
+                }
+                self.songMetadata.removeValue(forKey: songId)
+
+                // Process next in queue
+                self.processQueue()
+            }
+            return
+        }
+
+        // Remove from queue
+        if let index = downloadQueue.firstIndex(where: { $0.id == songId }) {
+            let song = downloadQueue.remove(at: index)
+            print("🛑 Removed from queue: \(song.title)")
+        }
+    }
+
+    func retryDownload(_ songId: String) {
+        // Get song metadata
+        guard let song = songMetadata[songId] else {
+            print("❌ No metadata found for retry: \(songId)")
+            return
+        }
+
+        print("🔄 Retrying download: \(song.title)")
+
+        // Cancel existing download if active
+        if let task = downloadTasks[songId] {
+            task.cancel()
+            activeDownloads.removeValue(forKey: songId)
+            downloadBytesReceived.removeValue(forKey: songId)
+            downloadTasks.removeValue(forKey: songId)
+            taskToSongId.removeValue(forKey: task)
+        }
+
+        // Re-add to queue
+        downloadQueue.insert(song, at: 0) // Add to front of queue
+        processQueue()
     }
 
     // MARK: - Delete

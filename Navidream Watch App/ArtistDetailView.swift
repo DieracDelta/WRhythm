@@ -41,21 +41,39 @@ struct ArtistDetailView: View {
                             .font(.caption)
                             .foregroundColor(.secondary)
 
-                        if isArtistDownloaded(artist) {
+                        HStack(spacing: 8) {
                             Button(action: {
-                                deleteArtist(artist)
+                                playAllSongs(artist)
                             }) {
-                                Label("Delete Downloads", systemImage: "trash")
+                                Label("Play", systemImage: "play.fill")
+                            }
+                            .buttonStyle(.borderedProminent)
+
+                            Button(action: {
+                                shuffleAllSongs(artist)
+                            }) {
+                                Image(systemName: "shuffle")
                             }
                             .buttonStyle(.bordered)
-                            .tint(.red)
-                        } else {
-                            Button(action: {
-                                downloadArtist(artist)
-                            }) {
-                                Label("Download All", systemImage: "arrow.down.circle")
+                        }
+
+                        HStack(spacing: 8) {
+                            if isArtistDownloaded(artist) {
+                                Button(action: {
+                                    deleteArtist(artist)
+                                }) {
+                                    Image(systemName: "trash")
+                                }
+                                .buttonStyle(.bordered)
+                                .tint(.red)
+                            } else {
+                                Button(action: {
+                                    downloadArtist(artist)
+                                }) {
+                                    Image(systemName: "arrow.down.circle")
+                                }
+                                .buttonStyle(.bordered)
                             }
-                            .buttonStyle(.bordered)
                         }
 
                         Divider()
@@ -161,6 +179,56 @@ struct ArtistDetailView: View {
                 } catch {
                     print("❌ Failed to fetch album \(albumSummary.name) for deletion: \(error)")
                 }
+            }
+        }
+    }
+
+    private func playAllSongs(_ artist: ArtistWithAlbums) {
+        Task {
+            var allSongs: [Song] = []
+
+            // Fetch all songs from all albums
+            for albumSummary in artist.album {
+                do {
+                    let album = try await NavidromeAPI.shared.getAlbum(id: albumSummary.id)
+                    allSongs.append(contentsOf: album.song)
+                } catch {
+                    print("❌ Failed to fetch album \(albumSummary.name): \(error)")
+                }
+            }
+
+            guard !allSongs.isEmpty else {
+                print("⚠️ No songs found for artist")
+                return
+            }
+
+            await MainActor.run {
+                player.playQueue(allSongs, startingAt: 0)
+            }
+        }
+    }
+
+    private func shuffleAllSongs(_ artist: ArtistWithAlbums) {
+        Task {
+            var allSongs: [Song] = []
+
+            // Fetch all songs from all albums
+            for albumSummary in artist.album {
+                do {
+                    let album = try await NavidromeAPI.shared.getAlbum(id: albumSummary.id)
+                    allSongs.append(contentsOf: album.song)
+                } catch {
+                    print("❌ Failed to fetch album \(albumSummary.name): \(error)")
+                }
+            }
+
+            guard !allSongs.isEmpty else {
+                print("⚠️ No songs found for artist")
+                return
+            }
+
+            await MainActor.run {
+                player.playQueueShuffled(allSongs)
             }
         }
     }
