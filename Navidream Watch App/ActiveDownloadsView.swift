@@ -80,27 +80,7 @@ struct ActiveDownloadsView: View {
     }
 
     private func findSongInfo(_ songId: String) -> Song? {
-        // Try to find song info from already downloaded songs
-        if let downloaded = downloadManager.downloadedSongs[songId] {
-            return Song(
-                id: downloaded.songId,
-                title: downloaded.title,
-                album: downloaded.album,
-                albumId: nil,
-                artist: downloaded.artist,
-                artistId: nil,
-                track: nil,
-                year: nil,
-                genre: nil,
-                coverArt: downloaded.coverArt,
-                size: Int(downloaded.fileSize),
-                contentType: nil,
-                suffix: nil,
-                duration: nil,
-                bitRate: nil,
-                path: downloaded.filePath
-            )
-        }
-        return nil
+        // Get song metadata for active downloads
+        return downloadManager.songMetadata[songId]
     }
 }

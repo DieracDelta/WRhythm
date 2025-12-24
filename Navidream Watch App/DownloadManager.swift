@@ -35,7 +35,7 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     private let fileManager = FileManager.default
     private var downloadTasks: [String: URLSessionDownloadTask] = [:]
     private var taskToSongId: [URLSessionDownloadTask: String] = [:]
-    private var songMetadata: [String: Song] = [:]
+    private(set) var songMetadata: [String: Song] = [:]  // Expose for reading
     private var downloadQueue: [Song] = []
     private lazy var downloadSession: URLSession = {
         let config = URLSessionConfiguration.default
