@@ -61,6 +61,13 @@ struct SongRowView: View {
             }
         }
         .buttonStyle(.plain)
+        .contextMenu {
+            if let artistId = song.artistId, let artist = song.artist {
+                NavigationLink(destination: ArtistDetailView(artistId: artistId, artistName: artist)) {
+                    Label("Go to Artist", systemImage: "person.fill")
+                }
+            }
+        }
     }
 
     private func formatDuration(_ seconds: Int) -> String {
@@ -316,6 +323,19 @@ struct AlbumDetailView: View {
                                 }
                                 .buttonStyle(.bordered)
                                 .tint(.red)
+                            } else if isAlbumDownloading(album) {
+                                Button(action: {
+                                    // Already downloading, button is just informational
+                                }) {
+                                    HStack(spacing: 4) {
+                                        ProgressView()
+                                            .scaleEffect(0.7)
+                                        Text("Downloading")
+                                            .font(.caption2)
+                                    }
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(true)
                             } else {
                                 Button(action: {
                                     downloadManager.downloadAlbum(album)
@@ -377,6 +397,10 @@ struct AlbumDetailView: View {
 
     private func isAlbumDownloaded(_ album: Album) -> Bool {
         return album.song.allSatisfy { downloadManager.isDownloaded($0.id) }
+    }
+
+    private func isAlbumDownloading(_ album: Album) -> Bool {
+        return album.song.contains { downloadManager.isDownloading($0.id) }
     }
 
     private func filteredSongs(_ songs: [Song]) -> [Song] {

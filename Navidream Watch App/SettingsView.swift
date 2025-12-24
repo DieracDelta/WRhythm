@@ -43,23 +43,29 @@ struct SettingsView: View {
                     Text("Concurrent Downloads")
                         .font(.caption)
                     HStack {
-                        Text("\(downloadManager.maxConcurrentDownloads)")
+                        Text(downloadManager.maxConcurrentDownloads == 999 ? "∞" : "\(downloadManager.maxConcurrentDownloads)")
                             .font(.caption)
                             .foregroundColor(.secondary)
                             .monospacedDigit()
                             .frame(width: 30, alignment: .leading)
                         Slider(
                             value: Binding(
-                                get: { Double(downloadManager.maxConcurrentDownloads) },
-                                set: { downloadManager.maxConcurrentDownloads = Int($0) }
+                                get: {
+                                    downloadManager.maxConcurrentDownloads == 999 ? 17 : Double(downloadManager.maxConcurrentDownloads)
+                                },
+                                set: {
+                                    downloadManager.maxConcurrentDownloads = $0 >= 17 ? 999 : Int($0)
+                                }
                             ),
-                            in: 1...16,
+                            in: 1...17,
                             step: 1
                         )
                     }
-                    Text("Maximum number of simultaneous downloads")
+                    Text(downloadManager.maxConcurrentDownloads == 999
+                         ? "Unlimited - Required for fast background downloads"
+                         : "Limited concurrent downloads (slower in background)")
                         .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(downloadManager.maxConcurrentDownloads == 999 ? .green : .secondary)
                 }
 
                 Toggle(isOn: $offlineMode) {

@@ -291,6 +291,19 @@ struct PlaylistDetailView: View {
                                 }
                                 .buttonStyle(.bordered)
                                 .tint(.red)
+                            } else if isPlaylistDownloading(playlist) {
+                                Button(action: {
+                                    // Already downloading, button is just informational
+                                }) {
+                                    HStack(spacing: 4) {
+                                        ProgressView()
+                                            .scaleEffect(0.7)
+                                        Text("Downloading")
+                                            .font(.caption2)
+                                    }
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(true)
                             } else {
                                 Button(action: {
                                     downloadManager.downloadPlaylist(playlist)
@@ -388,6 +401,11 @@ struct PlaylistDetailView: View {
     private func isPlaylistDownloaded(_ playlist: Playlist) -> Bool {
         guard let songs = playlist.entry else { return false }
         return songs.allSatisfy { downloadManager.isDownloaded($0.id) }
+    }
+
+    private func isPlaylistDownloading(_ playlist: Playlist) -> Bool {
+        guard let songs = playlist.entry else { return false }
+        return songs.contains { downloadManager.isDownloading($0.id) }
     }
 
     private func filteredSongs(_ songs: [Song]) -> [Song] {

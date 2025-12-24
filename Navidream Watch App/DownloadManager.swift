@@ -48,7 +48,9 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     private(set) var songMetadata: [String: Song] = [:]  // Expose for reading
     @Published var downloadQueue: [Song] = []  // Expose queue for UI
     private lazy var downloadSession: URLSession = {
-        let config = URLSessionConfiguration.default
+        let config = URLSessionConfiguration.background(withIdentifier: "com.navidream.downloads")
+        config.isDiscretionary = false // Download immediately, don't wait for optimal conditions
+        config.sessionSendsLaunchEvents = true // Launch app when downloads complete in background
         return URLSession(configuration: config, delegate: self, delegateQueue: nil)
     }()
 
@@ -74,6 +76,24 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         super.init()
         loadMetadata()
         loadPlaylistsMetadata()
+
+        // Log when app becomes active to see download state
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name.NSExtensionHostDidBecomeActive,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self = self else { return }
+            let timestamp = ISO8601DateFormatter().string(from: Date())
+            print("🔔 [\(timestamp)] App became active")
+            print("📊 [\(timestamp)] Download state - Active: \(self.activeDownloads.count), Queue: \(self.downloadQueue.count)")
+            if !self.activeDownloads.isEmpty {
+                for (songId, progress) in self.activeDownloads {
+                    let title = self.songMetadata[songId]?.title ?? "Unknown"
+                    print("   - \(title): \(Int(progress * 100))%")
+                }
+            }
+        }
     }
 
     // MARK: - Metadata
@@ -176,7 +196,8 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     }
 
     func isDownloading(_ songId: String) -> Bool {
-        return activeDownloads[songId] != nil
+        // Check if actively downloading or queued
+        return activeDownloads[songId] != nil || downloadQueue.contains(where: { $0.id == songId })
     }
 
     func downloadProgress(_ songId: String) -> Double {
@@ -209,8 +230,10 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     }
 
     private func processQueue() {
-        // Start downloads up to the concurrent limit
-        while activeDownloads.count < maxConcurrentDownloads && !downloadQueue.isEmpty {
+        // Start downloads up to the concurrent limit (999 = unlimited)
+        let isUnlimited = maxConcurrentDownloads == 999
+
+        while (isUnlimited || activeDownloads.count < maxConcurrentDownloads) && !downloadQueue.isEmpty {
             let song = downloadQueue.removeFirst()
 
             guard let streamURL = NavidromeAPI.shared.getStreamURL(id: song.id) else {
@@ -218,7 +241,9 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
                 continue
             }
 
-            print("📥 Starting download (\(activeDownloads.count + 1)/\(maxConcurrentDownloads)): \(song.title)")
+            let timestamp = ISO8601DateFormatter().string(from: Date())
+            let limitText = isUnlimited ? "∞" : "\(maxConcurrentDownloads)"
+            print("📥 [\(timestamp)] Starting download (\(activeDownloads.count + 1)/\(limitText)): \(song.title)")
 
             let task = downloadSession.downloadTask(with: streamURL)
 
@@ -227,6 +252,8 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
             taskToSongId[task] = song.id
             songMetadata[song.id] = song
             task.resume()
+
+            print("▶️ [\(timestamp)] Download task resumed for: \(song.title)")
         }
 
         if !downloadQueue.isEmpty {
@@ -249,6 +276,13 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
             if totalBytesExpectedToWrite > 0 {
                 let progress = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
                 self.activeDownloads[songId] = progress
+
+                // Log progress at 25%, 50%, 75%, 100% milestones
+                let percentage = Int(progress * 100)
+                if percentage % 25 == 0 && percentage > 0 {
+                    let timestamp = ISO8601DateFormatter().string(from: Date())
+                    print("📊 [\(timestamp)] Progress \(percentage)% - \(song.title) - \(totalBytesWritten)/\(totalBytesExpectedToWrite) bytes")
+                }
             } else {
                 // No Content-Length (transcoding) - estimate based on song duration
                 // Assume ~128kbps (16KB/s) for MP3 transcoding
@@ -308,7 +342,10 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
                 self.taskToSongId.removeValue(forKey: downloadTask)
                 self.songMetadata.removeValue(forKey: song.id)
                 self.saveMetadata()
-                print("✅ Downloaded: \(song.title) (\(self.formatBytes(fileSize)))")
+
+                let timestamp = ISO8601DateFormatter().string(from: Date())
+                print("✅ [\(timestamp)] Downloaded: \(song.title) (\(self.formatBytes(fileSize)))")
+                print("📊 [\(timestamp)] Active downloads: \(self.activeDownloads.count), Queue: \(self.downloadQueue.count)")
 
                 // Process next item in queue
                 self.processQueue()
@@ -331,11 +368,21 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         guard let downloadTask = task as? URLSessionDownloadTask,
               let songId = taskToSongId[downloadTask] else {
+            if let error = error {
+                let timestamp = ISO8601DateFormatter().string(from: Date())
+                print("❌ [\(timestamp)] Download task completed with error but no song mapping")
+                print("   Error: \(error.localizedDescription)")
+            }
             return
         }
 
         if let error = error {
-            print("❌ Download failed for song \(songId): \(error)")
+            let timestamp = ISO8601DateFormatter().string(from: Date())
+            let songTitle = self.songMetadata[songId]?.title ?? "Unknown"
+            print("❌ [\(timestamp)] Download failed for: \(songTitle)")
+            print("   Error: \(error.localizedDescription)")
+            print("   Error code: \((error as NSError).code)")
+            print("   Error domain: \((error as NSError).domain)")
             DispatchQueue.main.async {
                 self.activeDownloads.removeValue(forKey: songId)
                 self.downloadBytesReceived.removeValue(forKey: songId)
@@ -343,10 +390,18 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
                 self.taskToSongId.removeValue(forKey: downloadTask)
                 self.songMetadata.removeValue(forKey: songId)
 
+                print("📊 [\(timestamp)] After error - Active downloads: \(self.activeDownloads.count), Queue: \(self.downloadQueue.count)")
+
                 // Process next item in queue on error
                 self.processQueue()
             }
         }
+    }
+
+    func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        print("🎉 [\(timestamp)] Background session finished all events")
+        print("📊 [\(timestamp)] Active downloads: \(self.activeDownloads.count), Queue: \(self.downloadQueue.count)")
     }
 
     // MARK: - Download Collections
