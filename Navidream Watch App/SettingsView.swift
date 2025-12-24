@@ -10,15 +10,7 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var api = NavidromeAPI.shared
     @ObservedObject var downloadManager = DownloadManager.shared
-    @AppStorage("offlineMode") private var offlineMode = false {
-        didSet {
-            if offlineMode {
-                // Stop playback when entering offline mode
-                AudioPlayer.shared.stop()
-                print("🔇 Stopped playback due to offline mode")
-            }
-        }
-    }
+    @AppStorage("offlineMode") private var offlineMode = false
     @State private var showingLogoutConfirmation = false
 
     var body: some View {
@@ -90,6 +82,13 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Settings")
+        .onChange(of: offlineMode) { newValue in
+            if newValue {
+                // Stop playback when entering offline mode
+                AudioPlayer.shared.stop()
+                print("🔇 Stopped playback due to offline mode")
+            }
+        }
         .confirmationDialog("Logout", isPresented: $showingLogoutConfirmation) {
             Button("Logout", role: .destructive) {
                 api.logout()
