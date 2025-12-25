@@ -54,6 +54,15 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
 
     // Track total bytes for downloads
     private var downloadTotalBytes: [String: Int64] = [:] // songId -> total expected bytes
+
+    // Track cumulative bytes for current download session
+    @Published var sessionBytesDownloaded: Int64 = 0
+    @Published var sessionBytesTotal: Int64 = 0
+    @Published var sessionCompletedCount: Int = 0
+    @Published var sessionTotalCount: Int = 0
+
+    // Pause state
+    @Published var isPaused: Bool = false
     private lazy var downloadSession: URLSession = {
         let config = URLSessionConfiguration.background(withIdentifier: "com.navidream.downloads")
         config.isDiscretionary = false // Download immediately, don't wait for optimal conditions
@@ -207,6 +216,49 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         return activeDownloads[songId] != nil || downloadQueue.contains(where: { $0.id == songId })
     }
 
+    // MARK: - Download Control
+
+    func pauseDownloads() {
+        print("⏸️ Pausing all downloads")
+        isPaused = true
+        // Cancel all active download tasks
+        for (_, task) in downloadTasks {
+            task.cancel()
+        }
+        // Don't clear the queue - we'll resume from it
+    }
+
+    func resumeDownloads() {
+        print("▶️ Resuming downloads")
+        isPaused = false
+        // Process queue will restart downloads
+        processQueue()
+    }
+
+    func cancelAllDownloads() {
+        print("❌ Cancelling all downloads")
+        isPaused = false
+        // Cancel all active tasks
+        for (_, task) in downloadTasks {
+            task.cancel()
+        }
+        // Clear everything
+        downloadQueue.removeAll()
+        activeDownloads.removeAll()
+        downloadTasks.removeAll()
+        taskToSongId.removeAll()
+        songMetadata.removeAll()
+        downloadBytesReceived.removeAll()
+        downloadTotalBytes.removeAll()
+        pendingProgressUpdates.removeAll()
+
+        // Reset session counters
+        sessionBytesDownloaded = 0
+        sessionBytesTotal = 0
+        sessionCompletedCount = 0
+        sessionTotalCount = 0
+    }
+
     func downloadProgress(_ songId: String) -> Double {
         return activeDownloads[songId] ?? 0
     }
@@ -237,6 +289,12 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     }
 
     private func processQueue() {
+        // Don't process if paused
+        guard !isPaused else {
+            print("⏸️ Downloads are paused, not processing queue")
+            return
+        }
+
         // Start downloads up to the concurrent limit (999 = unlimited)
         let isUnlimited = maxConcurrentDownloads == 999
 
@@ -304,7 +362,18 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
 
         DispatchQueue.main.async {
             self.downloadBytesReceived[songId] = totalBytesWritten
-            self.downloadTotalBytes[songId] = estimatedTotal
+
+            // Track total bytes for this download if we haven't yet
+            if self.downloadTotalBytes[songId] == nil {
+                self.downloadTotalBytes[songId] = estimatedTotal
+                self.sessionBytesTotal += estimatedTotal
+                self.sessionTotalCount += 1
+            } else if self.downloadTotalBytes[songId] != estimatedTotal {
+                // Update session total if estimate changed
+                let oldTotal = self.downloadTotalBytes[songId] ?? 0
+                self.sessionBytesTotal += (estimatedTotal - oldTotal)
+                self.downloadTotalBytes[songId] = estimatedTotal
+            }
 
             // Store pending update
             self.pendingProgressUpdates[songId] = progress
@@ -319,6 +388,17 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
                     self.activeDownloads[id] = prog
                 }
                 self.pendingProgressUpdates.removeAll()
+
+                // Log status every 10 seconds
+                let timestamp = ISO8601DateFormatter().string(from: Date())
+                let activeCount = self.activeDownloads.count
+                let queueCount = self.downloadQueue.count
+                let completedCount = self.sessionCompletedCount
+
+                // Only log every 10th update (every ~10 seconds)
+                if Int(now.timeIntervalSince1970) % 10 == 0 {
+                    print("📊 [\(timestamp)] Status - Completed: \(completedCount), Active: \(activeCount), Queue: \(queueCount)")
+                }
             }
         }
     }
@@ -364,6 +444,10 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
                     self.pendingProgressUpdates.removeValue(forKey: song.id)
                 }
 
+                // Add completed bytes and count to session totals
+                self.sessionBytesDownloaded += fileSize
+                self.sessionCompletedCount += 1
+
                 self.downloadedSongs[song.id] = downloadedSong
                 self.activeDownloads.removeValue(forKey: song.id)
                 self.downloadBytesReceived.removeValue(forKey: song.id)
@@ -376,6 +460,15 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
                 let timestamp = ISO8601DateFormatter().string(from: Date())
                 print("✅ [\(timestamp)] Downloaded: \(song.title) (\(self.formatBytes(fileSize)))")
                 print("📊 [\(timestamp)] Active downloads: \(self.activeDownloads.count), Queue: \(self.downloadQueue.count)")
+
+                // Reset session counters if all downloads are done
+                if self.activeDownloads.isEmpty && self.downloadQueue.isEmpty {
+                    print("🏁 [\(timestamp)] All downloads complete - resetting session counters")
+                    self.sessionBytesDownloaded = 0
+                    self.sessionBytesTotal = 0
+                    self.sessionCompletedCount = 0
+                    self.sessionTotalCount = 0
+                }
 
                 // Process next item in queue
                 self.processQueue()
@@ -626,11 +719,14 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     }
 
     func getTotalBytesToDownload() -> Int64 {
-        return downloadTotalBytes.values.reduce(0, +)
+        // Return session total which includes both active and completed downloads
+        return sessionBytesTotal
     }
 
     func getTotalBytesDownloaded() -> Int64 {
-        return downloadBytesReceived.values.reduce(0, +)
+        // Session completed + currently downloading
+        let activeBytes = downloadBytesReceived.values.reduce(0, +)
+        return sessionBytesDownloaded + activeBytes
     }
 
     func getBytesRemaining() -> Int64 {

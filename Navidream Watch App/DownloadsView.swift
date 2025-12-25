@@ -30,6 +30,17 @@ struct DownloadsView: View {
 
                         VStack(spacing: 4) {
                             HStack {
+                                Text("Completed:")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Text("\(downloadManager.sessionCompletedCount)")
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                    .foregroundColor(.green)
+                            }
+
+                            HStack {
                                 Text("Active:")
                                     .font(.caption2)
                                     .foregroundColor(.secondary)
@@ -37,7 +48,7 @@ struct DownloadsView: View {
                                 Text("\(downloadManager.getActiveDownloadCount())")
                                     .font(.caption)
                                     .fontWeight(.medium)
-                                    .foregroundColor(.green)
+                                    .foregroundColor(.blue)
                             }
 
                             HStack {
@@ -52,14 +63,14 @@ struct DownloadsView: View {
                             }
 
                             HStack {
-                                Text("Total Pending:")
+                                Text("Total:")
                                     .font(.caption2)
                                     .foregroundColor(.secondary)
                                 Spacer()
-                                Text("\(totalPending)")
+                                Text("\(downloadManager.sessionTotalCount)")
                                     .font(.caption)
                                     .fontWeight(.bold)
-                                    .foregroundColor(.blue)
+                                    .foregroundColor(.primary)
                             }
 
                             if downloadManager.getActiveDownloadCount() > 0 {
@@ -128,6 +139,36 @@ struct DownloadsView: View {
                             }
                         }
                         .padding(.vertical, 4)
+
+                        HStack(spacing: 8) {
+                            if downloadManager.isPaused {
+                                Button(action: {
+                                    downloadManager.resumeDownloads()
+                                }) {
+                                    Label("Resume", systemImage: "play.fill")
+                                        .font(.caption2)
+                                }
+                                .buttonStyle(.bordered)
+                                .tint(.green)
+                            } else {
+                                Button(action: {
+                                    downloadManager.pauseDownloads()
+                                }) {
+                                    Label("Pause", systemImage: "pause.fill")
+                                        .font(.caption2)
+                                }
+                                .buttonStyle(.bordered)
+                            }
+
+                            Button(action: {
+                                downloadManager.cancelAllDownloads()
+                            }) {
+                                Label("Cancel All", systemImage: "xmark")
+                                    .font(.caption2)
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(.red)
+                        }
 
                         NavigationLink(destination: ActiveDownloadsView()) {
                             HStack {

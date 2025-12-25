@@ -83,10 +83,10 @@ struct AlbumDetailView: View {
     @State private var album: Album?
     @State private var isLoading = true
     @State private var errorMessage = ""
-    @ObservedObject var downloadManager = DownloadManager.shared
     @AppStorage("offlineMode") private var offlineMode = false
 
     private var player: AudioPlayer { AudioPlayer.shared }
+    private var downloadManager: DownloadManager { DownloadManager.shared }
 
     var body: some View {
         let _ = print("🔄 AlbumDetailView body recomputed for album: \(albumId)")
@@ -320,37 +320,7 @@ struct AlbumDetailView: View {
                             .buttonStyle(.bordered)
                         }
 
-                        HStack(spacing: 8) {
-                            if isAlbumDownloaded(album) {
-                                Button(action: {
-                                    downloadManager.deleteAlbum(album)
-                                }) {
-                                    Image(systemName: "trash")
-                                }
-                                .buttonStyle(.bordered)
-                                .tint(.red)
-                            } else if isAlbumDownloading(album) {
-                                Button(action: {
-                                    // Already downloading, button is just informational
-                                }) {
-                                    HStack(spacing: 4) {
-                                        ProgressView()
-                                            .scaleEffect(0.7)
-                                        Text("Downloading")
-                                            .font(.caption2)
-                                    }
-                                }
-                                .buttonStyle(.bordered)
-                                .disabled(true)
-                            } else {
-                                Button(action: {
-                                    downloadManager.downloadAlbum(album)
-                                }) {
-                                    Image(systemName: "arrow.down.circle")
-                                }
-                                .buttonStyle(.bordered)
-                            }
-                        }
+                        AlbumDownloadButton(album: album)
 
                         Divider()
 
@@ -414,5 +384,51 @@ struct AlbumDetailView: View {
             return songs.filter { downloadManager.isDownloaded($0.id) }
         }
         return songs
+    }
+}
+
+// Separate component that observes download manager
+struct AlbumDownloadButton: View {
+    let album: Album
+    @ObservedObject var downloadManager = DownloadManager.shared
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if isAlbumDownloaded() {
+                Button(action: {
+                    downloadManager.deleteAlbum(album)
+                }) {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(.bordered)
+                .tint(.red)
+            } else if isAlbumDownloading() {
+                Button(action: {}) {
+                    HStack(spacing: 4) {
+                        ProgressView()
+                            .scaleEffect(0.7)
+                        Text("Downloading")
+                            .font(.caption2)
+                    }
+                }
+                .buttonStyle(.bordered)
+                .disabled(true)
+            } else {
+                Button(action: {
+                    downloadManager.downloadAlbum(album)
+                }) {
+                    Image(systemName: "arrow.down.circle")
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+    }
+
+    private func isAlbumDownloaded() -> Bool {
+        return album.song.allSatisfy { downloadManager.isDownloaded($0.id) }
+    }
+
+    private func isAlbumDownloading() -> Bool {
+        return album.song.contains { downloadManager.isDownloading($0.id) }
     }
 }
