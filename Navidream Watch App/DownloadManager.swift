@@ -28,11 +28,21 @@ struct CachedPlaylist: Codable {
     let cachedAt: Date
 }
 
+struct RadioPlaylist: Codable, Identifiable {
+    let id: String  // ID of the source song
+    let sourceSongTitle: String
+    let sourceSongArtist: String?
+    let coverArt: String?
+    let songIds: [String]
+    let createdAt: Date
+}
+
 class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     static let shared = DownloadManager()
 
     @Published var downloadedSongs: [String: DownloadedSong] = [:]
     @Published var cachedPlaylists: [CachedPlaylist] = []
+    @Published var radioPlaylists: [RadioPlaylist] = []
     @Published var activeDownloads: [String: Double] = [:] // songId -> progress (0-1)
     @Published var downloadBytesReceived: [String: Int64] = [:] // songId -> bytes downloaded
     @Published var maxConcurrentDownloads: Int = UserDefaults.standard.integer(forKey: "maxConcurrentDownloads") == 0 ? 8 : UserDefaults.standard.integer(forKey: "maxConcurrentDownloads") {
@@ -88,10 +98,15 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         documentsDirectory.appendingPathComponent("playlists.json")
     }
 
+    private var radioPlaylistsURL: URL {
+        documentsDirectory.appendingPathComponent("radio_playlists.json")
+    }
+
     override init() {
         super.init()
         loadMetadata()
         loadPlaylistsMetadata()
+        loadRadioPlaylists()
 
         // Log when app becomes active to see download state
         NotificationCenter.default.addObserver(
@@ -164,6 +179,59 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         } catch {
             print("❌ Failed to save playlist metadata: \(error)")
         }
+    }
+
+    private func loadRadioPlaylists() {
+        guard fileManager.fileExists(atPath: radioPlaylistsURL.path) else {
+            print("📥 No radio playlists found")
+            return
+        }
+
+        do {
+            let data = try Data(contentsOf: radioPlaylistsURL)
+            let radios = try JSONDecoder().decode([RadioPlaylist].self, from: data)
+            self.radioPlaylists = radios
+            print("📥 Loaded \(radios.count) radio playlists")
+        } catch {
+            print("❌ Failed to load radio playlists: \(error)")
+        }
+    }
+
+    private func saveRadioPlaylists() {
+        do {
+            let data = try JSONEncoder().encode(radioPlaylists)
+            try data.write(to: radioPlaylistsURL)
+            print("💾 Saved radio playlists metadata")
+        } catch {
+            print("❌ Failed to save radio playlists metadata: \(error)")
+        }
+    }
+
+    func saveRadioPlaylist(sourceSong: Song, songs: [Song]) {
+        let radio = RadioPlaylist(
+            id: sourceSong.id,
+            sourceSongTitle: sourceSong.title,
+            sourceSongArtist: sourceSong.artist,
+            coverArt: sourceSong.coverArt,
+            songIds: songs.map { $0.id },
+            createdAt: Date()
+        )
+
+        // Replace existing radio with same source song or add new
+        if let index = radioPlaylists.firstIndex(where: { $0.id == sourceSong.id }) {
+            radioPlaylists[index] = radio
+        } else {
+            radioPlaylists.append(radio)
+        }
+
+        saveRadioPlaylists()
+        print("💾 Saved radio playlist for: \(sourceSong.title)")
+    }
+
+    func deleteRadioPlaylist(_ radioId: String) {
+        radioPlaylists.removeAll { $0.id == radioId }
+        saveRadioPlaylists()
+        print("🗑️ Deleted radio playlist: \(radioId)")
     }
 
     func cachePlaylists(_ playlists: [PlaylistSummary]) {

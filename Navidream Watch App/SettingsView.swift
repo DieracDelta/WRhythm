@@ -11,6 +11,7 @@ struct SettingsView: View {
     @ObservedObject var api = NavidromeAPI.shared
     @ObservedObject var downloadManager = DownloadManager.shared
     @AppStorage("offlineMode") private var offlineMode = false
+    @AppStorage("radioDownloadCount") private var radioDownloadCount = 25
     @State private var showingLogoutConfirmation = false
 
     var body: some View {
@@ -66,6 +67,29 @@ struct SettingsView: View {
                          : "Limited concurrent downloads (slower in background)")
                         .font(.caption2)
                         .foregroundColor(downloadManager.maxConcurrentDownloads == 999 ? .green : .secondary)
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Default Radio Size")
+                        .font(.caption)
+                    HStack {
+                        Text("\(radioDownloadCount)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .monospacedDigit()
+                            .frame(width: 30, alignment: .leading)
+                        Slider(
+                            value: Binding(
+                                get: { Double(radioDownloadCount) },
+                                set: { radioDownloadCount = Int($0) }
+                            ),
+                            in: 10...500,
+                            step: 10
+                        )
+                    }
+                    Text("Default number of songs for radio (can adjust per-radio)")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
                 }
 
                 Toggle(isOn: $offlineMode) {

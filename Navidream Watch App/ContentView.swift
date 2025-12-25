@@ -57,6 +57,13 @@ struct ContentView: View {
                     }
 
                     NavigationView {
+                        RadioPlaylistsView()
+                    }
+                    .tabItem {
+                        Label("Radio", systemImage: "antenna.radiowaves.left.and.right")
+                    }
+
+                    NavigationView {
                         NowPlayingView()
                     }
                     .tabItem {

@@ -59,9 +59,11 @@ struct SongRowView: View {
                         .foregroundColor(.accentColor)
                 }
 
-                Button(action: {
-                    startRadio(for: song)
-                }) {
+                NavigationLink(destination: RadioOptionsView(
+                    sourceSong: song,
+                    sourceTitle: song.title,
+                    sourceType: .song
+                )) {
                     Image(systemName: "antenna.radiowaves.left.and.right")
                         .font(.caption2)
                         .foregroundColor(.blue)
@@ -75,6 +77,12 @@ struct SongRowView: View {
                 startRadio(for: song)
             }) {
                 Label("Start Radio", systemImage: "antenna.radiowaves.left.and.right")
+            }
+
+            Button(action: {
+                downloadRadio(for: song)
+            }) {
+                Label("Download Radio", systemImage: "arrow.down.circle")
             }
 
             if let artistId = song.artistId, let artist = song.artist {
@@ -137,6 +145,63 @@ struct SongRowView: View {
         // Pick the first song from the album to base radio on
         guard let firstSong = album.song.first else { return }
         startRadio(for: firstSong)
+    }
+
+    private func downloadRadio(for song: Song) {
+        Task {
+            do {
+                let radioDownloadCount = UserDefaults.standard.integer(forKey: "radioDownloadCount")
+                let count = radioDownloadCount > 0 ? radioDownloadCount : 25
+
+                print("📻 Downloading radio for: \(song.title) (count: \(count))")
+                var similarSongs = try await NavidromeAPI.shared.getSimilarSongs(id: song.id, count: count)
+                print("📻 getSimilarSongs returned \(similarSongs.count) songs")
+
+                // Fallback 1: Try artist-based radio if no results
+                if similarSongs.isEmpty, let artistId = song.artistId {
+                    print("📻 Falling back to artist radio for artist ID: \(artistId)")
+                    similarSongs = try await NavidromeAPI.shared.getSimilarSongs2(artistId: artistId, count: count)
+                    print("📻 getSimilarSongs2 returned \(similarSongs.count) songs")
+                }
+
+                // Fallback 2: Try random songs if still empty
+                if similarSongs.isEmpty {
+                    print("📻 Falling back to random songs")
+                    similarSongs = try await NavidromeAPI.shared.getRandomSongs(size: count)
+                    print("📻 getRandomSongs returned \(similarSongs.count) songs")
+                }
+
+                await MainActor.run {
+                    if similarSongs.isEmpty {
+                        print("⚠️ No songs found to download for radio")
+                    } else {
+                        // Filter out the source song if it appears in results
+                        let filteredSongs = similarSongs.filter { $0.id != song.id }
+
+                        // Build queue with source song first, then similar songs
+                        var queue = [song]
+                        queue.append(contentsOf: filteredSongs)
+
+                        print("✅ Downloading radio: \(queue.count) songs")
+
+                        // Download all songs in the radio queue
+                        for radioSong in queue {
+                            DownloadManager.shared.downloadSong(radioSong)
+                        }
+
+                        // Save radio playlist metadata
+                        DownloadManager.shared.saveRadioPlaylist(sourceSong: song, songs: queue)
+                    }
+                }
+            } catch {
+                print("❌ Failed to download radio: \(error)")
+            }
+        }
+    }
+
+    private func downloadRadioFromAlbum(_ album: Album) {
+        guard let firstSong = album.song.first else { return }
+        downloadRadio(for: firstSong)
     }
 
     private func formatDuration(_ seconds: Int) -> String {
@@ -389,10 +454,12 @@ struct AlbumDetailView: View {
                             .buttonStyle(.bordered)
                         }
 
-                        HStack(spacing: 8) {
-                            Button(action: {
-                                startRadioFromAlbum(album)
-                            }) {
+                        if let firstSong = album.song.first {
+                            NavigationLink(destination: RadioOptionsView(
+                                sourceSong: firstSong,
+                                sourceTitle: album.name,
+                                sourceType: .album
+                            )) {
                                 Label("Radio", systemImage: "antenna.radiowaves.left.and.right")
                             }
                             .buttonStyle(.bordered)
@@ -516,6 +583,63 @@ struct AlbumDetailView: View {
         // Pick the first song from the album to base radio on
         guard let firstSong = album.song.first else { return }
         startRadio(for: firstSong)
+    }
+
+    private func downloadRadioFromAlbum(_ album: Album) {
+        guard let firstSong = album.song.first else { return }
+        downloadRadio(for: firstSong)
+    }
+
+    private func downloadRadio(for song: Song) {
+        Task {
+            do {
+                let radioDownloadCount = UserDefaults.standard.integer(forKey: "radioDownloadCount")
+                let count = radioDownloadCount > 0 ? radioDownloadCount : 25
+
+                print("📻 Downloading radio for: \(song.title) (count: \(count))")
+                var similarSongs = try await NavidromeAPI.shared.getSimilarSongs(id: song.id, count: count)
+                print("📻 getSimilarSongs returned \(similarSongs.count) songs")
+
+                // Fallback 1: Try artist-based radio if no results
+                if similarSongs.isEmpty, let artistId = song.artistId {
+                    print("📻 Falling back to artist radio for artist ID: \(artistId)")
+                    similarSongs = try await NavidromeAPI.shared.getSimilarSongs2(artistId: artistId, count: count)
+                    print("📻 getSimilarSongs2 returned \(similarSongs.count) songs")
+                }
+
+                // Fallback 2: Try random songs if still empty
+                if similarSongs.isEmpty {
+                    print("📻 Falling back to random songs")
+                    similarSongs = try await NavidromeAPI.shared.getRandomSongs(size: count)
+                    print("📻 getRandomSongs returned \(similarSongs.count) songs")
+                }
+
+                await MainActor.run {
+                    if similarSongs.isEmpty {
+                        print("⚠️ No songs found to download for radio")
+                    } else {
+                        // Filter out the source song if it appears in results
+                        let filteredSongs = similarSongs.filter { $0.id != song.id }
+
+                        // Build queue with source song first, then similar songs
+                        var queue = [song]
+                        queue.append(contentsOf: filteredSongs)
+
+                        print("✅ Downloading radio: \(queue.count) songs")
+
+                        // Download all songs in the radio queue
+                        for radioSong in queue {
+                            DownloadManager.shared.downloadSong(radioSong)
+                        }
+
+                        // Save radio playlist metadata
+                        DownloadManager.shared.saveRadioPlaylist(sourceSong: song, songs: queue)
+                    }
+                }
+            } catch {
+                print("❌ Failed to download radio: \(error)")
+            }
+        }
     }
 }
 

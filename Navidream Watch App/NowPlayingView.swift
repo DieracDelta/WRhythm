@@ -106,11 +106,13 @@ struct NowPlayingView: View {
                         .padding(.horizontal, 4)
                     }
 
-                    // Start Radio button
-                    Button(action: {
-                        startRadio(for: song)
-                    }) {
-                        Label("Start Radio", systemImage: "antenna.radiowaves.left.and.right")
+                    // Radio button
+                    NavigationLink(destination: RadioOptionsView(
+                        sourceSong: song,
+                        sourceTitle: song.title,
+                        sourceType: .song
+                    )) {
+                        Label("Radio", systemImage: "antenna.radiowaves.left.and.right")
                             .font(.caption)
                     }
                     .buttonStyle(.bordered)

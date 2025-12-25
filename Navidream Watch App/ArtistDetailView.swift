@@ -57,14 +57,31 @@ struct ArtistDetailView: View {
                                 .buttonStyle(.bordered)
                             }
 
-                            HStack(spacing: 8) {
-                                Button(action: {
-                                    startRadioFromArtist()
-                                }) {
-                                    Label("Radio", systemImage: "antenna.radiowaves.left.and.right")
-                                }
-                                .buttonStyle(.bordered)
+                            NavigationLink(destination: RadioOptionsView(
+                                sourceSong: Song(
+                                    id: artistId,
+                                    title: artistName,
+                                    album: nil,
+                                    albumId: nil,
+                                    artist: artistName,
+                                    artistId: artistId,
+                                    track: nil,
+                                    year: nil,
+                                    genre: nil,
+                                    coverArt: nil,
+                                    size: nil,
+                                    contentType: nil,
+                                    suffix: nil,
+                                    duration: nil,
+                                    bitRate: nil,
+                                    path: nil
+                                ),
+                                sourceTitle: artistName,
+                                sourceType: .artist
+                            )) {
+                                Label("Radio", systemImage: "antenna.radiowaves.left.and.right")
                             }
+                            .buttonStyle(.bordered)
 
                             Divider()
 
@@ -156,14 +173,31 @@ struct ArtistDetailView: View {
                             .buttonStyle(.bordered)
                         }
 
-                        HStack(spacing: 8) {
-                            Button(action: {
-                                startRadioFromArtist()
-                            }) {
-                                Label("Radio", systemImage: "antenna.radiowaves.left.and.right")
-                            }
-                            .buttonStyle(.bordered)
+                        NavigationLink(destination: RadioOptionsView(
+                            sourceSong: Song(
+                                id: artistId,
+                                title: artistName,
+                                album: nil,
+                                albumId: nil,
+                                artist: artistName,
+                                artistId: artistId,
+                                track: nil,
+                                year: nil,
+                                genre: nil,
+                                coverArt: nil,
+                                size: nil,
+                                contentType: nil,
+                                suffix: nil,
+                                duration: nil,
+                                bitRate: nil,
+                                path: nil
+                            ),
+                            sourceTitle: artistName,
+                            sourceType: .artist
+                        )) {
+                            Label("Radio", systemImage: "antenna.radiowaves.left.and.right")
                         }
+                        .buttonStyle(.bordered)
 
                         HStack(spacing: 8) {
                             if isArtistDownloaded(artist) {
