@@ -323,6 +323,58 @@ class NavidromeAPI: ObservableObject {
         return result.subsonicResponse.randomSongs?.song ?? []
     }
 
+    func getSimilarSongs(id: String, count: Int = 100) async throws -> [Song] {
+        guard let url = buildURL(endpoint: "getSimilarSongs", additionalParams: [
+            "id": id,
+            "count": String(count)
+        ]) else {
+            throw NavidromeError.invalidURL
+        }
+
+        let (data, _) = try await URLSession.shared.data(from: url)
+        let result = try JSONDecoder().decode(SubsonicResponse<SimilarSongsResponse>.self, from: data)
+
+        guard result.subsonicResponse.status == "ok" else {
+            if let error = result.subsonicResponse.error {
+                throw NavidromeError.apiError(error.message)
+            }
+            throw NavidromeError.unknown
+        }
+
+        // Handle both nil similarSongs and nil song array
+        if let similarSongs = result.subsonicResponse.similarSongs,
+           let songs = similarSongs.song {
+            return songs
+        }
+        return []
+    }
+
+    func getSimilarSongs2(artistId: String, count: Int = 100) async throws -> [Song] {
+        guard let url = buildURL(endpoint: "getSimilarSongs2", additionalParams: [
+            "id": artistId,
+            "count": String(count)
+        ]) else {
+            throw NavidromeError.invalidURL
+        }
+
+        let (data, _) = try await URLSession.shared.data(from: url)
+        let result = try JSONDecoder().decode(SubsonicResponse<SimilarSongsResponse>.self, from: data)
+
+        guard result.subsonicResponse.status == "ok" else {
+            if let error = result.subsonicResponse.error {
+                throw NavidromeError.apiError(error.message)
+            }
+            throw NavidromeError.unknown
+        }
+
+        // Handle both nil similarSongs and nil song array
+        if let similarSongs = result.subsonicResponse.similarSongs,
+           let songs = similarSongs.song {
+            return songs
+        }
+        return []
+    }
+
     func getCoverArtURL(id: String, size: Int = 300) -> URL? {
         return buildURL(endpoint: "getCoverArt", additionalParams: ["id": id, "size": String(size)])
     }
@@ -581,6 +633,17 @@ struct RandomSongsResponse: Decodable {
 
 struct RandomSongs: Decodable {
     let song: [Song]
+}
+
+struct SimilarSongsResponse: Decodable {
+    let status: String
+    let version: String
+    let error: SubsonicError?
+    let similarSongs: SimilarSongs?
+}
+
+struct SimilarSongs: Decodable {
+    let song: [Song]?
 }
 
 struct Album: Decodable, Identifiable {

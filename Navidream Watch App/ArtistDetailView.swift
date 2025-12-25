@@ -57,6 +57,15 @@ struct ArtistDetailView: View {
                                 .buttonStyle(.bordered)
                             }
 
+                            HStack(spacing: 8) {
+                                Button(action: {
+                                    startRadioFromArtist()
+                                }) {
+                                    Label("Radio", systemImage: "antenna.radiowaves.left.and.right")
+                                }
+                                .buttonStyle(.bordered)
+                            }
+
                             Divider()
 
                             VStack(spacing: 8) {
@@ -143,6 +152,15 @@ struct ArtistDetailView: View {
                                 shuffleAllSongs(artist)
                             }) {
                                 Image(systemName: "shuffle")
+                            }
+                            .buttonStyle(.bordered)
+                        }
+
+                        HStack(spacing: 8) {
+                            Button(action: {
+                                startRadioFromArtist()
+                            }) {
+                                Label("Radio", systemImage: "antenna.radiowaves.left.and.right")
                             }
                             .buttonStyle(.bordered)
                         }
@@ -386,5 +404,34 @@ struct ArtistDetailView: View {
         }
 
         player.playQueueShuffled(songs)
+    }
+
+    private func startRadioFromArtist() {
+        Task {
+            do {
+                print("🎵 Starting radio for artist: \(artistName)")
+                var similarSongs = try await NavidromeAPI.shared.getSimilarSongs2(artistId: artistId, count: 100)
+                print("📻 getSimilarSongs2 returned \(similarSongs.count) songs for artist")
+
+                // Fallback: Try random songs if no artist-based results
+                if similarSongs.isEmpty {
+                    print("📻 Falling back to random songs")
+                    similarSongs = try await NavidromeAPI.shared.getRandomSongs(size: 100)
+                    print("📻 getRandomSongs returned \(similarSongs.count) songs")
+                }
+
+                await MainActor.run {
+                    if similarSongs.isEmpty {
+                        print("⚠️ No songs found even with fallbacks")
+                    } else {
+                        print("✅ Radio queue ready with \(similarSongs.count) songs")
+                        player.playQueueShuffled(similarSongs)
+                        print("📻 Queue after playQueueShuffled: \(player.queue.count) songs")
+                    }
+                }
+            } catch {
+                print("❌ Failed to start radio for artist: \(error)")
+            }
+        }
     }
 }

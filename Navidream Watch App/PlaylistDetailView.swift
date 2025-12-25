@@ -56,6 +56,12 @@ struct PlaylistSongRowView: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
+            Button(action: {
+                startRadio(for: song)
+            }) {
+                Label("Start Radio", systemImage: "antenna.radiowaves.left.and.right")
+            }
+
             if let artistId = song.artistId, let artist = song.artist {
                 NavigationLink(destination: ArtistDetailView(artistId: artistId, artistName: artist)) {
                     Label("Go to Artist", systemImage: "person.fill")
@@ -64,6 +70,54 @@ struct PlaylistSongRowView: View {
             if let albumId = song.albumId {
                 NavigationLink(destination: AlbumDetailView(albumId: albumId)) {
                     Label("Go to Album", systemImage: "square.stack")
+                }
+            }
+        }
+    }
+
+    private func startRadio(for song: Song) {
+        Task {
+            do {
+                print("🎵 Starting radio for: \(song.title)")
+                var similarSongs = try await NavidromeAPI.shared.getSimilarSongs(id: song.id, count: 100)
+                print("📻 getSimilarSongs returned \(similarSongs.count) songs")
+
+                // Fallback 1: Try artist-based radio if no results
+                if similarSongs.isEmpty, let artistId = song.artistId {
+                    print("📻 Falling back to artist radio for artist ID: \(artistId)")
+                    similarSongs = try await NavidromeAPI.shared.getSimilarSongs2(artistId: artistId, count: 100)
+                    print("📻 getSimilarSongs2 returned \(similarSongs.count) songs")
+                }
+
+                // Fallback 2: Try random songs if still empty
+                if similarSongs.isEmpty {
+                    print("📻 Falling back to random songs")
+                    similarSongs = try await NavidromeAPI.shared.getRandomSongs(size: 100)
+                    print("📻 getRandomSongs returned \(similarSongs.count) songs")
+                }
+
+                await MainActor.run {
+                    if similarSongs.isEmpty {
+                        print("⚠️ No songs found even with fallbacks, playing original song")
+                        AudioPlayer.shared.playSong(song)
+                    } else {
+                        // Filter out the source song if it appears in results
+                        let filteredSongs = similarSongs.filter { $0.id != song.id }
+
+                        // Build queue with source song first, then similar songs
+                        var queue = [song]
+                        queue.append(contentsOf: filteredSongs)
+
+                        print("✅ Radio queue ready: 1 source song + \(filteredSongs.count) similar songs = \(queue.count) total")
+                        AudioPlayer.shared.playQueue(queue, startingAt: 0)
+                        print("📻 Queue after playQueue: \(AudioPlayer.shared.queue.count) songs")
+                    }
+                }
+            } catch {
+                print("❌ Failed to start radio: \(error)")
+                // Final fallback: just play the song
+                await MainActor.run {
+                    AudioPlayer.shared.playSong(song)
                 }
             }
         }

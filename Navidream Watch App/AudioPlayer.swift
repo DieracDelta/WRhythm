@@ -116,8 +116,12 @@ class AudioPlayer: NSObject, ObservableObject {
     }
 
     func playQueueShuffled(_ songs: [Song]) {
-        guard !songs.isEmpty else { return }
+        guard !songs.isEmpty else {
+            print("⚠️ playQueueShuffled called with empty array")
+            return
+        }
 
+        print("🔀 playQueueShuffled called with \(songs.count) songs")
         self.isShuffled = true
         self.originalQueue = songs
         self.originalIndex = 0
@@ -128,6 +132,7 @@ class AudioPlayer: NSObject, ObservableObject {
 
         self.queue = shuffled
         self.currentIndex = 0
+        print("🔀 Queue set to \(self.queue.count) songs, currentIndex=\(self.currentIndex)")
         startPlayback(shuffled[0])
     }
 
