@@ -16,6 +16,15 @@ struct FavouritesView: View {
 
     private var player: AudioPlayer { AudioPlayer.shared }
 
+    // Get starred songs from downloaded songs in offline mode
+    private var offlineStarredSongs: [Song] {
+        downloadManager.starredSongIds.compactMap { songId in
+            downloadManager.songMetadata[songId]
+        }.filter { song in
+            downloadManager.isDownloaded(song.id)
+        }
+    }
+
     private func filteredSongs(_ songs: [Song]) -> [Song] {
         if offlineMode {
             return songs.filter { downloadManager.isDownloaded($0.id) }
@@ -43,7 +52,100 @@ struct FavouritesView: View {
 
     var body: some View {
         Group {
-            if isLoading {
+            if offlineMode {
+                // Offline mode: show starred songs from local cache
+                if offlineStarredSongs.isEmpty {
+                    VStack {
+                        Image(systemName: "star")
+                            .font(.largeTitle)
+                            .foregroundColor(.secondary)
+                        Text("No favourites available offline")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text("Star and download songs while online to see them here")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
+                    }
+                } else {
+                    ScrollView {
+                        VStack(spacing: 16) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Text("Songs")
+                                        .font(.headline)
+                                    Spacer()
+                                    if offlineStarredSongs.count > 1 {
+                                        HStack(spacing: 8) {
+                                            Button(action: {
+                                                player.playQueue(offlineStarredSongs, startingAt: 0)
+                                            }) {
+                                                Image(systemName: "play.fill")
+                                                    .font(.caption)
+                                            }
+                                            Button(action: {
+                                                player.playQueueShuffled(offlineStarredSongs)
+                                            }) {
+                                                Image(systemName: "shuffle")
+                                                    .font(.caption)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                ForEach(Array(offlineStarredSongs.enumerated()), id: \.element.id) { index, song in
+                                    Button(action: {
+                                        player.playQueue(offlineStarredSongs, startingAt: index)
+                                    }) {
+                                        HStack {
+                                            if let coverArtId = song.coverArt,
+                                               let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 100) {
+                                                AsyncImage(url: coverURL) { image in
+                                                    image
+                                                        .resizable()
+                                                        .aspectRatio(contentMode: .fill)
+                                                } placeholder: {
+                                                    Color.gray
+                                                }
+                                                .frame(width: 40, height: 40)
+                                                .cornerRadius(4)
+                                                .id(coverURL)
+                                            }
+
+                                            VStack(alignment: .leading) {
+                                                Text(song.title)
+                                                    .font(.caption)
+                                                    .lineLimit(1)
+                                                if let artist = song.artist {
+                                                    Text(artist)
+                                                        .font(.caption2)
+                                                        .foregroundColor(.secondary)
+                                                        .lineLimit(1)
+                                                }
+                                            }
+
+                                            Spacer()
+
+                                            Image(systemName: "arrow.down.circle.fill")
+                                                .font(.caption2)
+                                                .foregroundColor(.green)
+
+                                            if player.currentSong?.id == song.id && player.isPlaying {
+                                                Image(systemName: "speaker.wave.2.fill")
+                                                    .font(.caption2)
+                                                    .foregroundColor(.accentColor)
+                                            }
+                                        }
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                        .padding()
+                    }
+                }
+            } else if isLoading {
                 ProgressView("Loading favourites...")
             } else if !errorMessage.isEmpty {
                 VStack {
@@ -256,28 +358,43 @@ struct FavouritesView: View {
                         .padding()
                     }
                 }
+            } else {
+                // Fallback state - shouldn't normally reach here
+                VStack {
+                    Text("Loading...")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .onAppear {
+                    print("⚠️ FavouritesView in unexpected state - starred=nil, isLoading=\(isLoading), offlineMode=\(offlineMode)")
+                }
             }
         }
         .navigationTitle("Favourites")
         .onAppear {
-            if !offlineMode && starred == nil {
+            print("📱 FavouritesView appeared - offlineMode=\(offlineMode), starred=\(starred != nil ? "loaded" : "nil"), isLoading=\(isLoading)")
+            if !offlineMode {
                 loadStarred()
             }
         }
     }
 
     private func loadStarred() {
+        print("🔄 FavouritesView: Starting to load starred content...")
         isLoading = true
         errorMessage = ""
 
         Task {
             do {
                 let fetchedStarred = try await NavidromeAPI.shared.getStarred()
+                print("✅ FavouritesView: Received starred content - songs: \(fetchedStarred.song?.count ?? 0), albums: \(fetchedStarred.album?.count ?? 0), artists: \(fetchedStarred.artist?.count ?? 0)")
                 await MainActor.run {
                     self.starred = fetchedStarred
                     self.isLoading = false
+                    print("✅ FavouritesView: Updated state - starred is now set")
                 }
             } catch {
+                print("❌ FavouritesView: Failed to load starred content: \(error)")
                 await MainActor.run {
                     self.errorMessage = error.localizedDescription
                     self.isLoading = false

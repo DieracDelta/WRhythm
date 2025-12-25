@@ -43,6 +43,9 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     @Published var downloadedSongs: [String: DownloadedSong] = [:]
     @Published var cachedPlaylists: [CachedPlaylist] = []
     @Published var radioPlaylists: [RadioPlaylist] = []
+    @Published var starredSongIds: Set<String> = []
+    @Published var pendingStarChanges: Set<String> = []  // Songs to star on server
+    @Published var pendingUnstarChanges: Set<String> = []  // Songs to unstar on server
     @Published var activeDownloads: [String: Double] = [:] // songId -> progress (0-1)
     @Published var downloadBytesReceived: [String: Int64] = [:] // songId -> bytes downloaded
     @Published var maxConcurrentDownloads: Int = UserDefaults.standard.integer(forKey: "maxConcurrentDownloads") == 0 ? 8 : UserDefaults.standard.integer(forKey: "maxConcurrentDownloads") {
@@ -102,11 +105,25 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         documentsDirectory.appendingPathComponent("radio_playlists.json")
     }
 
+    private var starredSongsURL: URL {
+        documentsDirectory.appendingPathComponent("starred_songs.json")
+    }
+
+    private var pendingStarChangesURL: URL {
+        documentsDirectory.appendingPathComponent("pending_star_changes.json")
+    }
+
+    private var pendingUnstarChangesURL: URL {
+        documentsDirectory.appendingPathComponent("pending_unstar_changes.json")
+    }
+
     override init() {
         super.init()
         loadMetadata()
         loadPlaylistsMetadata()
         loadRadioPlaylists()
+        loadStarredSongs()
+        loadPendingChanges()
 
         // Log when app becomes active to see download state
         NotificationCenter.default.addObserver(
@@ -204,6 +221,148 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
             print("💾 Saved radio playlists metadata")
         } catch {
             print("❌ Failed to save radio playlists metadata: \(error)")
+        }
+    }
+
+    private func loadStarredSongs() {
+        guard fileManager.fileExists(atPath: starredSongsURL.path) else {
+            print("📥 No starred songs found")
+            return
+        }
+
+        do {
+            let data = try Data(contentsOf: starredSongsURL)
+            let songIds = try JSONDecoder().decode([String].self, from: data)
+            self.starredSongIds = Set(songIds)
+            print("📥 Loaded \(songIds.count) starred songs")
+        } catch {
+            print("❌ Failed to load starred songs: \(error)")
+        }
+    }
+
+    private func saveStarredSongs() {
+        do {
+            let data = try JSONEncoder().encode(Array(starredSongIds))
+            try data.write(to: starredSongsURL)
+            print("💾 Saved \(starredSongIds.count) starred songs")
+        } catch {
+            print("❌ Failed to save starred songs: \(error)")
+        }
+    }
+
+    func cacheStarredSongs(_ songIds: Set<String>) {
+        self.starredSongIds = songIds
+        saveStarredSongs()
+    }
+
+    private func loadPendingChanges() {
+        // Load pending star changes
+        if fileManager.fileExists(atPath: pendingStarChangesURL.path) {
+            do {
+                let data = try Data(contentsOf: pendingStarChangesURL)
+                let songIds = try JSONDecoder().decode([String].self, from: data)
+                self.pendingStarChanges = Set(songIds)
+                print("📥 Loaded \(songIds.count) pending star changes")
+            } catch {
+                print("❌ Failed to load pending star changes: \(error)")
+            }
+        }
+
+        // Load pending unstar changes
+        if fileManager.fileExists(atPath: pendingUnstarChangesURL.path) {
+            do {
+                let data = try Data(contentsOf: pendingUnstarChangesURL)
+                let songIds = try JSONDecoder().decode([String].self, from: data)
+                self.pendingUnstarChanges = Set(songIds)
+                print("📥 Loaded \(songIds.count) pending unstar changes")
+            } catch {
+                print("❌ Failed to load pending unstar changes: \(error)")
+            }
+        }
+    }
+
+    private func savePendingChanges() {
+        // Save pending star changes
+        do {
+            let data = try JSONEncoder().encode(Array(pendingStarChanges))
+            try data.write(to: pendingStarChangesURL)
+            print("💾 Saved \(pendingStarChanges.count) pending star changes")
+        } catch {
+            print("❌ Failed to save pending star changes: \(error)")
+        }
+
+        // Save pending unstar changes
+        do {
+            let data = try JSONEncoder().encode(Array(pendingUnstarChanges))
+            try data.write(to: pendingUnstarChangesURL)
+            print("💾 Saved \(pendingUnstarChanges.count) pending unstar changes")
+        } catch {
+            print("❌ Failed to save pending unstar changes: \(error)")
+        }
+    }
+
+    // Star a song locally, and track for sync if offline
+    func starSong(_ songId: String, isOffline: Bool) {
+        starredSongIds.insert(songId)
+        saveStarredSongs()
+
+        if isOffline {
+            pendingStarChanges.insert(songId)
+            pendingUnstarChanges.remove(songId)  // Cancel any pending unstar
+            savePendingChanges()
+            print("⭐ Queued star for sync: \(songId)")
+        }
+    }
+
+    // Unstar a song locally, and track for sync if offline
+    func unstarSong(_ songId: String, isOffline: Bool) {
+        starredSongIds.remove(songId)
+        saveStarredSongs()
+
+        if isOffline {
+            pendingUnstarChanges.insert(songId)
+            pendingStarChanges.remove(songId)  // Cancel any pending star
+            savePendingChanges()
+            print("⭐ Queued unstar for sync: \(songId)")
+        }
+    }
+
+    // Sync pending changes to server
+    func syncPendingStarChanges() async throws {
+        print("🔄 Syncing pending star changes...")
+
+        var errors: [Error] = []
+
+        // Process pending stars
+        for songId in pendingStarChanges {
+            do {
+                try await NavidromeAPI.shared.star(songId: songId)
+                print("✅ Synced star: \(songId)")
+            } catch {
+                print("❌ Failed to sync star for \(songId): \(error)")
+                errors.append(error)
+            }
+        }
+
+        // Process pending unstars
+        for songId in pendingUnstarChanges {
+            do {
+                try await NavidromeAPI.shared.unstar(songId: songId)
+                print("✅ Synced unstar: \(songId)")
+            } catch {
+                print("❌ Failed to sync unstar for \(songId): \(error)")
+                errors.append(error)
+            }
+        }
+
+        // If all succeeded, clear pending changes
+        if errors.isEmpty {
+            pendingStarChanges.removeAll()
+            pendingUnstarChanges.removeAll()
+            savePendingChanges()
+            print("✅ All pending star changes synced")
+        } else {
+            throw errors.first!
         }
     }
 

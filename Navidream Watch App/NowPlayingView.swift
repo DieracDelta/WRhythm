@@ -9,6 +9,10 @@ import SwiftUI
 
 struct NowPlayingView: View {
     @ObservedObject var player = AudioPlayer.shared
+    @ObservedObject var downloadManager = DownloadManager.shared
+    @State private var isStarring = false
+    @State private var isSyncing = false
+    @AppStorage("offlineMode") private var offlineMode = false
 
     var body: some View {
         ScrollView {
@@ -106,38 +110,50 @@ struct NowPlayingView: View {
                         .padding(.horizontal, 4)
                     }
 
-                    // Radio button
-                    NavigationLink(destination: RadioOptionsView(
-                        sourceSong: song,
-                        sourceTitle: song.title,
-                        sourceType: .song
-                    )) {
-                        Label("Radio", systemImage: "antenna.radiowaves.left.and.right")
-                            .font(.caption)
-                    }
-                    .buttonStyle(.bordered)
+                    // Action buttons
+                    HStack(spacing: 8) {
+                        NavigationLink(destination: RadioOptionsView(
+                            sourceSong: song,
+                            sourceTitle: song.title,
+                            sourceType: .song
+                        )) {
+                            Label("📻", systemImage: "antenna.radiowaves.left.and.right")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.bordered)
 
-                    if player.queue.count > 1 {
-                        HStack(spacing: 8) {
+                        Button(action: {
+                            toggleFavorite(song: song)
+                        }) {
+                            Label(downloadManager.starredSongIds.contains(song.id) ? "❤️" : "🤍",
+                                  systemImage: downloadManager.starredSongIds.contains(song.id) ? "heart.fill" : "heart")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(isStarring)
+                    }
+
+                    HStack(spacing: 8) {
+                        if player.queue.count > 1 {
                             Text("Track \(player.currentIndex + 1) of \(player.queue.count)")
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
-
-                            Button(action: player.toggleShuffle) {
-                                Image(systemName: player.isShuffled ? "shuffle.circle.fill" : "shuffle.circle")
-                                    .font(.caption)
-                                    .foregroundColor(player.isShuffled ? .accentColor : .secondary)
-                            }
-                            .buttonStyle(.plain)
-
-                            Button(action: player.toggleRepeat) {
-                                Image(systemName: player.repeatMode == .off ? "repeat.circle" :
-                                      player.repeatMode == .all ? "repeat.circle.fill" : "repeat.1.circle.fill")
-                                    .font(.caption)
-                                    .foregroundColor(player.repeatMode == .off ? .secondary : .accentColor)
-                            }
-                            .buttonStyle(.plain)
                         }
+
+                        Button(action: player.toggleShuffle) {
+                            Image(systemName: player.isShuffled ? "shuffle.circle.fill" : "shuffle.circle")
+                                .font(.caption)
+                                .foregroundColor(player.isShuffled ? .accentColor : .secondary)
+                        }
+                        .buttonStyle(.plain)
+
+                        Button(action: player.toggleRepeat) {
+                            Image(systemName: player.repeatMode == .off ? "repeat.circle" :
+                                  player.repeatMode == .all ? "repeat.circle.fill" : "repeat.1.circle.fill")
+                                .font(.caption)
+                                .foregroundColor(player.repeatMode == .off ? .secondary : .accentColor)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding()
@@ -155,6 +171,101 @@ struct NowPlayingView: View {
             }
         }
         .navigationTitle("Now Playing")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(action: {
+                    syncFavorites()
+                }) {
+                    if isSyncing {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                }
+                .disabled(isSyncing)
+            }
+        }
+        .onAppear {
+            loadStarredSongs()
+        }
+    }
+
+    private func loadStarredSongs() {
+        Task {
+            do {
+                let starred = try await NavidromeAPI.shared.getStarred()
+                let songIds = Set(starred.song?.map { $0.id } ?? [])
+                await MainActor.run {
+                    downloadManager.cacheStarredSongs(songIds)
+                }
+            } catch {
+                print("❌ Failed to load starred songs: \(error)")
+            }
+        }
+    }
+
+    private func syncFavorites() {
+        isSyncing = true
+        Task {
+            do {
+                // First, sync any pending local changes to server
+                try await downloadManager.syncPendingStarChanges()
+
+                // Then fetch the latest from server
+                let starred = try await NavidromeAPI.shared.getStarred()
+                let songIds = Set(starred.song?.map { $0.id } ?? [])
+                await MainActor.run {
+                    downloadManager.cacheStarredSongs(songIds)
+                    isSyncing = false
+                }
+                print("✅ Favorites synced: \(songIds.count) songs")
+            } catch {
+                print("❌ Failed to sync favorites: \(error)")
+                await MainActor.run {
+                    isSyncing = false
+                }
+            }
+        }
+    }
+
+    private func toggleFavorite(song: Song) {
+        isStarring = true
+
+        let isCurrentlyStarred = downloadManager.starredSongIds.contains(song.id)
+
+        if offlineMode {
+            // Offline mode: just update locally and queue for sync
+            if isCurrentlyStarred {
+                downloadManager.unstarSong(song.id, isOffline: true)
+            } else {
+                downloadManager.starSong(song.id, isOffline: true)
+            }
+            isStarring = false
+        } else {
+            // Online mode: update server and local cache
+            Task {
+                do {
+                    if isCurrentlyStarred {
+                        try await NavidromeAPI.shared.unstar(songId: song.id)
+                        await MainActor.run {
+                            downloadManager.unstarSong(song.id, isOffline: false)
+                            isStarring = false
+                        }
+                    } else {
+                        try await NavidromeAPI.shared.star(songId: song.id)
+                        await MainActor.run {
+                            downloadManager.starSong(song.id, isOffline: false)
+                            isStarring = false
+                        }
+                    }
+                } catch {
+                    print("❌ Failed to toggle favorite: \(error)")
+                    await MainActor.run {
+                        isStarring = false
+                    }
+                }
+            }
+        }
     }
 
     private func startRadio(for song: Song) {

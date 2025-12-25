@@ -23,18 +23,8 @@ class AudioPlayer: NSObject, ObservableObject {
             print("▶️ AudioPlayer.isPlaying changed to: \(isPlaying)")
         }
     }
-    @Published var currentTime: TimeInterval = 0 {
-        didSet {
-            if Int(oldValue) != Int(currentTime) {
-                print("⏱️ AudioPlayer.currentTime changed to: \(Int(currentTime))s")
-            }
-        }
-    }
-    @Published var duration: TimeInterval = 0 {
-        didSet {
-            print("⏲️ AudioPlayer.duration changed to: \(duration)s")
-        }
-    }
+    @Published var currentTime: TimeInterval = 0
+    @Published var duration: TimeInterval = 0
     @Published var queue: [Song] = []
     @Published var currentIndex: Int = 0
     @Published var isShuffled = false
@@ -301,16 +291,12 @@ class AudioPlayer: NSObject, ObservableObject {
             // Update duration if it's available and we don't have it yet
             if let item = self.player?.currentItem {
                 let itemDuration = item.duration
-                print("⏱️ Time observer - currentTime: \(time.seconds)s, published duration: \(self.duration)s")
-                print("⏱️ Item duration - seconds: \(itemDuration.seconds), isNumeric: \(itemDuration.isNumeric), isIndefinite: \(itemDuration.isIndefinite)")
 
                 if (self.duration == 0 || self.duration.isNaN),
                    itemDuration.isNumeric && itemDuration.seconds > 0 {
                     self.duration = itemDuration.seconds
                     print("✅ Duration updated from time observer to: \(self.duration)s")
                 }
-            } else {
-                print("⚠️ No current item in time observer")
             }
         }
     }

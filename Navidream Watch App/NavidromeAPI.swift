@@ -510,6 +510,46 @@ class NavidromeAPI: ObservableObject {
         return starred
     }
 
+    func star(songId: String) async throws {
+        guard let url = buildURL(endpoint: "star", additionalParams: ["id": songId]) else {
+            throw NavidromeError.invalidURL
+        }
+
+        print("⭐ Starring song: \(songId)")
+
+        let (data, _) = try await URLSession.shared.data(from: url)
+        let result = try JSONDecoder().decode(SubsonicResponse<BaseResponse>.self, from: data)
+
+        guard result.subsonicResponse.status == "ok" else {
+            if let error = result.subsonicResponse.error {
+                throw NavidromeError.apiError(error.message)
+            }
+            throw NavidromeError.unknown
+        }
+
+        print("✅ Song starred successfully")
+    }
+
+    func unstar(songId: String) async throws {
+        guard let url = buildURL(endpoint: "unstar", additionalParams: ["id": songId]) else {
+            throw NavidromeError.invalidURL
+        }
+
+        print("⭐ Unstarring song: \(songId)")
+
+        let (data, _) = try await URLSession.shared.data(from: url)
+        let result = try JSONDecoder().decode(SubsonicResponse<BaseResponse>.self, from: data)
+
+        guard result.subsonicResponse.status == "ok" else {
+            if let error = result.subsonicResponse.error {
+                throw NavidromeError.apiError(error.message)
+            }
+            throw NavidromeError.unknown
+        }
+
+        print("✅ Song unstarred successfully")
+    }
+
     func search(query: String) async throws -> SearchResult {
         guard let url = buildURL(endpoint: "search3", additionalParams: ["query": query]) else {
             throw NavidromeError.invalidURL
