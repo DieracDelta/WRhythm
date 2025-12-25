@@ -373,7 +373,7 @@ struct FavouritesView: View {
         .navigationTitle("Favourites")
         .onAppear {
             print("📱 FavouritesView appeared - offlineMode=\(offlineMode), starred=\(starred != nil ? "loaded" : "nil"), isLoading=\(isLoading)")
-            if !offlineMode {
+            if !offlineMode && starred == nil && !isLoading {
                 loadStarred()
             }
         }

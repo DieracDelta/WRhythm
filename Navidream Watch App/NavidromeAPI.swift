@@ -731,7 +731,7 @@ struct Album: Decodable, Identifiable {
     let song: [Song]
 }
 
-struct Song: Decodable, Identifiable {
+struct Song: Codable, Identifiable {
     let id: String
     let title: String
     let album: String?

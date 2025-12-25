@@ -226,8 +226,10 @@ struct AlbumDetailView: View {
         let _ = print("🔄 AlbumDetailView body recomputed for album: \(albumId)")
         return ZStack {
             if offlineMode {
-                // Offline mode: build album from downloaded songs
-                let downloadedSongs = downloadManager.downloadedSongs.values.filter { $0.album == albumId }
+                // Offline mode: build album from downloaded songs using songMetadata
+                let downloadedSongs = downloadManager.songMetadata.values.filter { song in
+                    downloadManager.isDownloaded(song.id) && song.albumId == albumId
+                }
                 if downloadedSongs.isEmpty {
                     VStack {
                         Text("Error")
@@ -237,10 +239,11 @@ struct AlbumDetailView: View {
                             .foregroundColor(.red)
                     }
                 } else {
+                    let sortedSongs = downloadedSongs.sorted { ($0.track ?? 999) < ($1.track ?? 999) }
                     ScrollView {
                         VStack(spacing: 12) {
                             Group {
-                                if let coverArtId = downloadedSongs.first?.coverArt,
+                                if let coverArtId = sortedSongs.first?.coverArt,
                                    let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 300) {
                                     AsyncImage(url: coverURL) { image in
                                         image
@@ -256,9 +259,9 @@ struct AlbumDetailView: View {
                             .id(albumId)
 
                             VStack(spacing: 4) {
-                                Text(downloadedSongs.first?.album ?? "Unknown Album")
+                                Text(sortedSongs.first?.album ?? "Unknown Album")
                                     .font(.headline)
-                                if let artist = downloadedSongs.first?.artist {
+                                if let artist = sortedSongs.first?.artist {
                                     Text(artist)
                                         .font(.caption)
                                         .foregroundColor(.secondary)
@@ -267,55 +270,14 @@ struct AlbumDetailView: View {
 
                             HStack(spacing: 8) {
                                 Button(action: {
-                                    // Build Song array from downloaded songs
-                                    let songs = downloadedSongs.map { downloaded in
-                                        Song(
-                                            id: downloaded.songId,
-                                            title: downloaded.title,
-                                            album: downloaded.album,
-                                            albumId: downloaded.album,
-                                            artist: downloaded.artist,
-                                            artistId: nil,
-                                            track: nil,
-                                            year: nil,
-                                            genre: nil,
-                                            coverArt: downloaded.coverArt,
-                                            size: Int(downloaded.fileSize),
-                                            contentType: nil,
-                                            suffix: nil,
-                                            duration: nil,
-                                            bitRate: nil,
-                                            path: nil
-                                        )
-                                    }.sorted { ($0.track ?? 999) < ($1.track ?? 999) }
-                                    player.playQueue(songs, startingAt: 0)
+                                    player.playQueue(Array(sortedSongs), startingAt: 0)
                                 }) {
                                     Label("Play", systemImage: "play.fill")
                                 }
                                 .buttonStyle(.borderedProminent)
 
                                 Button(action: {
-                                    let songs = downloadedSongs.map { downloaded in
-                                        Song(
-                                            id: downloaded.songId,
-                                            title: downloaded.title,
-                                            album: downloaded.album,
-                                            albumId: downloaded.album,
-                                            artist: downloaded.artist,
-                                            artistId: nil,
-                                            track: nil,
-                                            year: nil,
-                                            genre: nil,
-                                            coverArt: downloaded.coverArt,
-                                            size: Int(downloaded.fileSize),
-                                            contentType: nil,
-                                            suffix: nil,
-                                            duration: nil,
-                                            bitRate: nil,
-                                            path: nil
-                                        )
-                                    }
-                                    player.playQueueShuffled(songs)
+                                    player.playQueueShuffled(Array(sortedSongs))
                                 }) {
                                     Image(systemName: "shuffle")
                                 }
@@ -325,33 +287,13 @@ struct AlbumDetailView: View {
                             Divider()
 
                             VStack(spacing: 8) {
-                                ForEach(Array(downloadedSongs.enumerated()), id: \.element.songId) { index, downloadedSong in
+                                ForEach(Array(sortedSongs.enumerated()), id: \.element.id) { index, song in
                                     Button(action: {
-                                        let songs = downloadedSongs.map { downloaded in
-                                            Song(
-                                                id: downloaded.songId,
-                                                title: downloaded.title,
-                                                album: downloaded.album,
-                                                albumId: downloaded.album,
-                                                artist: downloaded.artist,
-                                                artistId: nil,
-                                                track: nil,
-                                                year: nil,
-                                                genre: nil,
-                                                coverArt: downloaded.coverArt,
-                                                size: Int(downloaded.fileSize),
-                                                contentType: nil,
-                                                suffix: nil,
-                                                duration: nil,
-                                                bitRate: nil,
-                                                path: nil
-                                            )
-                                        }.sorted { ($0.track ?? 999) < ($1.track ?? 999) }
-                                        player.playQueue(songs, startingAt: index)
+                                        player.playQueue(Array(sortedSongs), startingAt: index)
                                     }) {
                                         HStack {
                                             VStack(alignment: .leading) {
-                                                Text(downloadedSong.title)
+                                                Text(song.title)
                                                     .font(.caption)
                                                     .lineLimit(1)
                                             }
@@ -362,7 +304,7 @@ struct AlbumDetailView: View {
                                                 .font(.caption2)
                                                 .foregroundColor(.green)
 
-                                            if player.currentSong?.id == downloadedSong.songId && player.isPlaying {
+                                            if player.currentSong?.id == song.id && player.isPlaying {
                                                 Image(systemName: "speaker.wave.2.fill")
                                                     .font(.caption2)
                                                     .foregroundColor(.accentColor)
@@ -370,7 +312,7 @@ struct AlbumDetailView: View {
                                         }
                                     }
                                     .buttonStyle(.plain)
-                                    .id(downloadedSong.songId)
+                                    .id(song.id)
                                 }
                             }
                         }

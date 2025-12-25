@@ -54,6 +54,9 @@ struct ArtistsView: View {
             if offlineMode {
                 // Offline mode: show downloaded artists only
                 let downloadedArtists = downloadManager.getDownloadedArtists()
+                let filteredArtists = searchText.isEmpty ? downloadedArtists : downloadedArtists.filter { artist in
+                    artist.name.localizedCaseInsensitiveContains(searchText)
+                }
                 if downloadedArtists.isEmpty {
                     VStack {
                         Image(systemName: "arrow.down.circle")
@@ -67,9 +70,20 @@ struct ArtistsView: View {
                             .multilineTextAlignment(.center)
                             .padding(.horizontal)
                     }
+                } else if filteredArtists.isEmpty {
+                    VStack {
+                        Image(systemName: "magnifyingglass")
+                            .font(.largeTitle)
+                            .foregroundColor(.secondary)
+                        Text("No artists found")
+                            .font(.headline)
+                        Text("Try a different search term")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 } else {
                     List {
-                        ForEach(Array(downloadedArtists.enumerated()), id: \.element.name) { index, artist in
+                        ForEach(Array(filteredArtists.enumerated()), id: \.element.name) { index, artist in
                             NavigationLink(destination: ArtistDetailView(artistId: "offline-\(artist.name)", artistName: artist.name)) {
                                 HStack {
                                     if let coverArtId = artist.coverArt,
@@ -107,6 +121,7 @@ struct ArtistsView: View {
                             }
                         }
                     }
+                    .searchable(text: $searchText, prompt: "Search artists")
                 }
             } else if isLoading {
                 VStack(spacing: 8) {

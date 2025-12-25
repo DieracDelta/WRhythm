@@ -21,53 +21,239 @@ struct TracksView: View {
 
     private var displayedSongs: [Song] {
         if offlineMode {
-            // Convert DownloadedSong to Song
-            return downloadManager.downloadedSongs.values.map { downloaded -> Song in
-                Song(
-                    id: downloaded.songId,
-                    title: downloaded.title,
-                    album: downloaded.album,
-                    albumId: nil,
-                    artist: downloaded.artist,
-                    artistId: nil,
-                    track: nil,
-                    year: nil,
-                    genre: nil,
-                    coverArt: downloaded.coverArt,
-                    size: nil,
-                    contentType: nil,
-                    suffix: nil,
-                    duration: nil,
-                    bitRate: nil,
-                    path: nil
-                )
-            }.sorted { $0.title < $1.title }
+            // Get songs from songMetadata that are actually downloaded
+            let allSongs = downloadManager.songMetadata.values.filter { song in
+                downloadManager.isDownloaded(song.id)
+            }
+
+            // Filter by search text if present
+            if searchText.isEmpty {
+                return allSongs.sorted { $0.title < $1.title }
+            } else {
+                return allSongs.filter { song in
+                    song.title.localizedCaseInsensitiveContains(searchText) ||
+                    (song.artist?.localizedCaseInsensitiveContains(searchText) ?? false) ||
+                    (song.album?.localizedCaseInsensitiveContains(searchText) ?? false)
+                }.sorted { $0.title < $1.title }
+            }
         } else {
             return searchResults
+        }
+    }
+
+    private var offlineAlbumResults: [AlbumSummary] {
+        guard offlineMode && !searchText.isEmpty else { return [] }
+
+        // Extract unique albums from downloaded songs
+        var albumsDict: [String: AlbumSummary] = [:]
+        for song in downloadManager.songMetadata.values where downloadManager.isDownloaded(song.id) {
+            if let album = song.album,
+               album.localizedCaseInsensitiveContains(searchText) {
+                let key = album.lowercased()
+                if albumsDict[key] == nil {
+                    albumsDict[key] = AlbumSummary(
+                        id: key,
+                        name: album,
+                        artist: song.artist,
+                        artistId: nil,
+                        coverArt: song.coverArt,
+                        songCount: 0,
+                        duration: 0,
+                        created: "",
+                        year: nil
+                    )
+                }
+            }
+        }
+        return Array(albumsDict.values).sorted { $0.name < $1.name }
+    }
+
+    private var offlineArtistResults: [Artist] {
+        guard offlineMode && !searchText.isEmpty else { return [] }
+
+        // Extract unique artists from downloaded songs
+        var artistsDict: [String: Artist] = [:]
+        for song in downloadManager.songMetadata.values where downloadManager.isDownloaded(song.id) {
+            if let artist = song.artist,
+               artist.localizedCaseInsensitiveContains(searchText) {
+                let key = artist.lowercased()
+                if artistsDict[key] == nil {
+                    artistsDict[key] = Artist(
+                        id: key,
+                        name: artist,
+                        albumCount: nil,
+                        coverArt: song.coverArt
+                    )
+                }
+            }
+        }
+        return Array(artistsDict.values).sorted { $0.name < $1.name }
+    }
+
+    private var offlinePlaylistResults: [CachedPlaylist] {
+        guard offlineMode && !searchText.isEmpty else { return [] }
+
+        return downloadManager.cachedPlaylists.filter { playlist in
+            playlist.name.localizedCaseInsensitiveContains(searchText)
         }
     }
 
     var body: some View {
         Group {
             if offlineMode {
-                // Offline mode: show downloaded songs
-                if displayedSongs.isEmpty {
-                    VStack {
-                        Image(systemName: "arrow.down.circle")
+                // Offline mode: search through downloaded content
+                if searchText.isEmpty {
+                    VStack(spacing: 12) {
+                        Image(systemName: "magnifyingglass")
                             .font(.largeTitle)
                             .foregroundColor(.secondary)
-                        Text("No downloaded songs")
+                        Text("Search offline music")
                             .font(.headline)
-                        Text("Download songs while online to access them here")
-                            .font(.caption)
                             .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal)
+                        let downloadedCount = downloadManager.songMetadata.values.filter { downloadManager.isDownloaded($0.id) }.count
+                        if downloadedCount == 0 {
+                            Text("No downloaded songs")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Text("Download songs while online to search offline")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal)
+                        } else {
+                            Text("\(downloadedCount) songs available")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+
+                        Button(action: {
+                            showingSearchSheet = true
+                        }) {
+                            HStack {
+                                Image(systemName: "magnifyingglass")
+                                Text("Start Search")
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .padding(.top, 8)
+                    }
+                } else if displayedSongs.isEmpty && offlineAlbumResults.isEmpty && offlineArtistResults.isEmpty && offlinePlaylistResults.isEmpty {
+                    VStack {
+                        Image(systemName: "music.note")
+                            .font(.largeTitle)
+                            .foregroundColor(.secondary)
+                        Text("No offline results")
+                            .font(.headline)
+                            .foregroundColor(.secondary)
                     }
                 } else {
                     List {
-                        ForEach(displayedSongs) { song in
-                            songRow(song: song)
+                        if !offlinePlaylistResults.isEmpty {
+                            Section(header: Text("Playlists")) {
+                                ForEach(offlinePlaylistResults, id: \.id) { playlist in
+                                    NavigationLink(destination: PlaylistDetailView(playlistId: playlist.id, playlistName: playlist.name)) {
+                                        HStack {
+                                            if let coverArtId = playlist.coverArt,
+                                               let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 100) {
+                                                AsyncImage(url: coverURL) { image in
+                                                    image
+                                                        .resizable()
+                                                        .aspectRatio(contentMode: .fill)
+                                                } placeholder: {
+                                                    Color.gray
+                                                }
+                                                .frame(width: 40, height: 40)
+                                                .cornerRadius(4)
+                                            }
+
+                                            VStack(alignment: .leading) {
+                                                Text(playlist.name)
+                                                    .font(.headline)
+                                                    .lineLimit(1)
+                                                Text("\(playlist.songCount) songs")
+                                                    .font(.caption)
+                                                    .foregroundColor(.secondary)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if !offlineArtistResults.isEmpty {
+                            Section(header: Text("Artists")) {
+                                ForEach(offlineArtistResults) { artist in
+                                    Button(action: {
+                                        // Filter songs by this artist
+                                        searchText = artist.name
+                                    }) {
+                                        HStack {
+                                            if let coverArtId = artist.coverArt,
+                                               let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 100) {
+                                                AsyncImage(url: coverURL) { image in
+                                                    image
+                                                        .resizable()
+                                                        .aspectRatio(contentMode: .fill)
+                                                } placeholder: {
+                                                    Color.gray
+                                                }
+                                                .frame(width: 40, height: 40)
+                                                .cornerRadius(4)
+                                            }
+
+                                            Text(artist.name)
+                                                .font(.headline)
+                                                .lineLimit(1)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if !offlineAlbumResults.isEmpty {
+                            Section(header: Text("Albums")) {
+                                ForEach(offlineAlbumResults) { album in
+                                    Button(action: {
+                                        // Filter songs by this album
+                                        searchText = album.name
+                                    }) {
+                                        HStack {
+                                            if let coverArtId = album.coverArt,
+                                               let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 100) {
+                                                AsyncImage(url: coverURL) { image in
+                                                    image
+                                                        .resizable()
+                                                        .aspectRatio(contentMode: .fill)
+                                                } placeholder: {
+                                                    Color.gray
+                                                }
+                                                .frame(width: 40, height: 40)
+                                                .cornerRadius(4)
+                                            }
+
+                                            VStack(alignment: .leading) {
+                                                Text(album.name)
+                                                    .font(.headline)
+                                                    .lineLimit(1)
+                                                if let artist = album.artist {
+                                                    Text(artist)
+                                                        .font(.caption)
+                                                        .foregroundColor(.secondary)
+                                                        .lineLimit(1)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if !displayedSongs.isEmpty {
+                            Section(header: Text("Songs")) {
+                                ForEach(displayedSongs) { song in
+                                    songRow(song: song)
+                                }
+                            }
                         }
                     }
                 }
@@ -191,26 +377,26 @@ struct TracksView: View {
                 }
             }
         }
-        .navigationTitle(offlineMode ? "Tracks (\(displayedSongs.count))" : "Search")
+        .navigationTitle(offlineMode ? "Offline Search" : "Search")
         .toolbar {
-            if !offlineMode {
-                ToolbarItem(placement: .topBarTrailing) {
-                    if !searchText.isEmpty {
-                        Button(action: {
-                            searchText = ""
+            ToolbarItem(placement: .topBarTrailing) {
+                if !searchText.isEmpty {
+                    Button(action: {
+                        searchText = ""
+                        if !offlineMode {
                             searchResults = []
                             albumResults = []
                             artistResults = []
-                        }) {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.secondary)
                         }
-                    } else {
-                        Button(action: {
-                            showingSearchSheet = true
-                        }) {
-                            Image(systemName: "magnifyingglass")
-                        }
+                    }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.secondary)
+                    }
+                } else {
+                    Button(action: {
+                        showingSearchSheet = true
+                    }) {
+                        Image(systemName: "magnifyingglass")
                     }
                 }
             }
@@ -218,19 +404,22 @@ struct TracksView: View {
         .sheet(isPresented: $showingSearchSheet) {
             NavigationView {
                 VStack(spacing: 16) {
-                    TextField("Search music", text: $searchText)
+                    TextField(offlineMode ? "Search offline music" : "Search music", text: $searchText)
                         .padding()
 
                     Button("Search") {
                         showingSearchSheet = false
-                        performSearch(query: searchText)
+                        if !offlineMode {
+                            performSearch(query: searchText)
+                        }
+                        // In offline mode, the view automatically updates via computed properties
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(searchText.isEmpty)
 
                     Spacer()
                 }
-                .navigationTitle("Search")
+                .navigationTitle(offlineMode ? "Offline Search" : "Search")
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Cancel") {

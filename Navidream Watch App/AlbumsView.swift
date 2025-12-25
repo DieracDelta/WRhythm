@@ -51,6 +51,10 @@ struct AlbumsView: View {
             if offlineMode {
                 // Offline mode: show downloaded albums only
                 let downloadedAlbums = downloadManager.getDownloadedAlbums()
+                let filteredAlbums = searchText.isEmpty ? downloadedAlbums : downloadedAlbums.filter { album in
+                    album.name.localizedCaseInsensitiveContains(searchText) ||
+                    (album.artist?.localizedCaseInsensitiveContains(searchText) ?? false)
+                }
                 if downloadedAlbums.isEmpty {
                     VStack {
                         Image(systemName: "arrow.down.circle")
@@ -64,9 +68,20 @@ struct AlbumsView: View {
                             .multilineTextAlignment(.center)
                             .padding(.horizontal)
                     }
+                } else if filteredAlbums.isEmpty {
+                    VStack {
+                        Image(systemName: "magnifyingglass")
+                            .font(.largeTitle)
+                            .foregroundColor(.secondary)
+                        Text("No albums found")
+                            .font(.headline)
+                        Text("Try a different search term")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 } else {
                     List {
-                        ForEach(downloadedAlbums, id: \.id) { album in
+                        ForEach(filteredAlbums, id: \.id) { album in
                             NavigationLink(destination: AlbumDetailView(albumId: album.id)) {
                                 HStack {
                                     if let coverArtId = album.coverArt,
@@ -104,6 +119,7 @@ struct AlbumsView: View {
                             }
                         }
                     }
+                    .searchable(text: $searchText, prompt: "Search albums")
                 }
             } else if albums.isEmpty && isLoading {
                 VStack(spacing: 8) {

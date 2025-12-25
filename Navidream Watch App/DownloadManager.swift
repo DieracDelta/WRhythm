@@ -113,6 +113,10 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         documentsDirectory.appendingPathComponent("pending_star_changes.json")
     }
 
+    private var songMetadataURL: URL {
+        documentsDirectory.appendingPathComponent("song_metadata.json")
+    }
+
     private var pendingUnstarChangesURL: URL {
         documentsDirectory.appendingPathComponent("pending_unstar_changes.json")
     }
@@ -120,6 +124,7 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     override init() {
         super.init()
         loadMetadata()
+        loadSongMetadata()
         loadPlaylistsMetadata()
         loadRadioPlaylists()
         loadStarredSongs()
@@ -169,6 +174,32 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
             print("💾 Saved download metadata")
         } catch {
             print("❌ Failed to save download metadata: \(error)")
+        }
+    }
+
+    private func loadSongMetadata() {
+        guard fileManager.fileExists(atPath: songMetadataURL.path) else {
+            print("📥 No song metadata found")
+            return
+        }
+
+        do {
+            let data = try Data(contentsOf: songMetadataURL)
+            let metadata = try JSONDecoder().decode([String: Song].self, from: data)
+            self.songMetadata = metadata
+            print("📥 Loaded \(metadata.count) song metadata entries")
+        } catch {
+            print("❌ Failed to load song metadata: \(error)")
+        }
+    }
+
+    private func saveSongMetadata() {
+        do {
+            let data = try JSONEncoder().encode(songMetadata)
+            try data.write(to: songMetadataURL)
+            print("💾 Saved song metadata (\(songMetadata.count) entries)")
+        } catch {
+            print("❌ Failed to save song metadata: \(error)")
         }
     }
 
@@ -474,7 +505,10 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         activeDownloads.removeAll()
         downloadTasks.removeAll()
         taskToSongId.removeAll()
-        songMetadata.removeAll()
+        // Only remove metadata for songs that aren't already downloaded
+        let downloadedIds = Set(downloadedSongs.keys)
+        songMetadata = songMetadata.filter { downloadedIds.contains($0.key) }
+        saveSongMetadata()
         downloadBytesReceived.removeAll()
         downloadTotalBytes.removeAll()
         pendingProgressUpdates.removeAll()
@@ -681,8 +715,10 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
                 self.downloadTotalBytes.removeValue(forKey: song.id)
                 self.downloadTasks.removeValue(forKey: song.id)
                 self.taskToSongId.removeValue(forKey: downloadTask)
-                self.songMetadata.removeValue(forKey: song.id)
+                // Keep songMetadata for offline mode - don't remove it!
+                // self.songMetadata.removeValue(forKey: song.id)
                 self.saveMetadata()
+                self.saveSongMetadata()
 
                 let timestamp = ISO8601DateFormatter().string(from: Date())
                 print("✅ [\(timestamp)] Downloaded: \(song.title) (\(self.formatBytes(fileSize)))")
@@ -850,7 +886,9 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         do {
             try fileManager.removeItem(at: fileURL)
             downloadedSongs.removeValue(forKey: songId)
+            songMetadata.removeValue(forKey: songId)
             saveMetadata()
+            saveSongMetadata()
             print("🗑️ Deleted: \(downloaded.title)")
         } catch {
             print("❌ Failed to delete file: \(error)")
@@ -889,8 +927,9 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     func getDownloadedAlbums() -> [(id: String, name: String, artist: String?, coverArt: String?)] {
         var albums: [String: (name: String, artist: String?, coverArt: String?)] = [:]
 
-        for song in downloadedSongs.values {
-            if let albumId = song.album {
+        // Use songMetadata to get full Song objects for downloaded songs
+        for song in songMetadata.values where isDownloaded(song.id) {
+            if let albumId = song.albumId {
                 // Use first song's data for the album
                 if albums[albumId] == nil {
                     albums[albumId] = (song.album ?? "Unknown Album", song.artist, song.coverArt)
@@ -905,8 +944,10 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     func getDownloadedArtists() -> [(name: String, coverArt: String?)] {
         var artists: [String: String?] = [:] // artistName -> coverArt
 
-        for song in downloadedSongs.values {
+        // Use songMetadata to get full Song objects for downloaded songs
+        for song in songMetadata.values where isDownloaded(song.id) {
             if let artistName = song.artist {
+                // Only set coverArt if we don't already have one for this artist
                 if artists[artistName] == nil {
                     artists[artistName] = song.coverArt
                 }

@@ -89,6 +89,7 @@ struct PlaylistsView: View {
                             }
                         }
                     }
+                    .searchable(text: $searchText, prompt: "Search playlists")
                 }
             } else if playlists.isEmpty && isLoading {
                 ProgressView("Loading playlists...")
