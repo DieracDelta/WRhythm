@@ -149,12 +149,10 @@ struct PlaylistDetailView: View {
                         Group {
                             if let coverArtId = cachedPlaylist?.coverArt,
                                let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 300) {
-                                AsyncImage(url: coverURL) { image in
+                                CachedAsyncImage(url: coverURL) { image in
                                     image
                                         .resizable()
                                         .aspectRatio(contentMode: .fill)
-                                } placeholder: {
-                                    Color.gray
                                 }
                                 .frame(height: 120)
                                 .cornerRadius(8)
@@ -311,12 +309,10 @@ struct PlaylistDetailView: View {
                         Group {
                             if let coverArtId = playlist.coverArt,
                                let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 300) {
-                                AsyncImage(url: coverURL) { image in
+                                CachedAsyncImage(url: coverURL) { image in
                                     image
                                         .resizable()
                                         .aspectRatio(contentMode: .fill)
-                                } placeholder: {
-                                    Color.gray
                                 }
                                 .frame(height: 120)
                                 .cornerRadius(8)

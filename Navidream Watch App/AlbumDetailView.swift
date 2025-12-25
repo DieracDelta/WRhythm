@@ -245,12 +245,10 @@ struct AlbumDetailView: View {
                             Group {
                                 if let coverArtId = sortedSongs.first?.coverArt,
                                    let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 300) {
-                                    AsyncImage(url: coverURL) { image in
+                                    CachedAsyncImage(url: coverURL) { image in
                                         image
                                             .resizable()
                                             .aspectRatio(contentMode: .fill)
-                                    } placeholder: {
-                                        Color.gray
                                     }
                                     .frame(height: 120)
                                     .cornerRadius(8)
@@ -338,22 +336,19 @@ struct AlbumDetailView: View {
                         Group {
                             if let coverArtId = album.coverArt,
                                let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 300) {
-                                AsyncImage(url: coverURL) { image in
-                                    let _ = print("🖼️ AlbumDetail AsyncImage rendering image for album: \(album.id)")
+                                CachedAsyncImage(url: coverURL) { image in
+                                    let _ = print("🖼️ AlbumDetail CachedAsyncImage rendering image for album: \(album.id)")
                                     return image
                                         .resizable()
                                         .aspectRatio(contentMode: .fill)
-                                } placeholder: {
-                                    let _ = print("🔲 AlbumDetail AsyncImage showing placeholder for album: \(album.id)")
-                                    return Color.gray
                                 }
                                 .frame(height: 120)
                                 .cornerRadius(8)
                                 .onAppear {
-                                    print("✅ AlbumDetail AsyncImage appeared for album: \(album.id), URL: \(coverURL)")
+                                    print("✅ AlbumDetail CachedAsyncImage appeared for album: \(album.id), URL: \(coverURL)")
                                 }
                                 .onDisappear {
-                                    print("❌ AlbumDetail AsyncImage disappeared for album: \(album.id)")
+                                    print("❌ AlbumDetail CachedAsyncImage disappeared for album: \(album.id)")
                                 }
                             }
                         }

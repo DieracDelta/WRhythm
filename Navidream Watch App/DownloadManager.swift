@@ -76,11 +76,21 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
 
     // Pause state
     @Published var isPaused: Bool = false
+
+    // Low-priority background queue for downloads to prevent UI freezing
+    private lazy var downloadQueue_background: OperationQueue = {
+        let queue = OperationQueue()
+        queue.name = "com.navidream.downloads.delegate"
+        queue.qualityOfService = .utility  // Lower priority than UI
+        queue.maxConcurrentOperationCount = 1  // Serial queue to prevent overwhelming
+        return queue
+    }()
+
     private lazy var downloadSession: URLSession = {
         let config = URLSessionConfiguration.background(withIdentifier: "com.navidream.downloads")
         config.isDiscretionary = false // Download immediately, don't wait for optimal conditions
         config.sessionSendsLaunchEvents = true // Launch app when downloads complete in background
-        return URLSession(configuration: config, delegate: self, delegateQueue: nil)
+        return URLSession(configuration: config, delegate: self, delegateQueue: downloadQueue_background)
     }()
 
     private var documentsDirectory: URL {
@@ -173,12 +183,17 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     }
 
     private func saveMetadata() {
-        do {
-            let data = try JSONEncoder().encode(downloadedSongs)
-            try data.write(to: metadataURL)
-            print("💾 Saved download metadata")
-        } catch {
-            print("❌ Failed to save download metadata: \(error)")
+        // Save on background queue to avoid blocking UI
+        let songsToSave = downloadedSongs
+        let url = metadataURL
+        DispatchQueue.global(qos: .utility).async {
+            do {
+                let data = try JSONEncoder().encode(songsToSave)
+                try data.write(to: url)
+                print("💾 Saved download metadata")
+            } catch {
+                print("❌ Failed to save download metadata: \(error)")
+            }
         }
     }
 
@@ -199,12 +214,17 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     }
 
     private func saveSongMetadata() {
-        do {
-            let data = try JSONEncoder().encode(songMetadata)
-            try data.write(to: songMetadataURL)
-            print("💾 Saved song metadata (\(songMetadata.count) entries)")
-        } catch {
-            print("❌ Failed to save song metadata: \(error)")
+        // Save on background queue to avoid blocking UI
+        let metadataToSave = songMetadata
+        let url = songMetadataURL
+        DispatchQueue.global(qos: .utility).async {
+            do {
+                let data = try JSONEncoder().encode(metadataToSave)
+                try data.write(to: url)
+                print("💾 Saved song metadata (\(metadataToSave.count) entries)")
+            } catch {
+                print("❌ Failed to save song metadata: \(error)")
+            }
         }
     }
 
@@ -372,12 +392,16 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         incompleteIds.append(contentsOf: downloadQueue.map { $0.id })
         incompleteIds.append(contentsOf: activeDownloads.keys)
 
-        do {
-            let data = try JSONEncoder().encode(incompleteIds)
-            try data.write(to: incompleteDownloadsURL)
-            print("💾 Saved \(incompleteIds.count) incomplete downloads")
-        } catch {
-            print("❌ Failed to save incomplete downloads: \(error)")
+        // Save on background queue to avoid blocking UI
+        let url = incompleteDownloadsURL
+        DispatchQueue.global(qos: .utility).async {
+            do {
+                let data = try JSONEncoder().encode(incompleteIds)
+                try data.write(to: url)
+                print("💾 Saved \(incompleteIds.count) incomplete downloads")
+            } catch {
+                print("❌ Failed to save incomplete downloads: \(error)")
+            }
         }
     }
 
@@ -740,9 +764,9 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
             // Store pending update
             self.pendingProgressUpdates[songId] = progress
 
-            // Throttle UI updates to once per second
+            // Throttle UI updates to once every 2 seconds to reduce UI load
             let now = Date()
-            if now.timeIntervalSince(self.lastProgressUpdate) >= 1.0 {
+            if now.timeIntervalSince(self.lastProgressUpdate) >= 2.0 {
                 self.lastProgressUpdate = now
 
                 // Apply all pending updates at once

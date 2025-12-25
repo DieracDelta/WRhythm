@@ -47,12 +47,10 @@ struct RadioPlaylistRow: View {
             HStack {
                 if let coverArtId = radio.coverArt,
                    let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 100) {
-                    AsyncImage(url: coverURL) { image in
+                    CachedAsyncImage(url: coverURL) { image in
                         image
                             .resizable()
                             .aspectRatio(contentMode: .fill)
-                    } placeholder: {
-                        Color.gray
                     }
                     .frame(width: 40, height: 40)
                     .cornerRadius(4)
@@ -91,12 +89,10 @@ struct RadioPlaylistDetailView: View {
             VStack(spacing: 12) {
                 if let coverArtId = radio.coverArt,
                    let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 300) {
-                    AsyncImage(url: coverURL) { image in
+                    CachedAsyncImage(url: coverURL) { image in
                         image
                             .resizable()
                             .aspectRatio(contentMode: .fill)
-                    } placeholder: {
-                        Color.gray
                     }
                     .frame(height: 120)
                     .cornerRadius(8)

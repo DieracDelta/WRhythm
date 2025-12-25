@@ -86,12 +86,10 @@ struct AlbumsView: View {
                                 HStack {
                                     if let coverArtId = album.coverArt,
                                        let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 100) {
-                                        AsyncImage(url: coverURL) { image in
+                                        CachedAsyncImage(url: coverURL) { image in
                                             image
                                                 .resizable()
                                                 .aspectRatio(contentMode: .fill)
-                                        } placeholder: {
-                                            Color.gray
                                         }
                                         .frame(width: 40, height: 40)
                                         .cornerRadius(4)
@@ -185,12 +183,10 @@ struct AlbumsView: View {
                             HStack {
                                 if let coverArtId = album.coverArt,
                                    let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 100) {
-                                    AsyncImage(url: coverURL) { image in
+                                    CachedAsyncImage(url: coverURL) { image in
                                         image
                                             .resizable()
                                             .aspectRatio(contentMode: .fill)
-                                    } placeholder: {
-                                        Color.gray
                                     }
                                     .frame(width: 40, height: 40)
                                     .cornerRadius(4)

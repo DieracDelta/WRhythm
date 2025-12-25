@@ -13,6 +13,7 @@ struct SettingsView: View {
     @AppStorage("offlineMode") private var offlineMode = false
     @AppStorage("radioDownloadCount") private var radioDownloadCount = 25
     @State private var showingLogoutConfirmation = false
+    @State private var logoutConfirmationText = ""
 
     var body: some View {
         List {
@@ -106,6 +107,7 @@ struct SettingsView: View {
             Section {
                 Button(role: .destructive, action: {
                     showingLogoutConfirmation = true
+                    logoutConfirmationText = ""
                 }) {
                     Text("Logout")
                 }
@@ -119,13 +121,58 @@ struct SettingsView: View {
                 print("🔇 Stopped playback due to offline mode")
             }
         }
-        .confirmationDialog("Logout", isPresented: $showingLogoutConfirmation) {
-            Button("Logout", role: .destructive) {
-                api.logout()
+        .sheet(isPresented: $showingLogoutConfirmation) {
+            NavigationView {
+                VStack(spacing: 16) {
+                    Text("Logout")
+                        .font(.headline)
+
+                    Text("Are you sure you want to logout?")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+
+                    if let username = UserDefaults.standard.string(forKey: "navidrome_username") {
+                        Text("User: \(username)")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Text("Type LOGOUT to confirm")
+                        .font(.caption)
+                        .foregroundColor(.red)
+
+                    TextField("Type LOGOUT", text: $logoutConfirmationText)
+                        .textInputAutocapitalization(.characters)
+                        .padding()
+
+                    Button(action: {
+                        api.logout()
+                        showingLogoutConfirmation = false
+                        logoutConfirmationText = ""
+                    }) {
+                        Text("Logout")
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+                    .disabled(logoutConfirmationText != "LOGOUT")
+
+                    Spacer()
+                }
+                .padding()
+                .navigationTitle("Confirm Logout")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") {
+                            showingLogoutConfirmation = false
+                            logoutConfirmationText = ""
+                        }
+                    }
+                }
             }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Are you sure you want to logout?")
         }
     }
 }

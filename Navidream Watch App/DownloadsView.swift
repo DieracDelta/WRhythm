@@ -9,6 +9,8 @@ import SwiftUI
 
 struct DownloadsView: View {
     @ObservedObject var downloadManager = DownloadManager.shared
+    @State private var showingDeleteConfirmation = false
+    @State private var deleteConfirmationText = ""
 
     private var player: AudioPlayer { AudioPlayer.shared }
 
@@ -220,12 +222,60 @@ struct DownloadsView: View {
                             .foregroundColor(.secondary)
 
                         Button(action: {
-                            downloadManager.deleteAll()
+                            showingDeleteConfirmation = true
+                            deleteConfirmationText = ""
                         }) {
                             Label("Delete All", systemImage: "trash")
                         }
                         .buttonStyle(.bordered)
                         .tint(.red)
+                        .sheet(isPresented: $showingDeleteConfirmation) {
+                            NavigationView {
+                                VStack(spacing: 16) {
+                                    Text("Delete All Downloads?")
+                                        .font(.headline)
+
+                                    Text("This will delete \(downloadManager.getTotalDownloaded()) songs (\(formatBytes(downloadManager.getTotalSize())))")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                        .multilineTextAlignment(.center)
+
+                                    Text("Type DELETE to confirm")
+                                        .font(.caption)
+                                        .foregroundColor(.red)
+
+                                    TextField("Type DELETE", text: $deleteConfirmationText)
+                                        .textInputAutocapitalization(.characters)
+                                        .padding()
+
+                                    Button(action: {
+                                        downloadManager.deleteAll()
+                                        showingDeleteConfirmation = false
+                                        deleteConfirmationText = ""
+                                    }) {
+                                        Text("Delete All")
+                                            .foregroundColor(.white)
+                                            .frame(maxWidth: .infinity)
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .tint(.red)
+                                    .disabled(deleteConfirmationText != "DELETE")
+
+                                    Spacer()
+                                }
+                                .padding()
+                                .navigationTitle("Confirm Delete")
+                                .navigationBarTitleDisplayMode(.inline)
+                                .toolbar {
+                                    ToolbarItem(placement: .cancellationAction) {
+                                        Button("Cancel") {
+                                            showingDeleteConfirmation = false
+                                            deleteConfirmationText = ""
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                     .padding(.vertical, 8)
 
