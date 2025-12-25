@@ -19,21 +19,32 @@ struct ArtistsView: View {
     @State private var downloadProgress: Double = 0
     @State private var downloadedBytes: Int64 = 0
     @State private var totalBytes: Int64 = 0
+    @State private var searchText = ""
     @ObservedObject var downloadManager = DownloadManager.shared
     @AppStorage("offlineMode") private var offlineMode = false
     private let batchSize = 20
 
     private var filteredDisplayedArtists: [Artist] {
+        let baseArtists: [Artist]
         if offlineMode {
             // Filter artists that have at least one downloaded song
-            return displayedArtists.filter { artist in
+            baseArtists = displayedArtists.filter { artist in
                 // Check if any album has downloaded songs
                 downloadManager.downloadedSongs.values.contains { song in
                     song.artist == artist.name
                 }
             }
+        } else {
+            baseArtists = displayedArtists
         }
-        return displayedArtists
+
+        if searchText.isEmpty {
+            return baseArtists
+        }
+
+        return baseArtists.filter { artist in
+            artist.name.localizedCaseInsensitiveContains(searchText)
+        }
     }
 
     var body: some View {
@@ -212,6 +223,7 @@ struct ArtistsView: View {
             }
         }
         .navigationTitle(offlineMode ? "Artists (\(downloadManager.getDownloadedArtists().count))" : "Artists (\(filteredDisplayedArtists.count))")
+        .searchable(text: $searchText, prompt: "Search artists")
         .onAppear {
             print("👀 ArtistsView appeared")
             print("👀 Current state - isLoading: \(isLoading), artists count: \(artists.count), displayed: \(displayedArtists.count)")

@@ -19,15 +19,22 @@ struct AlbumsView: View {
     @State private var downloadProgress: Double = 0
     @State private var downloadedBytes: Int64 = 0
     @State private var totalBytes: Int64 = 0
+    @State private var searchText = ""
     @ObservedObject var downloadManager = DownloadManager.shared
     @AppStorage("offlineMode") private var offlineMode = false
     private let pageSize = 20
 
     private var filteredAlbums: [AlbumSummary] {
-        if offlineMode {
-            return albums.filter { downloadManager.hasDownloadedSongsForAlbum($0.id) }
+        let baseAlbums = offlineMode ? albums.filter { downloadManager.hasDownloadedSongsForAlbum($0.id) } : albums
+
+        if searchText.isEmpty {
+            return baseAlbums
         }
-        return albums
+
+        return baseAlbums.filter { album in
+            album.name.localizedCaseInsensitiveContains(searchText) ||
+            (album.artist?.localizedCaseInsensitiveContains(searchText) ?? false)
+        }
     }
 
     var body: some View {
@@ -196,6 +203,7 @@ struct AlbumsView: View {
             }
         }
         .navigationTitle("Albums")
+        .searchable(text: $searchText, prompt: "Search albums")
         .onAppear {
             if !offlineMode && albums.isEmpty {
                 loadInitialAlbums()

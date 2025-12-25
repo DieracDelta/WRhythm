@@ -509,6 +509,37 @@ class NavidromeAPI: ObservableObject {
         print("✅ Loaded starred: \(starred.song?.count ?? 0) songs, \(starred.album?.count ?? 0) albums, \(starred.artist?.count ?? 0) artists")
         return starred
     }
+
+    func search(query: String) async throws -> SearchResult {
+        guard let url = buildURL(endpoint: "search3", additionalParams: ["query": query]) else {
+            throw NavidromeError.invalidURL
+        }
+
+        print("🔍 Searching for: \(query)")
+
+        let (data, response) = try await URLSession.shared.data(from: url)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw NavidromeError.unknown
+        }
+
+        if httpResponse.statusCode != 200 {
+            throw NavidromeError.apiError("HTTP \(httpResponse.statusCode)")
+        }
+
+        let result = try JSONDecoder().decode(SubsonicResponse<SearchResponse>.self, from: data)
+
+        guard result.subsonicResponse.status == "ok" else {
+            if let error = result.subsonicResponse.error {
+                throw NavidromeError.apiError(error.message)
+            }
+            throw NavidromeError.unknown
+        }
+
+        let searchResult = result.subsonicResponse.searchResult3 ?? SearchResult(artist: [], album: [], song: [])
+        print("✅ Search returned: \(searchResult.song?.count ?? 0) songs")
+        return searchResult
+    }
 }
 
 enum NavidromeError: LocalizedError {
@@ -730,6 +761,19 @@ struct StarredResponse: Decodable {
 }
 
 struct StarredContent: Decodable {
+    let artist: [Artist]?
+    let album: [AlbumSummary]?
+    let song: [Song]?
+}
+
+struct SearchResponse: Decodable {
+    let status: String
+    let version: String
+    let error: SubsonicError?
+    let searchResult3: SearchResult?
+}
+
+struct SearchResult: Decodable {
     let artist: [Artist]?
     let album: [AlbumSummary]?
     let song: [Song]?

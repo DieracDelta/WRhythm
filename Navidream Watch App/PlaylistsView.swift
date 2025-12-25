@@ -12,15 +12,33 @@ struct PlaylistsView: View {
     @State private var isLoading = false
     @State private var isSyncing = false
     @State private var errorMessage = ""
+    @State private var searchText = ""
     @ObservedObject var downloadManager = DownloadManager.shared
     @AppStorage("offlineMode") private var offlineMode = false
+
+    private var filteredPlaylists: [PlaylistSummary] {
+        if searchText.isEmpty {
+            return playlists
+        }
+        return playlists.filter { playlist in
+            playlist.name.localizedCaseInsensitiveContains(searchText)
+        }
+    }
+
+    private var filteredCachedPlaylists: [CachedPlaylist] {
+        if searchText.isEmpty {
+            return downloadManager.cachedPlaylists
+        }
+        return downloadManager.cachedPlaylists.filter { playlist in
+            playlist.name.localizedCaseInsensitiveContains(searchText)
+        }
+    }
 
     var body: some View {
         ZStack {
             if offlineMode {
                 // Offline mode: show cached playlists
-                let cachedPlaylists = downloadManager.cachedPlaylists
-                if cachedPlaylists.isEmpty {
+                if filteredCachedPlaylists.isEmpty {
                     VStack {
                         Image(systemName: "music.note.list")
                             .font(.largeTitle)
@@ -34,7 +52,7 @@ struct PlaylistsView: View {
                             .padding(.horizontal)
                     }
                 } else {
-                    List(cachedPlaylists, id: \.id) { playlist in
+                    List(filteredCachedPlaylists, id: \.id) { playlist in
                         NavigationLink(destination: PlaylistDetailView(playlistId: playlist.id, playlistName: playlist.name)) {
                             HStack {
                                 if let coverArtId = playlist.coverArt,
@@ -93,7 +111,7 @@ struct PlaylistsView: View {
                     }
                 }
             } else {
-                List(playlists) { playlist in
+                List(filteredPlaylists) { playlist in
                     NavigationLink(destination: PlaylistDetailView(playlistId: playlist.id, playlistName: playlist.name)) {
                         HStack {
                             if let coverArtId = playlist.coverArt,
@@ -132,6 +150,7 @@ struct PlaylistsView: View {
             }
         }
         .navigationTitle("Playlists")
+        .searchable(text: $searchText, prompt: "Search playlists")
         .toolbar {
             if !offlineMode {
                 ToolbarItem(placement: .topBarTrailing) {

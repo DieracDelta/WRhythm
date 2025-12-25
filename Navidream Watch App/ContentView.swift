@@ -43,6 +43,13 @@ struct ContentView: View {
                     }
 
                     NavigationView {
+                        TracksView()
+                    }
+                    .tabItem {
+                        Label("Search", systemImage: "magnifyingglass")
+                    }
+
+                    NavigationView {
                         SpontaneousMusicView()
                     }
                     .tabItem {
