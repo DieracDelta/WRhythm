@@ -121,6 +121,10 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         documentsDirectory.appendingPathComponent("pending_unstar_changes.json")
     }
 
+    private var incompleteDownloadsURL: URL {
+        documentsDirectory.appendingPathComponent("incomplete_downloads.json")
+    }
+
     override init() {
         super.init()
         loadMetadata()
@@ -129,6 +133,7 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         loadRadioPlaylists()
         loadStarredSongs()
         loadPendingChanges()
+        loadIncompleteDownloads()
 
         // Log when app becomes active to see download state
         NotificationCenter.default.addObserver(
@@ -332,6 +337,61 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         }
     }
 
+    private func loadIncompleteDownloads() {
+        guard fileManager.fileExists(atPath: incompleteDownloadsURL.path) else {
+            print("📥 No incomplete downloads found")
+            return
+        }
+
+        do {
+            let data = try Data(contentsOf: incompleteDownloadsURL)
+            let songIds = try JSONDecoder().decode([String].self, from: data)
+            print("📥 Loaded \(songIds.count) incomplete downloads")
+
+            // Re-queue songs that have metadata but weren't completed
+            for songId in songIds {
+                if let song = songMetadata[songId], !isDownloaded(songId) {
+                    downloadQueue.append(song)
+                    print("📥 Re-queued incomplete download: \(song.title)")
+                }
+            }
+
+            // Start processing if we have items
+            if !downloadQueue.isEmpty {
+                sessionTotalCount = downloadQueue.count
+                processQueue()
+            }
+        } catch {
+            print("❌ Failed to load incomplete downloads: \(error)")
+        }
+    }
+
+    private func saveIncompleteDownloads() {
+        // Collect all song IDs that are in queue or actively downloading
+        var incompleteIds: [String] = []
+        incompleteIds.append(contentsOf: downloadQueue.map { $0.id })
+        incompleteIds.append(contentsOf: activeDownloads.keys)
+
+        do {
+            let data = try JSONEncoder().encode(incompleteIds)
+            try data.write(to: incompleteDownloadsURL)
+            print("💾 Saved \(incompleteIds.count) incomplete downloads")
+        } catch {
+            print("❌ Failed to save incomplete downloads: \(error)")
+        }
+    }
+
+    private func clearIncompleteDownloads() {
+        do {
+            if fileManager.fileExists(atPath: incompleteDownloadsURL.path) {
+                try fileManager.removeItem(at: incompleteDownloadsURL)
+                print("🗑️ Cleared incomplete downloads")
+            }
+        } catch {
+            print("❌ Failed to clear incomplete downloads: \(error)")
+        }
+    }
+
     // Star a song locally, and track for sync if offline
     func starSong(_ songId: String, isOffline: Bool) {
         starredSongIds.insert(songId)
@@ -484,12 +544,49 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
             task.cancel()
         }
         // Don't clear the queue - we'll resume from it
+        saveIncompleteDownloads()
     }
 
     func resumeDownloads() {
         print("▶️ Resuming downloads")
         isPaused = false
         // Process queue will restart downloads
+        processQueue()
+    }
+
+    func restartDownloads() {
+        print("🔄 Restarting all downloads")
+        isPaused = false
+
+        // Cancel all active tasks
+        for (_, task) in downloadTasks {
+            task.cancel()
+        }
+
+        // Collect all incomplete song IDs
+        var incompleteIds: Set<String> = []
+        incompleteIds.formUnion(downloadQueue.map { $0.id })
+        incompleteIds.formUnion(activeDownloads.keys)
+
+        // Clear current state
+        activeDownloads.removeAll()
+        downloadTasks.removeAll()
+        taskToSongId.removeAll()
+        downloadBytesReceived.removeAll()
+        downloadTotalBytes.removeAll()
+        pendingProgressUpdates.removeAll()
+        downloadQueue.removeAll()
+
+        // Re-queue all incomplete downloads from metadata
+        for songId in incompleteIds {
+            if let song = songMetadata[songId], !isDownloaded(songId) {
+                downloadQueue.append(song)
+                print("🔄 Re-queued: \(song.title)")
+            }
+        }
+
+        print("🔄 Restarting \(downloadQueue.count) downloads")
+        saveIncompleteDownloads()
         processQueue()
     }
 
@@ -518,6 +615,9 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         sessionBytesTotal = 0
         sessionCompletedCount = 0
         sessionTotalCount = 0
+
+        // Clear incomplete downloads since we cancelled everything
+        clearIncompleteDownloads()
     }
 
     func downloadProgress(_ songId: String) -> Double {
@@ -546,6 +646,7 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
 
         downloadQueue.append(song)
         print("📋 Added to queue: \(song.title) (queue size: \(downloadQueue.count))")
+        saveIncompleteDownloads()
         processQueue()
     }
 
@@ -731,6 +832,9 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
                     self.sessionBytesTotal = 0
                     self.sessionCompletedCount = 0
                     self.sessionTotalCount = 0
+                    self.clearIncompleteDownloads()
+                } else {
+                    self.saveIncompleteDownloads()
                 }
 
                 // Process next item in queue

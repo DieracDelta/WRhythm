@@ -17,7 +17,7 @@ struct DownloadsView: View {
             VStack(spacing: 12) {
                 // Download Statistics Panel
                 let totalPending = downloadManager.getTotalPendingDownloads()
-                if totalPending > 0 {
+                if totalPending > 0 || downloadManager.isPaused {
                     VStack(spacing: 8) {
                         HStack {
                             Image(systemName: "arrow.down.circle.fill")
@@ -159,6 +159,15 @@ struct DownloadsView: View {
                                 }
                                 .buttonStyle(.bordered)
                             }
+
+                            Button(action: {
+                                downloadManager.restartDownloads()
+                            }) {
+                                Label("Restart", systemImage: "arrow.clockwise")
+                                    .font(.caption2)
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(.blue)
 
                             Button(action: {
                                 downloadManager.cancelAllDownloads()
