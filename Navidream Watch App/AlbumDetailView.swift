@@ -215,7 +215,7 @@ struct AlbumDetailView: View {
     let albumId: String
 
     @State private var album: Album?
-    @State private var isLoading = false
+    @State private var isLoading = true
     @State private var errorMessage = ""
     @AppStorage("offlineMode") private var offlineMode = false
 
@@ -426,7 +426,7 @@ struct AlbumDetailView: View {
         }
         .navigationTitle("Album")
         .onAppear {
-            if !offlineMode && album == nil && !isLoading {
+            if !offlineMode {
                 loadAlbum()
             }
         }
