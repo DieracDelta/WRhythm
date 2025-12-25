@@ -38,10 +38,17 @@ class AudioPlayer: NSObject, ObservableObject {
     @Published var queue: [Song] = []
     @Published var currentIndex: Int = 0
     @Published var isShuffled = false
+    @Published var repeatMode: RepeatMode = .off
     @Published var volume: Float = 1.0 {
         didSet {
             player?.volume = volume
         }
+    }
+
+    enum RepeatMode {
+        case off
+        case all
+        case one
     }
 
     private var player: AVPlayer?
@@ -134,6 +141,18 @@ class AudioPlayer: NSObject, ObservableObject {
         self.currentIndex = 0
         print("🔀 Queue set to \(self.queue.count) songs, currentIndex=\(self.currentIndex)")
         startPlayback(shuffled[0])
+    }
+
+    func toggleRepeat() {
+        switch repeatMode {
+        case .off:
+            repeatMode = .all
+        case .all:
+            repeatMode = .one
+        case .one:
+            repeatMode = .off
+        }
+        print("🔁 Repeat mode changed to: \(repeatMode)")
     }
 
     func toggleShuffle() {
@@ -338,11 +357,31 @@ class AudioPlayer: NSObject, ObservableObject {
     }
 
     private func handlePlaybackEnded() {
-        if currentIndex < queue.count - 1 {
-            next()
-        } else {
-            isPlaying = false
-            currentTime = 0
+        switch repeatMode {
+        case .one:
+            // Repeat current song
+            seek(to: 0)
+            play()
+        case .all:
+            // Move to next song, or loop back to beginning
+            if currentIndex < queue.count - 1 {
+                next()
+            } else {
+                // Loop back to first song
+                currentIndex = 0
+                if let firstSong = queue.first {
+                    currentSong = firstSong
+                    startPlayback(firstSong)
+                }
+            }
+        case .off:
+            // Normal behavior - advance or stop
+            if currentIndex < queue.count - 1 {
+                next()
+            } else {
+                isPlaying = false
+                currentTime = 0
+            }
         }
     }
 

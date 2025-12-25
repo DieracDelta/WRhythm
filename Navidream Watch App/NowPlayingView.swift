@@ -129,6 +129,14 @@ struct NowPlayingView: View {
                                     .foregroundColor(player.isShuffled ? .accentColor : .secondary)
                             }
                             .buttonStyle(.plain)
+
+                            Button(action: player.toggleRepeat) {
+                                Image(systemName: player.repeatMode == .off ? "repeat.circle" :
+                                      player.repeatMode == .all ? "repeat.circle.fill" : "repeat.1.circle.fill")
+                                    .font(.caption)
+                                    .foregroundColor(player.repeatMode == .off ? .secondary : .accentColor)
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
                 }
