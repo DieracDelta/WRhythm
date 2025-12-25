@@ -15,24 +15,10 @@ struct ContentView: View {
             if api.isAuthenticated {
                 TabView {
                     NavigationView {
-                        AlbumsView()
+                        SpontaneousMusicView()
                     }
                     .tabItem {
-                        Label("Albums", systemImage: "square.stack")
-                    }
-
-                    NavigationView {
-                        PlaylistsView()
-                    }
-                    .tabItem {
-                        Label("Playlists", systemImage: "music.note.list")
-                    }
-
-                    NavigationView {
-                        FavouritesView()
-                    }
-                    .tabItem {
-                        Label("Favourites", systemImage: "star.fill")
+                        Label("Spontaneous", systemImage: "shuffle")
                     }
 
                     NavigationView {
@@ -43,24 +29,24 @@ struct ContentView: View {
                     }
 
                     NavigationView {
-                        TracksView()
+                        AlbumsView()
                     }
                     .tabItem {
-                        Label("Search", systemImage: "magnifyingglass")
+                        Label("Albums", systemImage: "square.stack")
                     }
 
                     NavigationView {
-                        SpontaneousMusicView()
+                        FavouritesView()
                     }
                     .tabItem {
-                        Label("Spontaneous", systemImage: "shuffle")
+                        Label("Favourites", systemImage: "star.fill")
                     }
 
                     NavigationView {
-                        DownloadsView()
+                        PlaylistsView()
                     }
                     .tabItem {
-                        Label("Downloads", systemImage: "arrow.down.circle")
+                        Label("Playlists", systemImage: "music.note.list")
                     }
 
                     NavigationView {
@@ -71,10 +57,24 @@ struct ContentView: View {
                     }
 
                     NavigationView {
+                        TracksView()
+                    }
+                    .tabItem {
+                        Label("Search", systemImage: "magnifyingglass")
+                    }
+
+                    NavigationView {
                         NowPlayingView()
                     }
                     .tabItem {
                         Label("Now Playing", systemImage: "play.circle.fill")
+                    }
+
+                    NavigationView {
+                        DownloadsView()
+                    }
+                    .tabItem {
+                        Label("Downloads", systemImage: "arrow.down.circle")
                     }
 
                     NavigationView {
