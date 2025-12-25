@@ -20,30 +20,31 @@ struct ArtistsView: View {
     @State private var downloadedBytes: Int64 = 0
     @State private var totalBytes: Int64 = 0
     @State private var searchText = ""
+    @State private var searchResults: [Artist] = []
+    @State private var isSearching = false
     @ObservedObject var downloadManager = DownloadManager.shared
     @AppStorage("offlineMode") private var offlineMode = false
     private let batchSize = 20
 
     private var filteredDisplayedArtists: [Artist] {
-        let baseArtists: [Artist]
         if offlineMode {
-            // Filter artists that have at least one downloaded song
-            baseArtists = displayedArtists.filter { artist in
-                // Check if any album has downloaded songs
+            let downloadedArtists = displayedArtists.filter { artist in
                 downloadManager.downloadedSongs.values.contains { song in
                     song.artist == artist.name
                 }
             }
+            if searchText.isEmpty {
+                return downloadedArtists
+            }
+            return downloadedArtists.filter { artist in
+                artist.name.localizedCaseInsensitiveContains(searchText)
+            }
         } else {
-            baseArtists = displayedArtists
-        }
-
-        if searchText.isEmpty {
-            return baseArtists
-        }
-
-        return baseArtists.filter { artist in
-            artist.name.localizedCaseInsensitiveContains(searchText)
+            // Online mode: use search results if searching, otherwise show batch-loaded list
+            if !searchText.isEmpty {
+                return searchResults
+            }
+            return displayedArtists
         }
     }
 
@@ -224,6 +225,14 @@ struct ArtistsView: View {
         }
         .navigationTitle(offlineMode ? "Artists (\(downloadManager.getDownloadedArtists().count))" : "Artists (\(filteredDisplayedArtists.count))")
         .searchable(text: $searchText, prompt: "Search artists")
+        .onChange(of: searchText) { _, newValue in
+            if !offlineMode && !newValue.isEmpty {
+                performSearch(query: newValue)
+            } else if newValue.isEmpty {
+                searchResults = []
+                isSearching = false
+            }
+        }
         .onAppear {
             print("👀 ArtistsView appeared")
             print("👀 Current state - isLoading: \(isLoading), artists count: \(artists.count), displayed: \(displayedArtists.count)")
@@ -368,6 +377,35 @@ struct ArtistsView: View {
 
         print("✅ Now displaying \(displayedArtists.count) of \(artists.count) artists")
         print("✅ UI should now show \(displayedArtists.count) artists")
+    }
+
+    private func performSearch(query: String) {
+        guard !query.isEmpty else {
+            searchResults = []
+            return
+        }
+
+        Task {
+            try? await Task.sleep(nanoseconds: 300_000_000) // 300ms debounce
+            guard query == searchText else { return }
+
+            isSearching = true
+
+            do {
+                let result = try await NavidromeAPI.shared.search(query: query)
+                await MainActor.run {
+                    self.searchResults = result.artist ?? []
+                    self.isSearching = false
+                    print("🔍 Artist search results: \(self.searchResults.count) artists")
+                }
+            } catch {
+                await MainActor.run {
+                    self.searchResults = []
+                    self.isSearching = false
+                    print("❌ Artist search error: \(error)")
+                }
+            }
+        }
     }
 }
 

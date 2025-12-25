@@ -20,20 +20,28 @@ struct AlbumsView: View {
     @State private var downloadedBytes: Int64 = 0
     @State private var totalBytes: Int64 = 0
     @State private var searchText = ""
+    @State private var searchResults: [AlbumSummary] = []
+    @State private var isSearching = false
     @ObservedObject var downloadManager = DownloadManager.shared
     @AppStorage("offlineMode") private var offlineMode = false
     private let pageSize = 20
 
     private var filteredAlbums: [AlbumSummary] {
-        let baseAlbums = offlineMode ? albums.filter { downloadManager.hasDownloadedSongsForAlbum($0.id) } : albums
-
-        if searchText.isEmpty {
-            return baseAlbums
-        }
-
-        return baseAlbums.filter { album in
-            album.name.localizedCaseInsensitiveContains(searchText) ||
-            (album.artist?.localizedCaseInsensitiveContains(searchText) ?? false)
+        if offlineMode {
+            let downloadedAlbums = albums.filter { downloadManager.hasDownloadedSongsForAlbum($0.id) }
+            if searchText.isEmpty {
+                return downloadedAlbums
+            }
+            return downloadedAlbums.filter { album in
+                album.name.localizedCaseInsensitiveContains(searchText) ||
+                (album.artist?.localizedCaseInsensitiveContains(searchText) ?? false)
+            }
+        } else {
+            // Online mode: use search results if searching, otherwise show paginated list
+            if !searchText.isEmpty {
+                return searchResults
+            }
+            return albums
         }
     }
 
@@ -204,6 +212,14 @@ struct AlbumsView: View {
         }
         .navigationTitle("Albums")
         .searchable(text: $searchText, prompt: "Search albums")
+        .onChange(of: searchText) { _, newValue in
+            if !offlineMode && !newValue.isEmpty {
+                performSearch(query: newValue)
+            } else if newValue.isEmpty {
+                searchResults = []
+                isSearching = false
+            }
+        }
         .onAppear {
             if !offlineMode && albums.isEmpty {
                 loadInitialAlbums()
@@ -325,6 +341,35 @@ struct AlbumsView: View {
         let formatter = ByteCountFormatter()
         formatter.countStyle = .file
         return formatter.string(fromByteCount: bytes)
+    }
+
+    private func performSearch(query: String) {
+        guard !query.isEmpty else {
+            searchResults = []
+            return
+        }
+
+        Task {
+            try? await Task.sleep(nanoseconds: 300_000_000) // 300ms debounce
+            guard query == searchText else { return }
+
+            isSearching = true
+
+            do {
+                let result = try await NavidromeAPI.shared.search(query: query)
+                await MainActor.run {
+                    self.searchResults = result.album ?? []
+                    self.isSearching = false
+                    print("🔍 Album search results: \(self.searchResults.count) albums")
+                }
+            } catch {
+                await MainActor.run {
+                    self.searchResults = []
+                    self.isSearching = false
+                    print("❌ Album search error: \(error)")
+                }
+            }
+        }
     }
 }
 
