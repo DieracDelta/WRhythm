@@ -12,7 +12,7 @@ struct ArtistDetailView: View {
     let artistName: String
 
     @State private var artist: ArtistWithAlbums?
-    @State private var isLoading = true
+    @State private var isLoading = false
     @State private var errorMessage = ""
     @ObservedObject var downloadManager = DownloadManager.shared
     @AppStorage("offlineMode") private var offlineMode = false
@@ -268,7 +268,7 @@ struct ArtistDetailView: View {
         }
         .navigationTitle(artistName)
         .onAppear {
-            if !offlineMode {
+            if !offlineMode && artist == nil && !isLoading {
                 loadArtist()
             }
         }

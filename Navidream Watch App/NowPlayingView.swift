@@ -12,6 +12,7 @@ struct NowPlayingView: View {
     @ObservedObject var downloadManager = DownloadManager.shared
     @State private var isStarring = false
     @State private var isSyncing = false
+    @State private var hasLoadedStarredSongs = false
     @AppStorage("offlineMode") private var offlineMode = false
 
     var body: some View {
@@ -186,7 +187,9 @@ struct NowPlayingView: View {
             }
         }
         .onAppear {
-            loadStarredSongs()
+            if !hasLoadedStarredSongs {
+                loadStarredSongs()
+            }
         }
     }
 
@@ -197,6 +200,7 @@ struct NowPlayingView: View {
                 let songIds = Set(starred.song?.map { $0.id } ?? [])
                 await MainActor.run {
                     downloadManager.cacheStarredSongs(songIds)
+                    hasLoadedStarredSongs = true
                 }
             } catch {
                 print("❌ Failed to load starred songs: \(error)")

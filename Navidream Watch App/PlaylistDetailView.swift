@@ -129,7 +129,7 @@ struct PlaylistDetailView: View {
     let playlistName: String
 
     @State private var playlist: Playlist?
-    @State private var isLoading = true
+    @State private var isLoading = false
     @State private var isSyncing = false
     @State private var errorMessage = ""
     @ObservedObject var downloadManager = DownloadManager.shared
@@ -413,7 +413,7 @@ struct PlaylistDetailView: View {
             }
         }
         .onAppear {
-            if !offlineMode {
+            if !offlineMode && playlist == nil && !isLoading {
                 loadPlaylist()
             }
         }
