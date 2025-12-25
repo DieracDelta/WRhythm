@@ -22,6 +22,7 @@ struct ArtistsView: View {
     @State private var searchText = ""
     @State private var searchResults: [Artist] = []
     @State private var isSearching = false
+    @State private var showingSearchSheet = false
     @ObservedObject var downloadManager = DownloadManager.shared
     @AppStorage("offlineMode") private var offlineMode = false
     private let batchSize = 20
@@ -224,13 +225,50 @@ struct ArtistsView: View {
             }
         }
         .navigationTitle(offlineMode ? "Artists (\(downloadManager.getDownloadedArtists().count))" : "Artists (\(filteredDisplayedArtists.count))")
-        .searchable(text: $searchText, prompt: "Search artists")
-        .onChange(of: searchText) { _, newValue in
-            if !offlineMode && !newValue.isEmpty {
-                performSearch(query: newValue)
-            } else if newValue.isEmpty {
-                searchResults = []
-                isSearching = false
+        .toolbar {
+            if !offlineMode {
+                ToolbarItem(placement: .topBarTrailing) {
+                    if !searchText.isEmpty {
+                        Button(action: {
+                            searchText = ""
+                            searchResults = []
+                        }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                        }
+                    } else {
+                        Button(action: {
+                            showingSearchSheet = true
+                        }) {
+                            Image(systemName: "magnifyingglass")
+                        }
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showingSearchSheet) {
+            NavigationView {
+                VStack(spacing: 16) {
+                    TextField("Search artists", text: $searchText)
+                        .padding()
+
+                    Button("Search") {
+                        showingSearchSheet = false
+                        performSearch(query: searchText)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(searchText.isEmpty)
+
+                    Spacer()
+                }
+                .navigationTitle("Search Artists")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") {
+                            showingSearchSheet = false
+                        }
+                    }
+                }
             }
         }
         .onAppear {

@@ -22,6 +22,7 @@ struct AlbumsView: View {
     @State private var searchText = ""
     @State private var searchResults: [AlbumSummary] = []
     @State private var isSearching = false
+    @State private var showingSearchSheet = false
     @ObservedObject var downloadManager = DownloadManager.shared
     @AppStorage("offlineMode") private var offlineMode = false
     private let pageSize = 20
@@ -211,13 +212,50 @@ struct AlbumsView: View {
             }
         }
         .navigationTitle("Albums")
-        .searchable(text: $searchText, prompt: "Search albums")
-        .onChange(of: searchText) { _, newValue in
-            if !offlineMode && !newValue.isEmpty {
-                performSearch(query: newValue)
-            } else if newValue.isEmpty {
-                searchResults = []
-                isSearching = false
+        .toolbar {
+            if !offlineMode {
+                ToolbarItem(placement: .topBarTrailing) {
+                    if !searchText.isEmpty {
+                        Button(action: {
+                            searchText = ""
+                            searchResults = []
+                        }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                        }
+                    } else {
+                        Button(action: {
+                            showingSearchSheet = true
+                        }) {
+                            Image(systemName: "magnifyingglass")
+                        }
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showingSearchSheet) {
+            NavigationView {
+                VStack(spacing: 16) {
+                    TextField("Search albums", text: $searchText)
+                        .padding()
+
+                    Button("Search") {
+                        showingSearchSheet = false
+                        performSearch(query: searchText)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(searchText.isEmpty)
+
+                    Spacer()
+                }
+                .navigationTitle("Search Albums")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") {
+                            showingSearchSheet = false
+                        }
+                    }
+                }
             }
         }
         .onAppear {

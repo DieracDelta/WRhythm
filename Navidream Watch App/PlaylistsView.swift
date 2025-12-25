@@ -13,6 +13,7 @@ struct PlaylistsView: View {
     @State private var isSyncing = false
     @State private var errorMessage = ""
     @State private var searchText = ""
+    @State private var showingSearchSheet = false
     @ObservedObject var downloadManager = DownloadManager.shared
     @AppStorage("offlineMode") private var offlineMode = false
 
@@ -150,10 +151,9 @@ struct PlaylistsView: View {
             }
         }
         .navigationTitle("Playlists")
-        .searchable(text: $searchText, prompt: "Search playlists")
         .toolbar {
             if !offlineMode {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .topBarLeading) {
                     Button(action: {
                         syncAllPlaylists()
                     }) {
@@ -164,6 +164,47 @@ struct PlaylistsView: View {
                         }
                     }
                     .disabled(isSyncing)
+                }
+
+                ToolbarItem(placement: .topBarTrailing) {
+                    if !searchText.isEmpty {
+                        Button(action: {
+                            searchText = ""
+                        }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                        }
+                    } else {
+                        Button(action: {
+                            showingSearchSheet = true
+                        }) {
+                            Image(systemName: "magnifyingglass")
+                        }
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showingSearchSheet) {
+            NavigationView {
+                VStack(spacing: 16) {
+                    TextField("Search playlists", text: $searchText)
+                        .padding()
+
+                    Button("Search") {
+                        showingSearchSheet = false
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(searchText.isEmpty)
+
+                    Spacer()
+                }
+                .navigationTitle("Search Playlists")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") {
+                            showingSearchSheet = false
+                        }
+                    }
                 }
             }
         }
