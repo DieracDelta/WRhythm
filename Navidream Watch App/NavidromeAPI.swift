@@ -305,6 +305,24 @@ class NavidromeAPI: ObservableObject {
         return album
     }
 
+    func getRandomSongs(size: Int = 50) async throws -> [Song] {
+        guard let url = buildURL(endpoint: "getRandomSongs", additionalParams: ["size": String(size)]) else {
+            throw NavidromeError.invalidURL
+        }
+
+        let (data, _) = try await URLSession.shared.data(from: url)
+        let result = try JSONDecoder().decode(SubsonicResponse<RandomSongsResponse>.self, from: data)
+
+        guard result.subsonicResponse.status == "ok" else {
+            if let error = result.subsonicResponse.error {
+                throw NavidromeError.apiError(error.message)
+            }
+            throw NavidromeError.unknown
+        }
+
+        return result.subsonicResponse.randomSongs?.song ?? []
+    }
+
     func getCoverArtURL(id: String, size: Int = 300) -> URL? {
         return buildURL(endpoint: "getCoverArt", additionalParams: ["id": id, "size": String(size)])
     }
@@ -552,6 +570,17 @@ struct AlbumResponse: Decodable {
     let version: String
     let error: SubsonicError?
     let album: Album?
+}
+
+struct RandomSongsResponse: Decodable {
+    let status: String
+    let version: String
+    let error: SubsonicError?
+    let randomSongs: RandomSongs?
+}
+
+struct RandomSongs: Decodable {
+    let song: [Song]
 }
 
 struct Album: Decodable, Identifiable {

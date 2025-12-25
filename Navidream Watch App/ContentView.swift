@@ -43,6 +43,13 @@ struct ContentView: View {
                     }
 
                     NavigationView {
+                        SpontaneousMusicView()
+                    }
+                    .tabItem {
+                        Label("Spontaneous", systemImage: "shuffle")
+                    }
+
+                    NavigationView {
                         DownloadsView()
                     }
                     .tabItem {
