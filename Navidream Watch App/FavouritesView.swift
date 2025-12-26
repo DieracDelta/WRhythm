@@ -183,8 +183,8 @@ struct FavouritesView: View {
                                         Text("Songs")
                                             .font(.headline)
                                         Spacer()
-                                        if songsToShow.count > 1 {
-                                            HStack(spacing: 8) {
+                                        HStack(spacing: 8) {
+                                            if songsToShow.count > 1 {
                                                 Button(action: {
                                                     player.playQueue(songsToShow, startingAt: 0)
                                                 }) {
@@ -195,6 +195,17 @@ struct FavouritesView: View {
                                                     player.playQueueShuffled(songsToShow)
                                                 }) {
                                                     Image(systemName: "shuffle")
+                                                        .font(.caption)
+                                                }
+                                            }
+                                            if !offlineMode {
+                                                Button(action: {
+                                                    // Download all favorited songs
+                                                    for song in songsToShow {
+                                                        downloadManager.downloadSong(song)
+                                                    }
+                                                }) {
+                                                    Image(systemName: "arrow.down.circle")
                                                         .font(.caption)
                                                 }
                                             }
