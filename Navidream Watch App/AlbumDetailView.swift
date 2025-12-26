@@ -286,30 +286,9 @@ struct AlbumDetailView: View {
 
                             VStack(spacing: 8) {
                                 ForEach(Array(sortedSongs.enumerated()), id: \.element.id) { index, song in
-                                    Button(action: {
+                                    TrackRowView(song: song) {
                                         player.playQueue(Array(sortedSongs), startingAt: index)
-                                    }) {
-                                        HStack {
-                                            VStack(alignment: .leading) {
-                                                Text(song.title)
-                                                    .font(.caption)
-                                                    .lineLimit(1)
-                                            }
-
-                                            Spacer()
-
-                                            Image(systemName: "arrow.down.circle.fill")
-                                                .font(.caption2)
-                                                .foregroundColor(.green)
-
-                                            if player.currentSong?.id == song.id && player.isPlaying {
-                                                Image(systemName: "speaker.wave.2.fill")
-                                                    .font(.caption2)
-                                                    .foregroundColor(.accentColor)
-                                            }
-                                        }
                                     }
-                                    .buttonStyle(.plain)
                                     .id(song.id)
                                 }
                             }
@@ -408,7 +387,7 @@ struct AlbumDetailView: View {
 
                         VStack(spacing: 8) {
                             ForEach(Array(filteredSongs(album.song).enumerated()), id: \.element.id) { index, song in
-                                SongRowView(song: song) {
+                                TrackRowView(song: song) {
                                     player.playQueue(album.song, startingAt: index)
                                 }
                                 .id(song.id)

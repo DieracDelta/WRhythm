@@ -95,48 +95,9 @@ struct FavouritesView: View {
                                 }
 
                                 ForEach(Array(offlineStarredSongs.enumerated()), id: \.element.id) { index, song in
-                                    Button(action: {
+                                    TrackRowView(song: song) {
                                         player.playQueue(offlineStarredSongs, startingAt: index)
-                                    }) {
-                                        HStack {
-                                            if let coverArtId = song.coverArt,
-                                               let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 100) {
-                                                CachedAsyncImage(url: coverURL) { image in
-                                                    image
-                                                        .resizable()
-                                                        .aspectRatio(contentMode: .fill)
-                                                }
-                                                .frame(width: 40, height: 40)
-                                                .cornerRadius(4)
-                                                .id(coverURL)
-                                            }
-
-                                            VStack(alignment: .leading) {
-                                                Text(song.title)
-                                                    .font(.caption)
-                                                    .lineLimit(1)
-                                                if let artist = song.artist {
-                                                    Text(artist)
-                                                        .font(.caption2)
-                                                        .foregroundColor(.secondary)
-                                                        .lineLimit(1)
-                                                }
-                                            }
-
-                                            Spacer()
-
-                                            Image(systemName: "arrow.down.circle.fill")
-                                                .font(.caption2)
-                                                .foregroundColor(.green)
-
-                                            if player.currentSong?.id == song.id && player.isPlaying {
-                                                Image(systemName: "speaker.wave.2.fill")
-                                                    .font(.caption2)
-                                                    .foregroundColor(.accentColor)
-                                            }
-                                        }
                                     }
-                                    .buttonStyle(.plain)
                                 }
                             }
                         }
@@ -213,61 +174,9 @@ struct FavouritesView: View {
                                     }
 
                                     ForEach(Array(songsToShow.enumerated()), id: \.element.id) { index, song in
-                                        Button(action: {
+                                        TrackRowView(song: song) {
                                             player.playQueue(songsToShow, startingAt: index)
-                                        }) {
-                                            HStack {
-                                                if let coverArtId = song.coverArt,
-                                                   let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 100) {
-                                                    CachedAsyncImage(url: coverURL) { image in
-                                                        image
-                                                            .resizable()
-                                                            .aspectRatio(contentMode: .fill)
-                                                    }
-                                                    .frame(width: 40, height: 40)
-                                                    .cornerRadius(4)
-                                                    .id(coverURL)
-                                                }
-
-                                                VStack(alignment: .leading) {
-                                                    Text(song.title)
-                                                        .font(.caption)
-                                                        .lineLimit(1)
-                                                    if let artist = song.artist {
-                                                        Text(artist)
-                                                            .font(.caption2)
-                                                            .foregroundColor(.secondary)
-                                                            .lineLimit(1)
-                                                    }
-                                                }
-
-                                                Spacer()
-
-                                                if downloadManager.isDownloading(song.id) {
-                                                    VStack(spacing: 2) {
-                                                        ProgressView()
-                                                            .scaleEffect(0.7)
-                                                        let progress = downloadManager.downloadProgress(song.id)
-                                                        if progress > 0 {
-                                                            Text("\(Int(progress * 100))%")
-                                                                .font(.system(size: 8))
-                                                                .foregroundColor(.secondary)
-                                                        }
-                                                    }
-                                                } else if downloadManager.isDownloaded(song.id) {
-                                                    Image(systemName: "arrow.down.circle.fill")
-                                                        .font(.caption2)
-                                                        .foregroundColor(.green)
-                                                }
-
-                                                if player.currentSong?.id == song.id && player.isPlaying {
-                                                    Image(systemName: "speaker.wave.2.fill")
-                                                        .font(.caption2)
-                                                        .foregroundColor(.accentColor)
-                                                }
-                                            }
                                         }
-                                        .buttonStyle(.plain)
                                     }
                                 }
 

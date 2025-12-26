@@ -154,36 +154,27 @@ struct RadioPlaylistDetailView: View {
                     VStack(spacing: 8) {
                         ForEach(Array(downloadedSongs.enumerated()), id: \.offset) { index, songId in
                             if let downloadedSong = downloadManager.downloadedSongs[songId] {
-                                Button(action: {
+                                let song = Song(
+                                    id: downloadedSong.songId,
+                                    title: downloadedSong.title,
+                                    album: downloadedSong.album,
+                                    albumId: nil,
+                                    artist: downloadedSong.artist,
+                                    artistId: nil,
+                                    track: nil,
+                                    year: nil,
+                                    genre: nil,
+                                    coverArt: downloadedSong.coverArt,
+                                    size: Int(downloadedSong.fileSize),
+                                    contentType: nil,
+                                    suffix: nil,
+                                    duration: nil,
+                                    bitRate: nil,
+                                    path: downloadedSong.filePath
+                                )
+                                TrackRowView(song: song) {
                                     playRadio(startingAt: index)
-                                }) {
-                                    HStack {
-                                        VStack(alignment: .leading) {
-                                            Text(downloadedSong.title)
-                                                .font(.caption)
-                                                .lineLimit(1)
-                                            if let artist = downloadedSong.artist {
-                                                Text(artist)
-                                                    .font(.caption2)
-                                                    .foregroundColor(.secondary)
-                                                    .lineLimit(1)
-                                            }
-                                        }
-
-                                        Spacer()
-
-                                        Image(systemName: "arrow.down.circle.fill")
-                                            .font(.caption2)
-                                            .foregroundColor(.green)
-
-                                        if player.currentSong?.id == songId && player.isPlaying {
-                                            Image(systemName: "speaker.wave.2.fill")
-                                                .font(.caption2)
-                                                .foregroundColor(.accentColor)
-                                        }
-                                    }
                                 }
-                                .buttonStyle(.plain)
                             }
                         }
                     }
