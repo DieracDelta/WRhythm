@@ -33,11 +33,24 @@ struct TrackRowView: View {
                 Spacer(minLength: 4)
 
                 HStack(spacing: 6) {
-                    // Download indicator or button
+                    // Download/Delete button
                     if downloadManager.isDownloaded(song.id) {
-                        Image(systemName: "arrow.down.circle.fill")
-                            .font(.caption2)
-                            .foregroundColor(.green)
+                        if !offlineMode {
+                            // Online mode: tappable to delete
+                            Button(action: {
+                                downloadManager.deleteSong(song.id)
+                            }) {
+                                Image(systemName: "arrow.down.circle.fill")
+                                    .font(.caption2)
+                                    .foregroundColor(.green)
+                            }
+                            .buttonStyle(.plain)
+                        } else {
+                            // Offline mode: just an indicator
+                            Image(systemName: "arrow.down.circle.fill")
+                                .font(.caption2)
+                                .foregroundColor(.green)
+                        }
                     } else if !offlineMode {
                         Button(action: {
                             downloadManager.downloadSong(song)
