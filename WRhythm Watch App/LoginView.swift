@@ -56,7 +56,9 @@ struct LoginView: View {
             }
         }
         .onAppear {
-            serverURL = "https://office-desktop.tail5ca7.ts.net/navidrome/"
+            serverURL = "https://instance-20251227-1707.tail5ca7.ts.net/gonic"
+            username = "apple-tester"
+            password = "ajsdekkkkk8383fndae!U#(*&&"
         }
     }
 

@@ -217,6 +217,9 @@ class AudioPlayer: NSObject, ObservableObject {
             timeObserver = nil
         }
 
+        // Clear all old subscriptions to prevent duplicate notifications
+        cancellables.removeAll()
+
         let playerItem = AVPlayerItem(url: playURL)
         player = AVPlayer(playerItem: playerItem)
         player?.volume = volume  // Apply current volume
@@ -310,14 +313,10 @@ class AudioPlayer: NSObject, ObservableObject {
                     print("✅ Player ready to play")
                     print("📊 Duration details - seconds: \(dur.seconds), isNumeric: \(dur.isNumeric), isIndefinite: \(dur.isIndefinite), isValid: \(dur.isValid)")
 
-                    // Only update duration from stream if we don't already have it from song metadata
+                    // Always prefer actual stream duration over metadata (metadata can be wrong)
                     if dur.isNumeric && dur.seconds > 0 {
-                        if let currentDuration = self?.duration, currentDuration == 0 {
-                            self?.duration = dur.seconds
-                            print("✅ Duration set from stream: \(dur.seconds)s")
-                        } else {
-                            print("ℹ️ Already have duration from metadata, ignoring stream duration")
-                        }
+                        self?.duration = dur.seconds
+                        print("✅ Duration set from stream: \(dur.seconds)s")
                     } else {
                         print("⚠️ Stream duration not available (isIndefinite: \(dur.isIndefinite))")
                         if let currentDuration = self?.duration, currentDuration > 0 {
@@ -365,8 +364,11 @@ class AudioPlayer: NSObject, ObservableObject {
             if currentIndex < queue.count - 1 {
                 next()
             } else {
+                // Stop playback completely
+                player?.pause()
                 isPlaying = false
                 currentTime = 0
+                print("⏸️ Queue finished - stopped playback")
             }
         }
     }

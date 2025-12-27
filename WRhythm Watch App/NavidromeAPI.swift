@@ -380,12 +380,25 @@ class NavidromeAPI: ObservableObject {
     }
 
     func getStreamURL(id: String, format: String = "mp3", maxBitRate: Int = 128) -> URL? {
-        let url = buildURL(endpoint: "stream", additionalParams: [
-            "id": id,
-            "format": format,
-            "maxBitRate": String(maxBitRate)
-        ])
-        print("🔊 Stream URL built: \(url?.absoluteString ?? "nil")")
+        // Build stream URL manually without f=json parameter (we want raw audio, not JSON)
+        let salt = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+        let token = Insecure.MD5.hash(data: Data((password + salt).utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+
+        var components = URLComponents(string: "\(baseURL)/rest/stream")
+        components?.queryItems = [
+            URLQueryItem(name: "u", value: username),
+            URLQueryItem(name: "t", value: token),
+            URLQueryItem(name: "s", value: salt),
+            URLQueryItem(name: "c", value: clientName),
+            URLQueryItem(name: "v", value: apiVersion),
+            URLQueryItem(name: "id", value: id),
+            URLQueryItem(name: "maxBitRate", value: String(maxBitRate))
+        ]
+
+        let url = components?.url
+        print("🔊 Stream URL built (without f=json): \(url?.absoluteString ?? "nil")")
         return url
     }
 
