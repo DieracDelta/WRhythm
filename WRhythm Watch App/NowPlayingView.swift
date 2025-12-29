@@ -13,6 +13,7 @@ struct NowPlayingView: View {
     @State private var isStarring = false
     @State private var isSyncing = false
     @State private var hasLoadedStarredSongs = false
+    @State private var showVolumeControl = false
     @AppStorage("offlineMode") private var offlineMode = false
 
     var body: some View {
@@ -62,14 +63,17 @@ struct NowPlayingView: View {
                             ),
                             in: 0...max(1, player.duration.isNaN || player.duration.isInfinite ? 1 : player.duration)
                         )
+                        .tint(.accentColor)
 
                         HStack {
                             Text(formatTime(player.currentTime))
                                 .font(.caption2)
+                                .monospacedDigit()
                                 .foregroundColor(.secondary)
                             Spacer()
                             Text("-" + formatTime(player.duration - player.currentTime))
                                 .font(.caption2)
+                                .monospacedDigit()
                                 .foregroundColor(.secondary)
                         }
                     }
@@ -96,29 +100,37 @@ struct NowPlayingView: View {
                         .disabled(player.currentIndex >= player.queue.count - 1)
                     }
 
-                    Text("🔊 Use Digital Crown for Volume")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                        .padding(.top, 4)
-
                     // Action buttons
                     HStack(spacing: 8) {
+                        Button(action: {
+                            showVolumeControl = true
+                        }) {
+                            Image(systemName: "speaker.wave.3.fill")
+                                .font(.title3)
+                                .symbolVariant(.fill)
+                                .foregroundStyle(.blue.gradient)
+                        }
+                        .buttonStyle(.bordered)
+                        
                         NavigationLink(destination: RadioOptionsView(
                             sourceSong: song,
                             sourceTitle: song.title,
                             sourceType: .song
                         )) {
-                            Label("📻", systemImage: "antenna.radiowaves.left.and.right")
-                                .font(.caption)
+                            Image(systemName: "antenna.radiowaves.left.and.right")
+                                .font(.title3)
+                                .symbolVariant(.fill)
+                                .foregroundStyle(.purple.gradient)
                         }
                         .buttonStyle(.bordered)
 
                         Button(action: {
                             toggleFavorite(song: song)
                         }) {
-                            Label(downloadManager.starredSongIds.contains(song.id) ? "❤️" : "🤍",
-                                  systemImage: downloadManager.starredSongIds.contains(song.id) ? "heart.fill" : "heart")
-                                .font(.caption)
+                            Image(systemName: downloadManager.starredSongIds.contains(song.id) ? "heart.fill" : "heart")
+                                .font(.title3)
+                                .symbolVariant(.fill)
+                                .foregroundStyle(.red.gradient)
                         }
                         .buttonStyle(.bordered)
                         .disabled(isStarring)
@@ -162,6 +174,9 @@ struct NowPlayingView: View {
             }
         }
         .navigationTitle("Now Playing")
+        .sheet(isPresented: $showVolumeControl) {
+            VolumeControlView()
+        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button(action: {
@@ -317,6 +332,49 @@ struct NowPlayingView: View {
         let minutes = Int(seconds) / 60
         let remainingSeconds = Int(seconds) % 60
         return String(format: "%d:%02d", minutes, remainingSeconds)
+    }
+}
+
+struct VolumeControlView: View {
+    @ObservedObject var player = AudioPlayer.shared
+    @Environment(\.dismiss) var dismiss
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                Text("Volume")
+                    .font(.headline)
+                
+                HStack {
+                    Image(systemName: "speaker.fill")
+                        .foregroundStyle(.green.gradient)
+                    Slider(value: $player.volume, in: 0...1)
+                        .tint(.green)
+                    Image(systemName: "speaker.wave.3.fill")
+                        .foregroundStyle(.green.gradient)
+                }
+                
+                Text("\(Int(player.volume * 100))%")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding()
+        }
+        .focusable()
+        .focused($isFocused)
+        .digitalCrownRotation(
+            $player.volume,
+            from: 0.0,
+            through: 1.0,
+            by: 0.05,
+            sensitivity: .low,
+            isContinuous: false,
+            isHapticFeedbackEnabled: false
+        )
+        .onAppear {
+            isFocused = true
+        }
     }
 }
 
