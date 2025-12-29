@@ -31,7 +31,7 @@ class AudioPlayer: NSObject, ObservableObject {
     @Published var repeatMode: RepeatMode = .off
     @Published var volume: Double = 1.0 {
         didSet {
-            player?.volume = Float(volume)
+            player.volume = Float(volume)
         }
     }
 
@@ -41,16 +41,19 @@ class AudioPlayer: NSObject, ObservableObject {
         case one
     }
 
-    private var player: AVPlayer?
+    private let player: AVPlayer
     private var timeObserver: Any?
     private var cancellables = Set<AnyCancellable>()
     private var originalQueue: [Song] = []
     private var originalIndex: Int = 0
 
     override init() {
+        self.player = AVPlayer()
         super.init()
+        
         setupAudioSession()
         setupRemoteCommands()
+        addPeriodicTimeObserver()
     }
 
     private func setupAudioSession() {
@@ -212,10 +215,10 @@ class AudioPlayer: NSObject, ObservableObject {
         print("🎵 Playback URL: \(playURL.absoluteString)")
 
         // Remove old time observer if exists
-        if let observer = timeObserver {
-            player?.removeTimeObserver(observer)
-            timeObserver = nil
-        }
+        // if let observer = timeObserver {
+        //    player?.removeTimeObserver(observer)
+        //    timeObserver = nil
+        // }
 
         // Clear all old subscriptions to prevent duplicate notifications
         cancellables.removeAll()
@@ -235,10 +238,12 @@ class AudioPlayer: NSObject, ObservableObject {
         if let contentType = song.contentType {
             print("🎵 Setting MIME type: \(contentType)")
             assetOptions["AVURLAssetOutOfBandMIMETypeKey"] = contentType
+            
+            // Prefer precise duration for better seeking (especially for FLAC)
+            if contentType.contains("flac") {
+                assetOptions[AVURLAssetPreferPreciseDurationAndTimingKey] = true
+            }
         }
-
-        // Prefer precise duration for better seeking (especially for FLAC)
-        assetOptions[AVURLAssetPreferPreciseDurationAndTimingKey] = true
 
         let asset = AVURLAsset(url: playURL, options: assetOptions)
 
@@ -246,36 +251,34 @@ class AudioPlayer: NSObject, ObservableObject {
         let playerItem = AVPlayerItem(asset: asset)
 
         // Configure player item for better streaming
-        playerItem.preferredForwardBufferDuration = 5.0
+        // Let AVPlayer decide buffer size (default is usually aggressive buffering, which is better for stability)
+        // playerItem.preferredForwardBufferDuration = 5.0
 
-        player = AVPlayer(playerItem: playerItem)
-        player?.volume = Float(volume)  // Apply current volume
+        // Reuse existing player instance
+        player.replaceCurrentItem(with: playerItem)
+        player.volume = Float(volume)
 
-        // Set automatic waiting to minimize stalls
-        player?.automaticallyWaitsToMinimizeStalling = true
-
-        addPeriodicTimeObserver()
         observePlayerItem(playerItem)
 
-        player?.play()
+        player.play()
         isPlaying = true
 
         updateNowPlayingInfo()
     }
 
     func play() {
-        player?.play()
+        player.play()
         isPlaying = true
     }
 
     func pause() {
-        player?.pause()
+        player.pause()
         isPlaying = false
     }
 
     func stop() {
-        player?.pause()
-        player?.replaceCurrentItem(with: nil)
+        player.pause()
+        player.replaceCurrentItem(with: nil)
         isPlaying = false
         currentSong = nil
         queue = []
@@ -312,23 +315,32 @@ class AudioPlayer: NSObject, ObservableObject {
 
     func seek(to time: TimeInterval) {
         let cmTime = CMTime(seconds: time, preferredTimescale: 1)
-        player?.seek(to: cmTime)
+        player.seek(to: cmTime)
     }
 
     private func addPeriodicTimeObserver() {
         let interval = CMTime(seconds: 0.5, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
-        timeObserver = player?.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
+        timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
             guard let self = self else { return }
             self.currentTime = time.seconds
 
             // Update duration if it's available and we don't have it yet
-            if let item = self.player?.currentItem {
+            if let item = self.player.currentItem {
                 let itemDuration = item.duration
 
                 if (self.duration == 0 || self.duration.isNaN),
                    itemDuration.isNumeric && itemDuration.seconds > 0 {
                     self.duration = itemDuration.seconds
                     print("✅ Duration updated from time observer to: \(self.duration)s")
+                }
+                
+                // Manual check for end of playback if duration is available but player thinks it's indefinite
+                // (Common issue with some streams where AVPlayer treats them as live radio)
+                if itemDuration.isIndefinite,
+                   self.duration > 0,
+                   self.currentTime >= self.duration {
+                    print("🛑 Forced end of playback because duration reached (\(self.currentTime) >= \(self.duration))")
+                    self.handlePlaybackEnded()
                 }
             }
         }
@@ -400,6 +412,16 @@ class AudioPlayer: NSObject, ObservableObject {
     }
 
     private func handlePlaybackEnded() {
+        print("🛑 handlePlaybackEnded called. CurrentTime: \(currentTime), Duration: \(duration)")
+
+        // Protect against premature ending (e.g. network drop masquerading as end of file)
+        // If we are less than 95% through and song is longer than 10s, it's likely an error
+        if duration > 10, currentTime > 0, currentTime < (duration * 0.95) {
+             print("⚠️ Premature end detected (Time: \(currentTime)/\(duration)). Attempting to resume playback...")
+             play()
+             return
+        }
+
         switch repeatMode {
         case .one:
             // Repeat current song
@@ -423,7 +445,7 @@ class AudioPlayer: NSObject, ObservableObject {
                 next()
             } else {
                 // Stop playback completely
-                player?.pause()
+                player.pause()
                 isPlaying = false
                 currentTime = 0
                 print("⏸️ Queue finished - stopped playback")
@@ -470,7 +492,7 @@ class AudioPlayer: NSObject, ObservableObject {
 
     deinit {
         if let observer = timeObserver {
-            player?.removeTimeObserver(observer)
+            player.removeTimeObserver(observer)
         }
     }
 }
