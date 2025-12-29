@@ -220,9 +220,31 @@ class AudioPlayer: NSObject, ObservableObject {
         // Clear all old subscriptions to prevent duplicate notifications
         cancellables.removeAll()
 
-        let playerItem = AVPlayerItem(url: playURL)
+        // Re-activate audio session before playback
+        do {
+            try AVAudioSession.sharedInstance().setActive(true)
+            print("✅ Audio session re-activated for playback")
+        } catch {
+            print("⚠️ Failed to re-activate audio session: \(error)")
+        }
+
+        // Use AVURLAsset for better control over loading (especially important on watchOS)
+        let asset = AVURLAsset(url: playURL, options: [
+            AVURLAssetPreferPreciseDurationAndTimingKey: true,
+            "AVURLAssetHTTPHeaderFieldsKey": [:] as [String: String]
+        ])
+
+        print("🎵 Creating player item from asset...")
+        let playerItem = AVPlayerItem(asset: asset)
+
+        // Configure player item for better streaming
+        playerItem.preferredForwardBufferDuration = 5.0
+
         player = AVPlayer(playerItem: playerItem)
         player?.volume = volume  // Apply current volume
+
+        // Set automatic waiting to minimize stalls
+        player?.automaticallyWaitsToMinimizeStalling = true
 
         addPeriodicTimeObserver()
         observePlayerItem(playerItem)
@@ -327,8 +349,36 @@ class AudioPlayer: NSObject, ObservableObject {
                     print("❌ Player item failed!")
                     if let error = item.error {
                         print("❌ Error: \(error.localizedDescription)")
-                        print("❌ Error domain: \((error as NSError).domain)")
-                        print("❌ Error code: \((error as NSError).code)")
+                        let nsError = error as NSError
+                        print("❌ Error domain: \(nsError.domain)")
+                        print("❌ Error code: \(nsError.code)")
+                        print("❌ Error userInfo: \(nsError.userInfo)")
+
+                        // Provide specific guidance for common errors
+                        if nsError.code == -11850 {
+                            print("💡 Error -11850 (AVErrorOperationStopped): Stream was stopped")
+                            print("💡 Possible causes: Network issue, invalid URL, unsupported format, or ATS restriction")
+                        }
+
+                        // Try to get more details from the access log
+                        if let accessLog = item.accessLog() {
+                            print("📊 Access log events: \(accessLog.events.count)")
+                            for event in accessLog.events {
+                                print("📊 URI: \(event.uri ?? "nil")")
+                                print("📊 Server address: \(event.serverAddress ?? "nil")")
+                                print("📊 Number of server address changes: \(event.numberOfServerAddressChanges)")
+                                if let errorLog = item.errorLog() {
+                                    print("❌ Error log events: \(errorLog.events.count)")
+                                    for errorEvent in errorLog.events {
+                                        print("❌ Error status code: \(errorEvent.errorStatusCode)")
+                                        print("❌ Error domain: \(errorEvent.errorDomain ?? "nil")")
+                                        print("❌ Error comment: \(errorEvent.errorComment ?? "nil")")
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        print("❌ Player failed but no error object available")
                     }
                 }
             }

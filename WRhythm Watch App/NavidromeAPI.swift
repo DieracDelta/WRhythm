@@ -387,18 +387,25 @@ class NavidromeAPI: ObservableObject {
             .joined()
 
         var components = URLComponents(string: "\(baseURL)/rest/stream")
-        components?.queryItems = [
+
+        // Build query items without maxBitRate to avoid transcoding issues on watchOS
+        // Transcoding can cause AVPlayer to treat the stream as indefinite/live
+        var queryItems = [
             URLQueryItem(name: "u", value: username),
             URLQueryItem(name: "t", value: token),
             URLQueryItem(name: "s", value: salt),
             URLQueryItem(name: "c", value: clientName),
             URLQueryItem(name: "v", value: apiVersion),
-            URLQueryItem(name: "id", value: id),
-            URLQueryItem(name: "maxBitRate", value: String(maxBitRate))
+            URLQueryItem(name: "id", value: id)
         ]
 
+        // Add format parameter to ensure transcoding to compatible format when needed
+        queryItems.append(URLQueryItem(name: "format", value: format))
+
+        components?.queryItems = queryItems
+
         let url = components?.url
-        print("🔊 Stream URL built (without f=json): \(url?.absoluteString ?? "nil")")
+        print("🔊 Stream URL built (format: \(format), no bitrate limit): \(url?.absoluteString ?? "nil")")
         return url
     }
 

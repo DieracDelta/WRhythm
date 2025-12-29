@@ -68,46 +68,38 @@ struct NowPlayingView: View {
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                             Spacer()
-                            Text(formatTime(player.duration))
+                            Text("-" + formatTime(player.duration - player.currentTime))
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                         }
                     }
 
-                    HStack(spacing: 20) {
+                    HStack(spacing: 25) {
                         Button(action: player.previous) {
-                            Image(systemName: "backward.fill")
-                                .font(.title3)
+                            Image(systemName: "backward.end.fill")
+                                .font(.title2)
                         }
                         .buttonStyle(.plain)
                         .disabled(player.currentIndex == 0 && player.currentTime < 3)
 
                         Button(action: player.togglePlayPause) {
-                            Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                                .font(.title2)
+                            Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                                .font(.largeTitle)
                         }
                         .buttonStyle(.plain)
 
                         Button(action: player.next) {
-                            Image(systemName: "forward.fill")
-                                .font(.title3)
+                            Image(systemName: "forward.end.fill")
+                                .font(.title2)
                         }
                         .buttonStyle(.plain)
                         .disabled(player.currentIndex >= player.queue.count - 1)
                     }
 
-                    VStack(spacing: 4) {
-                        HStack {
-                            Image(systemName: "speaker.fill")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                            Slider(value: $player.volume, in: 0...1)
-                            Image(systemName: "speaker.wave.3.fill")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                        .padding(.horizontal, 4)
-                    }
+                    Text("🔊 Use Digital Crown for Volume")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .padding(.top, 4)
 
                     // Action buttons
                     HStack(spacing: 8) {
@@ -169,6 +161,9 @@ struct NowPlayingView: View {
                 .padding()
             }
         }
+        .focusable(true)
+        .digitalCrownRotation($player.volume, from: 0.0, through: 1.0, by: 0.01, sensitivity: .medium, isContinuous: false, isHapticFeedbackEnabled: true)
+        .digitalCrownAccessory(.hidden)
         .navigationTitle("Now Playing")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

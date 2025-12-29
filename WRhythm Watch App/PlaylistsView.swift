@@ -36,24 +36,65 @@ struct PlaylistsView: View {
     }
 
     var body: some View {
-        ZStack {
-            if offlineMode {
-                // Offline mode: show cached playlists
-                if filteredCachedPlaylists.isEmpty {
-                    VStack {
-                        Image(systemName: "music.note.list")
-                            .font(.largeTitle)
-                            .foregroundColor(.secondary)
-                        Text("No cached playlists")
-                            .font(.headline)
-                        Text("View playlists while online to cache them")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal)
+        VStack(spacing: 0) {
+            // Action buttons at top when online
+            if !offlineMode {
+                HStack(spacing: 16) {
+                    Button(action: {
+                        syncAllPlaylists()
+                    }) {
+                        if isSyncing {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                        } else {
+                            Text("🔄")
+                                .font(.title3)
+                        }
                     }
-                } else {
-                    List(filteredCachedPlaylists, id: \.id) { playlist in
+                    .buttonStyle(.bordered)
+                    .disabled(isSyncing)
+
+                    Button(action: {
+                        showingSearchSheet = true
+                    }) {
+                        Text("🔍")
+                            .font(.title3)
+                    }
+                    .buttonStyle(.bordered)
+
+                    if !searchText.isEmpty {
+                        Button(action: {
+                            searchText = ""
+                        }) {
+                            Text("✕")
+                                .font(.title3)
+                                .foregroundColor(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 8)
+            }
+
+            ZStack {
+                if offlineMode {
+                    // Offline mode: show cached playlists
+                    if filteredCachedPlaylists.isEmpty {
+                        VStack {
+                            Image(systemName: "music.note.list")
+                                .font(.largeTitle)
+                                .foregroundColor(.secondary)
+                            Text("No cached playlists")
+                                .font(.headline)
+                            Text("View playlists while online to cache them")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal)
+                        }
+                    } else {
+                        List(filteredCachedPlaylists, id: \.id) { playlist in
                         NavigationLink(destination: PlaylistDetailView(playlistId: playlist.id, playlistName: playlist.name)) {
                             HStack {
                                 if let coverArtId = playlist.coverArt,
@@ -146,41 +187,10 @@ struct PlaylistsView: View {
                     }
                 }
             }
-        }
-        .navigationTitle("Playlists")
-        .toolbar {
-            if !offlineMode {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button(action: {
-                        syncAllPlaylists()
-                    }) {
-                        if isSyncing {
-                            ProgressView()
-                        } else {
-                            Image(systemName: "arrow.clockwise")
-                        }
-                    }
-                    .disabled(isSyncing)
-                }
-
-                ToolbarItem(placement: .topBarTrailing) {
-                    if !searchText.isEmpty {
-                        Button(action: {
-                            searchText = ""
-                        }) {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.secondary)
-                        }
-                    } else {
-                        Button(action: {
-                            showingSearchSheet = true
-                        }) {
-                            Image(systemName: "magnifyingglass")
-                        }
-                    }
-                }
             }
         }
+        .navigationTitle("Playlists")
+        .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showingSearchSheet) {
             NavigationView {
                 VStack(spacing: 16) {
