@@ -46,6 +46,7 @@ class AudioPlayer: NSObject, ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var originalQueue: [Song] = []
     private var originalIndex: Int = 0
+    private var baseTimeOffset: TimeInterval = 0
 
     override init() {
         self.player = AVPlayer()
@@ -180,15 +181,18 @@ class AudioPlayer: NSObject, ObservableObject {
         }
     }
 
-    private func startPlayback(_ song: Song) {
-        print("🎵 AudioPlayer: startPlayback called")
+    private func startPlayback(_ song: Song, startTime: TimeInterval = 0) {
+        print("🎵 AudioPlayer: startPlayback called with startTime: \(startTime)")
         print("🎵 Song: \(song.title) by \(song.artist ?? "Unknown")")
         print("🎵 Song ID: \(song.id)")
         print("🎵 Content type: \(song.contentType ?? "unknown")")
         print("🎵 Suffix: \(song.suffix ?? "unknown")")
 
         self.currentSong = song
-        self.currentTime = 0
+        self.currentTime = startTime
+        
+        // Store the offset we are requesting so we can add it to the player's reported time
+        self.baseTimeOffset = startTime
 
         // Use song metadata duration if available, otherwise will try to get from stream
         if let songDuration = song.duration, songDuration > 0 {
@@ -204,7 +208,9 @@ class AudioPlayer: NSObject, ObservableObject {
         if let localURL = DownloadManager.shared.getLocalURL(song.id) {
             playURL = localURL
             print("🎵 Playing from local file: \(localURL.lastPathComponent)")
-        } else if let streamURL = NavidromeAPI.shared.getStreamURL(id: song.id) {
+            // Local file seeking is handled by AVPlayer seek, not URL offset
+            self.baseTimeOffset = 0 
+        } else if let streamURL = NavidromeAPI.shared.getStreamURL(id: song.id, timeOffset: Int(startTime)) {
             playURL = streamURL
             print("🎵 Streaming from: \(streamURL.absoluteString)")
         } else {
@@ -260,6 +266,13 @@ class AudioPlayer: NSObject, ObservableObject {
 
         observePlayerItem(playerItem)
 
+        // If resuming a local file, we need to seek.
+        // For streams, the timeOffset in URL handles it (so we start at 0 relative to the chunk).
+        if startTime > 0 && playURL.isFileURL {
+             let cmTime = CMTime(seconds: startTime, preferredTimescale: 1)
+             player.seek(to: cmTime)
+        }
+
         player.play()
         isPlaying = true
 
@@ -314,21 +327,39 @@ class AudioPlayer: NSObject, ObservableObject {
     }
 
     func seek(to time: TimeInterval) {
-        let cmTime = CMTime(seconds: time, preferredTimescale: 1)
-        player.seek(to: cmTime)
+        // If we are playing a local file, standard seek works
+        if let currentSong = currentSong, 
+           DownloadManager.shared.getLocalURL(currentSong.id) != nil {
+             let cmTime = CMTime(seconds: time, preferredTimescale: 1)
+             player.seek(to: cmTime)
+             return
+        }
+        
+        // If streaming, we likely have a chunked stream which cannot be seeked backward 
+        // or far forward easily. We should re-request the stream at the new offset.
+        if let currentSong = currentSong {
+            print("⏩ Seeking stream to \(time)s (reloading stream)")
+            startPlayback(currentSong, startTime: time)
+        }
     }
 
     private func addPeriodicTimeObserver() {
         let interval = CMTime(seconds: 0.5, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
         timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
             guard let self = self else { return }
-            self.currentTime = time.seconds
+            
+            // Calculate absolute time by adding the base offset (if we resumed stream)
+            // For normal playback, baseTimeOffset is 0.
+            // For resumed stream, player time is relative to chunk, so we add offset.
+            self.currentTime = self.baseTimeOffset + time.seconds
 
             // Update duration if it's available and we don't have it yet
             if let item = self.player.currentItem {
                 let itemDuration = item.duration
 
-                if (self.duration == 0 || self.duration.isNaN),
+                // Only update global duration if we started from 0, otherwise the chunk duration is partial
+                if self.baseTimeOffset == 0,
+                   (self.duration == 0 || self.duration.isNaN),
                    itemDuration.isNumeric && itemDuration.seconds > 0 {
                     self.duration = itemDuration.seconds
                     print("✅ Duration updated from time observer to: \(self.duration)s")
@@ -338,8 +369,8 @@ class AudioPlayer: NSObject, ObservableObject {
                 // (Common issue with some streams where AVPlayer treats them as live radio)
                 if itemDuration.isIndefinite,
                    self.duration > 0,
-                   self.currentTime >= self.duration {
-                    print("🛑 Forced end of playback because duration reached (\(self.currentTime) >= \(self.duration))")
+                   self.currentTime >= (self.duration + 5) {
+                    print("🛑 Forced end of playback because duration reached (\(self.currentTime) >= \(self.duration) + 5s buffer)")
                     self.handlePlaybackEnded()
                 }
             }
@@ -413,12 +444,16 @@ class AudioPlayer: NSObject, ObservableObject {
 
     private func handlePlaybackEnded() {
         print("🛑 handlePlaybackEnded called. CurrentTime: \(currentTime), Duration: \(duration)")
+        print("🛑 RepeatMode: \(repeatMode), Queue Count: \(queue.count), CurrentIndex: \(currentIndex)")
 
         // Protect against premature ending (e.g. network drop masquerading as end of file)
         // If we are less than 95% through and song is longer than 10s, it's likely an error
         if duration > 10, currentTime > 0, currentTime < (duration * 0.95) {
-             print("⚠️ Premature end detected (Time: \(currentTime)/\(duration)). Attempting to resume playback...")
-             play()
+             print("⚠️ Premature end detected (Time: \(currentTime)/\(duration)). Attempting to resume playback from \(currentTime)...")
+             if let song = currentSong {
+                 // Restart playback but ask server for offset
+                 startPlayback(song, startTime: currentTime)
+             }
              return
         }
 

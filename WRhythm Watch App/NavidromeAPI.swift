@@ -379,7 +379,7 @@ class NavidromeAPI: ObservableObject {
         return buildURL(endpoint: "getCoverArt", additionalParams: ["id": id, "size": String(size)])
     }
 
-    func getStreamURL(id: String, format: String = "mp3", maxBitRate: Int = 128) -> URL? {
+    func getStreamURL(id: String, format: String = "mp3", maxBitRate: Int = 128, timeOffset: Int = 0) -> URL? {
         // Build stream URL - use .view suffix like Submariner for compatibility
         let salt = UUID().uuidString.replacingOccurrences(of: "-", with: "")
         let token = Insecure.MD5.hash(data: Data((password + salt).utf8))
@@ -397,6 +397,10 @@ class NavidromeAPI: ObservableObject {
             URLQueryItem(name: "id", value: id),
             URLQueryItem(name: "maxBitRate", value: String(maxBitRate))
         ]
+
+        if timeOffset > 0 {
+             queryItems.append(URLQueryItem(name: "timeOffset", value: String(timeOffset)))
+        }
 
         components?.queryItems = queryItems
 
