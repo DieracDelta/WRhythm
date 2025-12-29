@@ -29,9 +29,9 @@ class AudioPlayer: NSObject, ObservableObject {
     @Published var currentIndex: Int = 0
     @Published var isShuffled = false
     @Published var repeatMode: RepeatMode = .off
-    @Published var volume: Float = 1.0 {
+    @Published var volume: Double = 1.0 {
         didSet {
-            player?.volume = volume
+            player?.volume = Float(volume)
         }
     }
 
@@ -229,10 +229,18 @@ class AudioPlayer: NSObject, ObservableObject {
         }
 
         // Use AVURLAsset for better control over loading (especially important on watchOS)
-        let asset = AVURLAsset(url: playURL, options: [
-            AVURLAssetPreferPreciseDurationAndTimingKey: true,
-            "AVURLAssetHTTPHeaderFieldsKey": [:] as [String: String]
-        ])
+        // Set MIME type explicitly to prevent AVPlayer from treating stream as ICY/HLS
+        var assetOptions: [String: Any] = [:]
+
+        if let contentType = song.contentType {
+            print("🎵 Setting MIME type: \(contentType)")
+            assetOptions["AVURLAssetOutOfBandMIMETypeKey"] = contentType
+        }
+
+        // Prefer precise duration for better seeking (especially for FLAC)
+        assetOptions[AVURLAssetPreferPreciseDurationAndTimingKey] = true
+
+        let asset = AVURLAsset(url: playURL, options: assetOptions)
 
         print("🎵 Creating player item from asset...")
         let playerItem = AVPlayerItem(asset: asset)
@@ -241,7 +249,7 @@ class AudioPlayer: NSObject, ObservableObject {
         playerItem.preferredForwardBufferDuration = 5.0
 
         player = AVPlayer(playerItem: playerItem)
-        player?.volume = volume  // Apply current volume
+        player?.volume = Float(volume)  // Apply current volume
 
         // Set automatic waiting to minimize stalls
         player?.automaticallyWaitsToMinimizeStalling = true

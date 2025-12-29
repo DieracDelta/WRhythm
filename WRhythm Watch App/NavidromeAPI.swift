@@ -380,32 +380,28 @@ class NavidromeAPI: ObservableObject {
     }
 
     func getStreamURL(id: String, format: String = "mp3", maxBitRate: Int = 128) -> URL? {
-        // Build stream URL manually without f=json parameter (we want raw audio, not JSON)
+        // Build stream URL - use .view suffix like Submariner for compatibility
         let salt = UUID().uuidString.replacingOccurrences(of: "-", with: "")
         let token = Insecure.MD5.hash(data: Data((password + salt).utf8))
             .map { String(format: "%02x", $0) }
             .joined()
 
-        var components = URLComponents(string: "\(baseURL)/rest/stream")
+        var components = URLComponents(string: "\(baseURL)/rest/stream.view")
 
-        // Build query items without maxBitRate to avoid transcoding issues on watchOS
-        // Transcoding can cause AVPlayer to treat the stream as indefinite/live
         var queryItems = [
             URLQueryItem(name: "u", value: username),
             URLQueryItem(name: "t", value: token),
             URLQueryItem(name: "s", value: salt),
             URLQueryItem(name: "c", value: clientName),
             URLQueryItem(name: "v", value: apiVersion),
-            URLQueryItem(name: "id", value: id)
+            URLQueryItem(name: "id", value: id),
+            URLQueryItem(name: "maxBitRate", value: String(maxBitRate))
         ]
-
-        // Add format parameter to ensure transcoding to compatible format when needed
-        queryItems.append(URLQueryItem(name: "format", value: format))
 
         components?.queryItems = queryItems
 
         let url = components?.url
-        print("🔊 Stream URL built (format: \(format), no bitrate limit): \(url?.absoluteString ?? "nil")")
+        print("🔊 Stream URL built (maxBitRate: \(maxBitRate)): \(url?.absoluteString ?? "nil")")
         return url
     }
 

@@ -161,9 +161,6 @@ struct NowPlayingView: View {
                 .padding()
             }
         }
-        .focusable(true)
-        .digitalCrownRotation($player.volume, from: 0.0, through: 1.0, by: 0.01, sensitivity: .medium, isContinuous: false, isHapticFeedbackEnabled: true)
-        .digitalCrownAccessory(.hidden)
         .navigationTitle("Now Playing")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
