@@ -379,7 +379,7 @@ class NavidromeAPI: ObservableObject {
         return buildURL(endpoint: "getCoverArt", additionalParams: ["id": id, "size": String(size)])
     }
 
-    func getStreamURL(id: String, format: String = "mp3", maxBitRate: Int = 128, timeOffset: Int = 0) -> URL? {
+    func getStreamURL(id: String, format: String? = nil, maxBitRate: Int = 128, timeOffset: Int = 0) -> URL? {
         // Build stream URL - use .view suffix like Submariner for compatibility
         let salt = UUID().uuidString.replacingOccurrences(of: "-", with: "")
         let token = Insecure.MD5.hash(data: Data((password + salt).utf8))
@@ -398,6 +398,11 @@ class NavidromeAPI: ObservableObject {
             URLQueryItem(name: "maxBitRate", value: String(maxBitRate))
         ]
 
+        // Only add format if explicitly requested (for transcoding)
+        if let format = format {
+            queryItems.append(URLQueryItem(name: "format", value: format))
+        }
+
         if timeOffset > 0 {
              queryItems.append(URLQueryItem(name: "timeOffset", value: String(timeOffset)))
         }
@@ -405,7 +410,11 @@ class NavidromeAPI: ObservableObject {
         components?.queryItems = queryItems
 
         let url = components?.url
-        print("🔊 Stream URL built (maxBitRate: \(maxBitRate)): \(url?.absoluteString ?? "nil")")
+        if let format = format {
+            print("🔊 Stream URL built (format: \(format), maxBitRate: \(maxBitRate)): \(url?.absoluteString ?? "nil")")
+        } else {
+            print("🔊 Stream URL built (maxBitRate: \(maxBitRate)): \(url?.absoluteString ?? "nil")")
+        }
         return url
     }
 
@@ -663,7 +672,7 @@ struct ArtistIndex: Decodable {
     let artist: [Artist]
 }
 
-struct Artist: Decodable, Identifiable {
+struct Artist: Decodable, Identifiable, Equatable {
     let id: String
     let name: String
     let albumCount: Int?
@@ -685,7 +694,7 @@ struct ArtistWithAlbums: Decodable {
     let album: [AlbumSummary]
 }
 
-struct AlbumSummary: Decodable, Identifiable {
+struct AlbumSummary: Decodable, Identifiable, Equatable {
     let id: String
     let name: String
     let artist: String?

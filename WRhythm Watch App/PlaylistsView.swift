@@ -8,10 +8,8 @@
 import SwiftUI
 
 struct PlaylistsView: View {
-    @State private var playlists: [PlaylistSummary] = []
-    @State private var isLoading = false
+    @EnvironmentObject var libraryDataManager: LibraryDataManager
     @State private var isSyncing = false
-    @State private var errorMessage = ""
     @State private var searchText = ""
     @State private var showingSearchSheet = false
     @ObservedObject var downloadManager = DownloadManager.shared
@@ -19,9 +17,9 @@ struct PlaylistsView: View {
 
     private var filteredPlaylists: [PlaylistSummary] {
         if searchText.isEmpty {
-            return playlists
+            return libraryDataManager.playlists
         }
-        return playlists.filter { playlist in
+        return libraryDataManager.playlists.filter { playlist in
             playlist.name.localizedCaseInsensitiveContains(searchText)
         }
     }
@@ -77,117 +75,7 @@ struct PlaylistsView: View {
                 .padding(.vertical, 8)
             }
 
-            ZStack {
-                if offlineMode {
-                    // Offline mode: show cached playlists
-                    if filteredCachedPlaylists.isEmpty {
-                        VStack {
-                            Image(systemName: "music.note.list")
-                                .font(.largeTitle)
-                                .foregroundColor(.secondary)
-                            Text("No cached playlists")
-                                .font(.headline)
-                            Text("View playlists while online to cache them")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal)
-                        }
-                    } else {
-                        List(filteredCachedPlaylists, id: \.id) { playlist in
-                        NavigationLink(destination: PlaylistDetailView(playlistId: playlist.id, playlistName: playlist.name)) {
-                            HStack {
-                                if let coverArtId = playlist.coverArt,
-                                   let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 100) {
-                                    CachedAsyncImage(url: coverURL) { image in
-                                        image
-                                            .resizable()
-                                            .aspectRatio(contentMode: .fill)
-                                    }
-                                    .frame(width: 40, height: 40)
-                                    .cornerRadius(4)
-                                    .id(coverURL)
-                                } else {
-                                    ZStack {
-                                        Color.gray
-                                        Image(systemName: "music.note.list")
-                                            .foregroundColor(.white)
-                                    }
-                                    .frame(width: 40, height: 40)
-                                    .cornerRadius(4)
-                                }
-
-                                VStack(alignment: .leading) {
-                                    Text(playlist.name)
-                                        .font(.headline)
-                                        .lineLimit(1)
-                                    Text("\(playlist.songCount) songs")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                        }
-                    }
-                    .searchable(text: $searchText, prompt: "Search playlists")
-                }
-            } else if playlists.isEmpty && isLoading {
-                ProgressView("Loading playlists...")
-            } else if !errorMessage.isEmpty && playlists.isEmpty {
-                VStack {
-                    Text("Error")
-                        .font(.headline)
-                    Text(errorMessage)
-                        .font(.caption)
-                        .foregroundColor(.red)
-                    Button("Retry") {
-                        loadPlaylists()
-                    }
-                }
-            } else if playlists.isEmpty {
-                VStack {
-                    Text("No playlists")
-                        .foregroundColor(.secondary)
-                    Button("Retry") {
-                        loadPlaylists()
-                    }
-                }
-            } else {
-                List(filteredPlaylists) { playlist in
-                    NavigationLink(destination: PlaylistDetailView(playlistId: playlist.id, playlistName: playlist.name)) {
-                        HStack {
-                            if let coverArtId = playlist.coverArt,
-                               let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 100) {
-                                CachedAsyncImage(url: coverURL) { image in
-                                    image
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fill)
-                                }
-                                .frame(width: 40, height: 40)
-                                .cornerRadius(4)
-                                .id(coverURL)
-                            } else {
-                                ZStack {
-                                    Color.gray
-                                    Image(systemName: "music.note.list")
-                                        .foregroundColor(.white)
-                                }
-                                .frame(width: 40, height: 40)
-                                .cornerRadius(4)
-                            }
-
-                            VStack(alignment: .leading) {
-                                Text(playlist.name)
-                                    .font(.headline)
-                                    .lineLimit(1)
-                                Text("\(playlist.songCount) songs")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                    }
-                }
-            }
-            }
+            content
         }
         .navigationTitle("Playlists")
         .navigationBarTitleDisplayMode(.inline)
@@ -216,29 +104,132 @@ struct PlaylistsView: View {
             }
         }
         .onAppear {
-            if !offlineMode && playlists.isEmpty {
-                loadPlaylists()
+            if !offlineMode {
+                libraryDataManager.fetchPlaylists()
             }
         }
     }
 
-    private func loadPlaylists() {
-        isLoading = true
-        errorMessage = ""
+    @ViewBuilder
+    private var content: some View {
+        if offlineMode {
+            offlineContent
+        } else {
+            onlineContent
+        }
+    }
 
-        Task {
-            do {
-                let fetchedPlaylists = try await NavidromeAPI.shared.getPlaylists()
-                await MainActor.run {
-                    self.playlists = fetchedPlaylists
-                    self.isLoading = false
-                    // Cache playlists for offline mode
-                    self.downloadManager.cachePlaylists(fetchedPlaylists)
+    @ViewBuilder
+    private var offlineContent: some View {
+        // Offline mode: show cached playlists
+        if filteredCachedPlaylists.isEmpty {
+            VStack {
+                Image(systemName: "music.note.list")
+                    .font(.largeTitle)
+                    .foregroundColor(.secondary)
+                Text("No cached playlists")
+                    .font(.headline)
+                Text("View playlists while online to cache them")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+            }
+        } else {
+            List(filteredCachedPlaylists, id: \.id) { playlist in
+                NavigationLink(destination: PlaylistDetailView(playlistId: playlist.id, playlistName: playlist.name)) {
+                    HStack {
+                        if let coverArtId = playlist.coverArt,
+                           let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 100) {
+                            CachedAsyncImage(url: coverURL) { image in
+                                image
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                            }
+                            .frame(width: 40, height: 40)
+                            .cornerRadius(4)
+                            .id(coverURL)
+                        } else {
+                            ZStack {
+                                Color.gray
+                                Image(systemName: "music.note.list")
+                                    .foregroundColor(.white)
+                            }
+                            .frame(width: 40, height: 40)
+                            .cornerRadius(4)
+                        }
+
+                        VStack(alignment: .leading) {
+                            Text(playlist.name)
+                                .font(.headline)
+                                .lineLimit(1)
+                            Text("\(playlist.songCount) songs")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
                 }
-            } catch {
-                await MainActor.run {
-                    self.errorMessage = error.localizedDescription
-                    self.isLoading = false
+            }
+            .searchable(text: $searchText, prompt: "Search playlists")
+        }
+    }
+
+    @ViewBuilder
+    private var onlineContent: some View {
+        if libraryDataManager.playlists.isEmpty && libraryDataManager.isLoadingPlaylists {
+            ProgressView("Loading playlists...")
+        } else if !libraryDataManager.playlistsErrorMessage.isEmpty && libraryDataManager.playlists.isEmpty {
+            VStack {
+                Text("Error")
+                    .font(.headline)
+                Text(libraryDataManager.playlistsErrorMessage)
+                    .font(.caption)
+                    .foregroundColor(.red)
+                Button("Retry") {
+                    libraryDataManager.fetchPlaylists(forceRefresh: true)
+                }
+            }
+        } else if libraryDataManager.playlists.isEmpty {
+            VStack {
+                Text("No playlists")
+                    .foregroundColor(.secondary)
+                Button("Retry") {
+                    libraryDataManager.fetchPlaylists(forceRefresh: true)
+                }
+            }
+        } else {
+            List(filteredPlaylists) { playlist in
+                NavigationLink(destination: PlaylistDetailView(playlistId: playlist.id, playlistName: playlist.name)) {
+                    HStack {
+                        if let coverArtId = playlist.coverArt,
+                           let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 100) {
+                            CachedAsyncImage(url: coverURL) { image in
+                                image
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                            }
+                            .frame(width: 40, height: 40)
+                            .cornerRadius(4)
+                            .id(coverURL)
+                        } else {
+                            ZStack {
+                                Color.gray
+                                Image(systemName: "music.note.list")
+                                    .foregroundColor(.white)
+                            }
+                            .frame(width: 40, height: 40)
+                            .cornerRadius(4)
+                        }
+
+                        VStack(alignment: .leading) {
+                            Text(playlist.name)
+                                .font(.headline)
+                                .lineLimit(1)
+                            Text("\(playlist.songCount) songs")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
                 }
             }
         }
@@ -248,12 +239,20 @@ struct PlaylistsView: View {
         isSyncing = true
 
         Task {
+            // Refresh playlists first
+            libraryDataManager.fetchPlaylists(forceRefresh: true)
+            
+            // Wait a bit for playlists to update (fetchPlaylists is async but we don't await it here directly as it's on main actor via func, 
+            // but the network call is in Task. We need to wait for it.)
+            // Actually LibraryDataManager.fetchPlaylists launches a Task. We can't await it easily unless we change the signature.
+            // For now, let's just fetch manually here to ensure we have the latest list to iterate.
+            
             do {
-                // First, get all playlists
                 let fetchedPlaylists = try await NavidromeAPI.shared.getPlaylists()
                 await MainActor.run {
-                    self.playlists = fetchedPlaylists
-                    self.downloadManager.cachePlaylists(fetchedPlaylists)
+                    libraryDataManager.playlists = fetchedPlaylists
+                    // Cache playlists for offline mode
+                    downloadManager.cachePlaylists(fetchedPlaylists)
                 }
 
                 // Then, fetch full details for each playlist to cache song IDs
@@ -275,7 +274,6 @@ struct PlaylistsView: View {
                 print("✅ All playlists synced")
             } catch {
                 await MainActor.run {
-                    self.errorMessage = error.localizedDescription
                     self.isSyncing = false
                 }
                 print("❌ Failed to sync playlists: \(error)")

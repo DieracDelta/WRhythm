@@ -51,7 +51,7 @@ class AudioPlayer: NSObject, ObservableObject {
     override init() {
         self.player = AVPlayer()
         super.init()
-        
+
         setupAudioSession()
         setupRemoteCommands()
         addPeriodicTimeObserver()
@@ -181,6 +181,29 @@ class AudioPlayer: NSObject, ObservableObject {
         }
     }
 
+    // Check if a format is natively supported by watchOS
+    private func isFormatSupportedOnWatchOS(_ contentType: String?, _ suffix: String?) -> Bool {
+        // watchOS natively supports: MP3, AAC, ALAC, WAV, AIFF
+        // watchOS does NOT support: FLAC, Ogg Vorbis, Opus, WMA, etc.
+
+        let supportedTypes = ["audio/mpeg", "audio/mp3", "audio/aac", "audio/mp4", "audio/x-m4a", "audio/wav", "audio/x-wav", "audio/aiff", "audio/x-aiff"]
+        let supportedSuffixes = ["mp3", "aac", "m4a", "mp4", "wav", "aiff", "aif"]
+
+        if let contentType = contentType?.lowercased() {
+            if supportedTypes.contains(where: { contentType.contains($0) }) {
+                return true
+            }
+        }
+
+        if let suffix = suffix?.lowercased() {
+            if supportedSuffixes.contains(suffix) {
+                return true
+            }
+        }
+
+        return false
+    }
+
     private func startPlayback(_ song: Song, startTime: TimeInterval = 0) {
         print("🎵 AudioPlayer: startPlayback called with startTime: \(startTime)")
         print("🎵 Song: \(song.title) by \(song.artist ?? "Unknown")")
@@ -190,7 +213,7 @@ class AudioPlayer: NSObject, ObservableObject {
 
         self.currentSong = song
         self.currentTime = startTime
-        
+
         // Store the offset we are requesting so we can add it to the player's reported time
         self.baseTimeOffset = startTime
 
@@ -209,13 +232,32 @@ class AudioPlayer: NSObject, ObservableObject {
             playURL = localURL
             print("🎵 Playing from local file: \(localURL.lastPathComponent)")
             // Local file seeking is handled by AVPlayer seek, not URL offset
-            self.baseTimeOffset = 0 
-        } else if let streamURL = NavidromeAPI.shared.getStreamURL(id: song.id, timeOffset: Int(startTime)) {
-            playURL = streamURL
-            print("🎵 Streaming from: \(streamURL.absoluteString)")
+            self.baseTimeOffset = 0
         } else {
-            print("❌ Failed to get playback URL")
-            return
+            // Check if we need transcoding for unsupported formats
+            let needsTranscoding = !isFormatSupportedOnWatchOS(song.contentType, song.suffix)
+
+            if needsTranscoding {
+                // Request transcoding to MP3 for unsupported formats
+                print("⚠️ Format '\(song.contentType ?? song.suffix ?? "unknown")' not natively supported - requesting MP3 transcode")
+                if let streamURL = NavidromeAPI.shared.getStreamURL(id: song.id, format: "mp3", maxBitRate: 128, timeOffset: Int(startTime)) {
+                    playURL = streamURL
+                    print("🎵 Streaming transcoded: \(streamURL.absoluteString)")
+                } else {
+                    print("❌ Failed to get transcoded stream URL")
+                    return
+                }
+            } else {
+                // Native format - stream as-is WITHOUT format parameter
+                print("✅ Format '\(song.contentType ?? song.suffix ?? "unknown")' natively supported")
+                if let streamURL = NavidromeAPI.shared.getStreamURL(id: song.id, timeOffset: Int(startTime)) {
+                    playURL = streamURL
+                    print("🎵 Streaming from: \(streamURL.absoluteString)")
+                } else {
+                    print("❌ Failed to get stream URL")
+                    return
+                }
+            }
         }
 
         print("🎵 Playback URL: \(playURL.absoluteString)")
@@ -237,23 +279,24 @@ class AudioPlayer: NSObject, ObservableObject {
             print("⚠️ Failed to re-activate audio session: \(error)")
         }
 
-        // Use AVURLAsset for better control over loading (especially important on watchOS)
-        // Set MIME type explicitly to prevent AVPlayer from treating stream as ICY/HLS
-        var assetOptions: [String: Any] = [:]
+        // Follow Submariner's approach: Always use AVURLAsset with options
+        // This works reliably on both macOS and watchOS
+        print("🎵 Creating player item from asset...")
 
+        var assetOptions: [String: Any] = [:]
         if let contentType = song.contentType {
-            print("🎵 Setting MIME type: \(contentType)")
-            assetOptions["AVURLAssetOutOfBandMIMETypeKey"] = contentType
-            
-            // Prefer precise duration for better seeking (especially for FLAC)
-            if contentType.contains("flac") {
+            // Fix FLAC MIME type (Submariner workaround)
+            let fixedContentType = contentType == "audio/x-flac" ? "audio/flac" : contentType
+            print("🎵 Setting MIME type: \(fixedContentType)")
+            assetOptions["AVURLAssetOutOfBandMIMETypeKey"] = fixedContentType
+
+            // Seeking is inaccurate with FLACs otherwise (Submariner approach)
+            if fixedContentType.contains("flac") {
                 assetOptions[AVURLAssetPreferPreciseDurationAndTimingKey] = true
             }
         }
 
         let asset = AVURLAsset(url: playURL, options: assetOptions)
-
-        print("🎵 Creating player item from asset...")
         let playerItem = AVPlayerItem(asset: asset)
 
         // Configure player item for better streaming
@@ -378,9 +421,11 @@ class AudioPlayer: NSObject, ObservableObject {
     }
 
     private func observePlayerItem(_ item: AVPlayerItem) {
+        // Simple status observer (Submariner approach)
         item.publisher(for: \.status)
             .sink { [weak self] status in
                 print("🎵 Player item status changed: \(status.rawValue) (0=unknown, 1=ready, 2=failed)")
+
                 if status == .readyToPlay {
                     let dur = item.duration
                     print("✅ Player ready to play")

@@ -9,9 +9,12 @@ import SwiftUI
 
 @main
 struct WRhythm_Watch_AppApp: App {
+    @StateObject private var libraryDataManager = LibraryDataManager()
+    
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environmentObject(libraryDataManager)
         }
     }
 }
