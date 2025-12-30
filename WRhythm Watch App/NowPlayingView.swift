@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import AVFoundation
 
 struct NowPlayingView: View {
     @ObservedObject var player = AudioPlayer.shared
@@ -14,6 +15,7 @@ struct NowPlayingView: View {
     @State private var isSyncing = false
     @State private var hasLoadedStarredSongs = false
     @State private var showVolumeControl = false
+    @State private var showAudioRouteMenu = false
     @AppStorage("offlineMode") private var offlineMode = false
 
     var body: some View {
@@ -111,7 +113,17 @@ struct NowPlayingView: View {
                                 .foregroundStyle(.blue.gradient)
                         }
                         .buttonStyle(.bordered)
-                        
+
+                        Button(action: {
+                            showAudioRouteMenu = true
+                        }) {
+                            Image(systemName: "airpodsmax")
+                                .font(.title3)
+                                .symbolVariant(.fill)
+                                .foregroundStyle(.teal.gradient)
+                        }
+                        .buttonStyle(.bordered)
+
                         NavigationLink(destination: RadioOptionsView(
                             sourceSong: song,
                             sourceTitle: song.title,
@@ -176,6 +188,9 @@ struct NowPlayingView: View {
         .navigationTitle("Now Playing")
         .sheet(isPresented: $showVolumeControl) {
             VolumeControlView()
+        }
+        .sheet(isPresented: $showAudioRouteMenu) {
+            AudioRouteView()
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -345,7 +360,7 @@ struct VolumeControlView: View {
             VStack(spacing: 20) {
                 Text("Volume")
                     .font(.headline)
-                
+
                 HStack {
                     Image(systemName: "speaker.fill")
                         .foregroundStyle(.green.gradient)
@@ -354,7 +369,7 @@ struct VolumeControlView: View {
                     Image(systemName: "speaker.wave.3.fill")
                         .foregroundStyle(.green.gradient)
                 }
-                
+
                 Text("\(Int(player.volume * 100))%")
                     .font(.caption)
                     .foregroundColor(.secondary)
@@ -374,6 +389,129 @@ struct VolumeControlView: View {
         )
         .onAppear {
             isFocused = true
+        }
+    }
+}
+
+struct AudioRouteView: View {
+    @Environment(\.dismiss) var dismiss
+    @State private var currentRoute: String = ""
+    @State private var availableRoutes: [(name: String, type: String)] = []
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                Text("Audio Output")
+                    .font(.headline)
+
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Image(systemName: audioRouteIcon(for: currentRoute))
+                            .foregroundStyle(.teal.gradient)
+                            .font(.title2)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Current Output")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            Text(currentRoute.isEmpty ? "Unknown" : currentRoute)
+                                .font(.caption)
+                                .fontWeight(.medium)
+                        }
+                    }
+                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.teal.opacity(0.1))
+                    .cornerRadius(8)
+
+                    if !availableRoutes.isEmpty {
+                        Divider()
+
+                        Text("Available Outputs")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+
+                        ForEach(availableRoutes, id: \.name) { route in
+                            HStack {
+                                Image(systemName: audioRouteIcon(for: route.type))
+                                    .foregroundStyle(.secondary)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(route.name)
+                                        .font(.caption)
+                                    Text(route.type)
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
+                                Spacer()
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+
+                    Divider()
+
+                    Text("To change audio output, use the system audio menu or Bluetooth settings on your Apple Watch")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.top, 4)
+                }
+            }
+            .padding()
+        }
+        .onAppear {
+            updateAudioRouteInfo()
+        }
+    }
+
+    private func updateAudioRouteInfo() {
+        let audioSession = AVAudioSession.sharedInstance()
+        let route = audioSession.currentRoute
+
+        if let output = route.outputs.first {
+            currentRoute = output.portName
+            print("🎧 Current audio route: \(output.portName) (\(output.portType.rawValue))")
+        }
+
+        availableRoutes = route.outputs.map { output in
+            (name: output.portName, type: portTypeDescription(output.portType))
+        }
+
+        if let inputs = audioSession.availableInputs {
+            print("🎧 Available inputs: \(inputs.count)")
+        }
+    }
+
+    private func portTypeDescription(_ portType: AVAudioSession.Port) -> String {
+        switch portType {
+        case .builtInSpeaker:
+            return "Built-in Speaker"
+        case .headphones:
+            return "Headphones"
+        case .bluetoothA2DP:
+            return "Bluetooth Audio"
+        case .bluetoothLE:
+            return "Bluetooth LE"
+        case .bluetoothHFP:
+            return "Bluetooth Handsfree"
+        case .airPlay:
+            return "AirPlay"
+        default:
+            return portType.rawValue
+        }
+    }
+
+    private func audioRouteIcon(for type: String) -> String {
+        let lowercased = type.lowercased()
+        if lowercased.contains("bluetooth") || lowercased.contains("airpod") {
+            return "airpodsmax"
+        } else if lowercased.contains("headphone") {
+            return "headphones"
+        } else if lowercased.contains("speaker") || lowercased.contains("built") {
+            return "applewatch"
+        } else if lowercased.contains("airplay") {
+            return "airplayvideo"
+        } else {
+            return "hifispeaker"
         }
     }
 }

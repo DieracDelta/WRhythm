@@ -11,6 +11,7 @@ struct DownloadsView: View {
     @ObservedObject var downloadManager = DownloadManager.shared
     @State private var showingDeleteConfirmation = false
     @State private var deleteConfirmationText = ""
+    @State private var displayedSongCount = 20  // Start with 20 songs
 
     private var player: AudioPlayer { AudioPlayer.shared }
 
@@ -147,7 +148,7 @@ struct DownloadsView: View {
                                 Button(action: {
                                     downloadManager.resumeDownloads()
                                 }) {
-                                    Label("Resume", systemImage: "play.fill")
+                                    Image(systemName: "play.fill")
                                         .font(.caption2)
                                 }
                                 .buttonStyle(.bordered)
@@ -156,7 +157,7 @@ struct DownloadsView: View {
                                 Button(action: {
                                     downloadManager.pauseDownloads()
                                 }) {
-                                    Label("Pause", systemImage: "pause.fill")
+                                    Image(systemName: "pause.fill")
                                         .font(.caption2)
                                 }
                                 .buttonStyle(.bordered)
@@ -165,7 +166,7 @@ struct DownloadsView: View {
                             Button(action: {
                                 downloadManager.restartDownloads()
                             }) {
-                                Label("Restart", systemImage: "arrow.clockwise")
+                                Image(systemName: "arrow.clockwise")
                                     .font(.caption2)
                             }
                             .buttonStyle(.bordered)
@@ -174,7 +175,7 @@ struct DownloadsView: View {
                             Button(action: {
                                 downloadManager.cancelAllDownloads()
                             }) {
-                                Label("Cancel All", systemImage: "xmark")
+                                Image(systemName: "xmark")
                                     .font(.caption2)
                             }
                             .buttonStyle(.bordered)
@@ -281,8 +282,11 @@ struct DownloadsView: View {
 
                     Divider()
 
-                    VStack(spacing: 8) {
-                        ForEach(Array(downloadManager.downloadedSongs.values.sorted(by: { $0.downloadedAt > $1.downloadedAt })), id: \.songId) { downloadedSong in
+                    let sortedSongs = Array(downloadManager.downloadedSongs.values.sorted(by: { $0.downloadedAt > $1.downloadedAt }))
+                    let songsToDisplay = Array(sortedSongs.prefix(displayedSongCount))
+
+                    LazyVStack(spacing: 8) {
+                        ForEach(songsToDisplay, id: \.songId) { downloadedSong in
                             Button(action: {
                                 // Create a temporary Song object to play
                                 let song = Song(
@@ -340,6 +344,31 @@ struct DownloadsView: View {
                                 }
                             }
                             .buttonStyle(.plain)
+                            .onAppear {
+                                // Load more songs when we reach the last visible song
+                                if downloadedSong.songId == songsToDisplay.last?.songId && displayedSongCount < sortedSongs.count {
+                                    displayedSongCount = min(displayedSongCount + 20, sortedSongs.count)
+                                }
+                            }
+                        }
+
+                        // Show "Load More" button if there are more songs
+                        if displayedSongCount < sortedSongs.count {
+                            Button(action: {
+                                displayedSongCount = min(displayedSongCount + 20, sortedSongs.count)
+                            }) {
+                                HStack {
+                                    Text("Load More (\(sortedSongs.count - displayedSongCount) remaining)")
+                                        .font(.caption)
+                                        .foregroundColor(.blue)
+                                    Spacer()
+                                    Image(systemName: "chevron.down")
+                                        .font(.caption2)
+                                        .foregroundColor(.blue)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.vertical, 4)
                         }
                     }
                 }

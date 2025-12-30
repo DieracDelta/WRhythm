@@ -38,6 +38,14 @@ struct SettingsView: View {
                             .font(.caption2)
                     }
                 }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Version")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text("\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"))")
+                        .font(.caption2)
+                }
             }
 
             Section(header: Text("Downloads")) {

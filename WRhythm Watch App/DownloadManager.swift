@@ -563,11 +563,30 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     func pauseDownloads() {
         print("⏸️ Pausing all downloads")
         isPaused = true
+
+        // Re-queue active downloads to the front of the queue before cancelling
+        for (songId, _) in activeDownloads {
+            if let song = songMetadata[songId] {
+                // Add to front of queue if not already there
+                if !downloadQueue.contains(where: { $0.id == songId }) {
+                    downloadQueue.insert(song, at: 0)
+                    print("📋 Re-queued active download: \(song.title)")
+                }
+            }
+        }
+
         // Cancel all active download tasks
         for (_, task) in downloadTasks {
             task.cancel()
         }
-        // Don't clear the queue - we'll resume from it
+
+        // Clear active downloads state (but keep metadata and queue)
+        activeDownloads.removeAll()
+        downloadTasks.removeAll()
+        taskToSongId.removeAll()
+        downloadBytesReceived.removeAll()
+        downloadTotalBytes.removeAll()
+
         saveIncompleteDownloads()
     }
 
@@ -669,6 +688,10 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         }
 
         downloadQueue.append(song)
+
+        // Update session total count to include this new song
+        sessionTotalCount += 1
+
         print("📋 Added to queue: \(song.title) (queue size: \(downloadQueue.count))")
         saveIncompleteDownloads()
         processQueue()
@@ -753,7 +776,6 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
             if self.downloadTotalBytes[songId] == nil {
                 self.downloadTotalBytes[songId] = estimatedTotal
                 self.sessionBytesTotal += estimatedTotal
-                self.sessionTotalCount += 1
             } else if self.downloadTotalBytes[songId] != estimatedTotal {
                 // Update session total if estimate changed
                 let oldTotal = self.downloadTotalBytes[songId] ?? 0
@@ -894,22 +916,36 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         if let error = error {
             let timestamp = ISO8601DateFormatter().string(from: Date())
             let songTitle = self.songMetadata[songId]?.title ?? "Unknown"
+            let nsError = error as NSError
+
+            // Check if this is a cancellation error (user paused or cancelled)
+            let isCancellation = nsError.code == NSURLErrorCancelled
+
             print("❌ [\(timestamp)] Download failed for: \(songTitle)")
             print("   Error: \(error.localizedDescription)")
-            print("   Error code: \((error as NSError).code)")
-            print("   Error domain: \((error as NSError).domain)")
+            print("   Error code: \(nsError.code)")
+            print("   Error domain: \(nsError.domain)")
+            print("   Is cancellation: \(isCancellation)")
+
             DispatchQueue.main.async {
                 self.activeDownloads.removeValue(forKey: songId)
                 self.downloadBytesReceived.removeValue(forKey: songId)
                 self.downloadTotalBytes.removeValue(forKey: songId)
                 self.downloadTasks.removeValue(forKey: songId)
                 self.taskToSongId.removeValue(forKey: downloadTask)
-                self.songMetadata.removeValue(forKey: songId)
+
+                // Only remove metadata if it's not a cancellation error
+                // For cancellations (pause/cancel), we keep metadata so retry works
+                if !isCancellation {
+                    self.songMetadata.removeValue(forKey: songId)
+                }
 
                 print("📊 [\(timestamp)] After error - Active downloads: \(self.activeDownloads.count), Queue: \(self.downloadQueue.count)")
 
-                // Process next item in queue on error
-                self.processQueue()
+                // Only process next item if not paused
+                if !self.isPaused {
+                    self.processQueue()
+                }
             }
         }
     }
@@ -924,17 +960,47 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
 
     func downloadAlbum(_ album: Album) {
         print("📥 Downloading album: \(album.name)")
+        // Add all songs to the queue first, then process
         for song in album.song {
-            downloadSong(song)
+            guard !isDownloaded(song.id) && !isDownloading(song.id) else {
+                print("⏭️ Song already downloaded or downloading: \(song.title)")
+                continue
+            }
+
+            guard !downloadQueue.contains(where: { $0.id == song.id }) else {
+                print("⏳ Song already queued: \(song.title)")
+                continue
+            }
+
+            downloadQueue.append(song)
+            sessionTotalCount += 1
+            print("📋 Added to queue: \(song.title)")
         }
+        saveIncompleteDownloads()
+        processQueue()
     }
 
     func downloadPlaylist(_ playlist: Playlist) {
         print("📥 Downloading playlist: \(playlist.name)")
         guard let songs = playlist.entry else { return }
+        // Add all songs to the queue first, then process
         for song in songs {
-            downloadSong(song)
+            guard !isDownloaded(song.id) && !isDownloading(song.id) else {
+                print("⏭️ Song already downloaded or downloading: \(song.title)")
+                continue
+            }
+
+            guard !downloadQueue.contains(where: { $0.id == song.id }) else {
+                print("⏳ Song already queued: \(song.title)")
+                continue
+            }
+
+            downloadQueue.append(song)
+            sessionTotalCount += 1
+            print("📋 Added to queue: \(song.title)")
         }
+        saveIncompleteDownloads()
+        processQueue()
     }
 
     func downloadArtist(_ artist: ArtistWithAlbums) async {
@@ -962,14 +1028,22 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
             DispatchQueue.main.async {
                 self.activeDownloads.removeValue(forKey: songId)
                 self.downloadBytesReceived.removeValue(forKey: songId)
+                self.downloadTotalBytes.removeValue(forKey: songId)
                 self.downloadTasks.removeValue(forKey: songId)
                 if let task = self.downloadTasks[songId] {
                     self.taskToSongId.removeValue(forKey: task)
                 }
                 self.songMetadata.removeValue(forKey: songId)
 
+                // Decrement session total since we're cancelling
+                if self.sessionTotalCount > 0 {
+                    self.sessionTotalCount -= 1
+                }
+
                 // Process next in queue
-                self.processQueue()
+                if !self.isPaused {
+                    self.processQueue()
+                }
             }
             return
         }
@@ -977,6 +1051,13 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         // Remove from queue
         if let index = downloadQueue.firstIndex(where: { $0.id == songId }) {
             let song = downloadQueue.remove(at: index)
+            songMetadata.removeValue(forKey: songId)
+
+            // Decrement session total since we're removing from queue
+            if sessionTotalCount > 0 {
+                sessionTotalCount -= 1
+            }
+
             print("🛑 Removed from queue: \(song.title)")
         }
     }
