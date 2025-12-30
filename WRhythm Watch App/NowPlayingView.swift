@@ -395,8 +395,7 @@ struct VolumeControlView: View {
 
 struct AudioRouteView: View {
     @Environment(\.dismiss) var dismiss
-    @State private var currentRoute: String = ""
-    @State private var availableRoutes: [(name: String, type: String)] = []
+    @State private var activeOutputs: [(name: String, type: String, portType: AVAudioSession.Port)] = []
 
     var body: some View {
         ScrollView {
@@ -405,51 +404,80 @@ struct AudioRouteView: View {
                     .font(.headline)
 
                 VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Image(systemName: audioRouteIcon(for: currentRoute))
-                            .foregroundStyle(.teal.gradient)
-                            .font(.title2)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Current Output")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                            Text(currentRoute.isEmpty ? "Unknown" : currentRoute)
-                                .font(.caption)
-                                .fontWeight(.medium)
+                    if activeOutputs.isEmpty {
+                        HStack {
+                            Image(systemName: "speaker.slash")
+                                .foregroundStyle(.secondary)
+                                .font(.title2)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("No Output")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                Text("Unable to detect audio output")
+                                    .font(.caption)
+                            }
                         }
-                    }
-                    .padding(8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.teal.opacity(0.1))
-                    .cornerRadius(8)
-
-                    if !availableRoutes.isEmpty {
-                        Divider()
-
-                        Text("Available Outputs")
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.secondary.opacity(0.1))
+                        .cornerRadius(8)
+                    } else {
+                        Text("Currently Active")
                             .font(.caption2)
                             .foregroundColor(.secondary)
 
-                        ForEach(availableRoutes, id: \.name) { route in
+                        ForEach(Array(activeOutputs.enumerated()), id: \.element.name) { index, output in
                             HStack {
-                                Image(systemName: audioRouteIcon(for: route.type))
-                                    .foregroundStyle(.secondary)
+                                Image(systemName: audioRouteIcon(for: output.portType))
+                                    .foregroundStyle(.teal.gradient)
+                                    .font(.title2)
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(route.name)
+                                    Text(output.name)
                                         .font(.caption)
-                                    Text(route.type)
+                                        .fontWeight(.medium)
+                                    Text(output.type)
                                         .font(.caption2)
                                         .foregroundColor(.secondary)
                                 }
                                 Spacer()
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(.green.gradient)
+                                    .font(.caption)
                             }
-                            .padding(.vertical, 4)
+                            .padding(8)
+                            .background(Color.teal.opacity(0.1))
+                            .cornerRadius(8)
                         }
                     }
 
                     Divider()
 
-                    Text("To change audio output, use the system audio menu or Bluetooth settings on your Apple Watch")
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Image(systemName: "info.circle")
+                                .foregroundStyle(.blue.gradient)
+                            Text("How to Switch")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                        }
+
+                        Text("1. Swipe up from the watch face to open Control Center")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+
+                        Text("2. Tap the AirPlay icon")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+
+                        Text("3. Select your preferred audio output (AirPods, Speaker, etc.)")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(8)
+                    .background(Color.blue.opacity(0.1))
+                    .cornerRadius(8)
+
+                    Text("watchOS doesn't allow apps to programmatically list or switch audio devices. The system manages this through Control Center.")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
@@ -460,6 +488,7 @@ struct AudioRouteView: View {
         }
         .onAppear {
             updateAudioRouteInfo()
+            setupRouteChangeNotification()
         }
     }
 
@@ -467,17 +496,23 @@ struct AudioRouteView: View {
         let audioSession = AVAudioSession.sharedInstance()
         let route = audioSession.currentRoute
 
-        if let output = route.outputs.first {
-            currentRoute = output.portName
-            print("🎧 Current audio route: \(output.portName) (\(output.portType.rawValue))")
+        // Get ALL current outputs (there can be multiple)
+        activeOutputs = route.outputs.map { output in
+            print("🎧 Active audio route: \(output.portName) (\(output.portType.rawValue))")
+            return (name: output.portName, type: portTypeDescription(output.portType), portType: output.portType)
         }
 
-        availableRoutes = route.outputs.map { output in
-            (name: output.portName, type: portTypeDescription(output.portType))
-        }
+        print("🎧 Total active outputs: \(activeOutputs.count)")
+    }
 
-        if let inputs = audioSession.availableInputs {
-            print("🎧 Available inputs: \(inputs.count)")
+    private func setupRouteChangeNotification() {
+        NotificationCenter.default.addObserver(
+            forName: AVAudioSession.routeChangeNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            print("🎧 Audio route changed, updating...")
+            updateAudioRouteInfo()
         }
     }
 
@@ -500,17 +535,23 @@ struct AudioRouteView: View {
         }
     }
 
-    private func audioRouteIcon(for type: String) -> String {
-        let lowercased = type.lowercased()
-        if lowercased.contains("bluetooth") || lowercased.contains("airpod") {
-            return "airpodsmax"
-        } else if lowercased.contains("headphone") {
-            return "headphones"
-        } else if lowercased.contains("speaker") || lowercased.contains("built") {
+    private func audioRouteIcon(for portType: AVAudioSession.Port) -> String {
+        switch portType {
+        case .builtInSpeaker:
             return "applewatch"
-        } else if lowercased.contains("airplay") {
+        case .headphones:
+            return "headphones"
+        case .bluetoothA2DP, .bluetoothLE:
+            return "airpodsmax"
+        case .bluetoothHFP:
+            return "airpodspro"
+        case .airPlay:
             return "airplayvideo"
-        } else {
+        case .carAudio:
+            return "car.fill"
+        case .HDMI:
+            return "tv.fill"
+        default:
             return "hifispeaker"
         }
     }
