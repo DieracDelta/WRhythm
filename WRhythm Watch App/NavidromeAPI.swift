@@ -96,15 +96,77 @@ class NavidromeAPI: ObservableObject {
         self.isAuthenticated = true
     }
 
+    func validateAndConfigure(baseURL: String, username: String, password: String) async throws -> Bool {
+        // Save original credentials in case validation fails
+        let originalBaseURL = self.baseURL
+        let originalUsername = self.username
+        let originalPassword = self.password
+        let originalAuth = self.isAuthenticated
+
+        // Temporarily set credentials WITHOUT saving to UserDefaults
+        self.baseURL = baseURL.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        self.username = username
+        self.password = password
+
+        do {
+            // Validate with server first
+            let success = try await ping()
+
+            if success {
+                // Validation succeeded - NOW save to UserDefaults
+                UserDefaults.standard.set(self.baseURL, forKey: "navidrome_url")
+                UserDefaults.standard.set(self.username, forKey: "navidrome_username")
+                UserDefaults.standard.set(self.password, forKey: "navidrome_password")
+                self.isAuthenticated = true
+                return true
+            } else {
+                // Validation failed - restore original credentials
+                self.baseURL = originalBaseURL
+                self.username = originalUsername
+                self.password = originalPassword
+                self.isAuthenticated = originalAuth
+                return false
+            }
+        } catch {
+            // Error occurred - restore original credentials
+            self.baseURL = originalBaseURL
+            self.username = originalUsername
+            self.password = originalPassword
+            self.isAuthenticated = originalAuth
+            throw error
+        }
+    }
+
     func logout() {
+        print("🔓 Starting logout process...")
+
+        // 1. Stop any active audio playback
+        AudioPlayer.shared.stop()
+        print("🔓 Stopped audio playback")
+
+        // 2. Delete all user data (downloads, metadata, etc.)
+        DownloadManager.shared.deleteAllUserData()
+        print("🔓 Deleted all user data")
+
+        // 3. Reset offline mode to false (user must log in to use app)
+        UserDefaults.standard.set(false, forKey: "offlineMode")
+        print("🔓 Reset offline mode to false")
+
+        // 4. Clear credentials from UserDefaults
         UserDefaults.standard.removeObject(forKey: "navidrome_url")
         UserDefaults.standard.removeObject(forKey: "navidrome_username")
         UserDefaults.standard.removeObject(forKey: "navidrome_password")
+        print("🔓 Cleared credentials")
 
+        // 5. Clear API state
         self.baseURL = ""
         self.username = ""
         self.password = ""
         self.isAuthenticated = false
+
+        // NOTE: radioDownloadCount is preserved (app-level setting)
+
+        print("✅ Logout complete")
     }
 
     private func generateAuthParams() -> [String: String] {
@@ -620,13 +682,13 @@ enum NavidromeError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidURL:
-            return "Invalid URL"
+            return "Invalid server URL. Please check the URL and try again."
         case .authenticationFailed:
-            return "Authentication failed"
+            return "Authentication failed. Check your username and password, or verify the server is running."
         case .apiError(let message):
             return message
         case .unknown:
-            return "Unknown error"
+            return "Unknown error occurred. Please try again."
         }
     }
 }

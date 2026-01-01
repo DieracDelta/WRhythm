@@ -131,47 +131,76 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $showingLogoutConfirmation) {
             NavigationView {
-                VStack(spacing: 16) {
-                    Text("Logout")
-                        .font(.headline)
+                ScrollView {
+                    VStack(spacing: 8) {
+                        // WARNING ICON
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.title2)
+                            .foregroundColor(.orange)
+                            .padding(.top, 4)
 
-                    Text("Are you sure you want to logout?")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
+                        // CLEAR WARNING TEXT
+                        Text("All Local Data Will Be Deleted")
+                            .font(.caption)
+                            .fontWeight(.bold)
+                            .foregroundColor(.red)
+                            .multilineTextAlignment(.center)
 
-                    if let username = UserDefaults.standard.string(forKey: "navidrome_username") {
-                        Text("User: \(username)")
+                        Text("This will permanently delete:")
                             .font(.caption2)
                             .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.top, 2)
+
+                        // What gets deleted
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("• All downloaded music")
+                            Text("• All playlists & metadata")
+                            Text("• All local favorites")
+                            Text("• Active downloads")
+                        }
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+
+                        Text("(Server data is NOT affected)")
+                            .font(.caption2)
+                            .foregroundColor(.green)
+                            .italic()
+                            .padding(.top, 2)
+
+                        if let username = UserDefaults.standard.string(forKey: "navidrome_username") {
+                            Text("User: \(username)")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                                .padding(.top, 2)
+                        }
+
+                        Text("Type LOGOUT to confirm")
+                            .font(.caption)
+                            .foregroundColor(.red)
+                            .padding(.top, 6)
+
+                        TextField("Type LOGOUT", text: $logoutConfirmationText)
+                            .textInputAutocapitalization(.characters)
+                            .padding(.vertical, 6)
+
+                        Button(action: {
+                            api.logout()
+                            showingLogoutConfirmation = false
+                            logoutConfirmationText = ""
+                        }) {
+                            Text("Delete All Data & Logout")
+                                .font(.caption)
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.red)
+                        .disabled(logoutConfirmationText != "LOGOUT")
+                        .padding(.bottom, 8)
                     }
-
-                    Text("Type LOGOUT to confirm")
-                        .font(.caption)
-                        .foregroundColor(.red)
-
-                    TextField("Type LOGOUT", text: $logoutConfirmationText)
-                        .textInputAutocapitalization(.characters)
-                        .padding()
-
-                    Button(action: {
-                        api.logout()
-                        showingLogoutConfirmation = false
-                        logoutConfirmationText = ""
-                    }) {
-                        Text("Logout")
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.red)
-                    .disabled(logoutConfirmationText != "LOGOUT")
-
-                    Spacer()
+                    .padding(.horizontal)
                 }
-                .padding()
-                .navigationTitle("Confirm Logout")
-                .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Cancel") {

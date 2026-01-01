@@ -1123,6 +1123,81 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         }
     }
 
+    // MARK: - Complete Data Cleanup (for logout)
+
+    func deleteAllUserData() {
+        print("🗑️ Starting complete user data cleanup for logout...")
+
+        // 1. Cancel all active downloads
+        print("🗑️ Cancelling all downloads...")
+        cancelAllDownloads()
+
+        // 2. Delete all downloaded music files
+        print("🗑️ Deleting all music files...")
+        do {
+            let downloadsDir = downloadsDirectory
+            if fileManager.fileExists(atPath: downloadsDir.path) {
+                let files = try fileManager.contentsOfDirectory(at: downloadsDir, includingPropertiesForKeys: nil)
+                for file in files {
+                    try fileManager.removeItem(at: file)
+                    print("🗑️ Deleted: \(file.lastPathComponent)")
+                }
+            }
+        } catch {
+            print("❌ Error deleting music files: \(error)")
+        }
+
+        // 3. Delete all metadata JSON files
+        print("🗑️ Deleting metadata files...")
+        let metadataFiles = [
+            metadataURL,              // downloads.json
+            songMetadataURL,          // song_metadata.json
+            playlistsMetadataURL,     // playlists.json
+            radioPlaylistsURL,        // radio_playlists.json
+            starredSongsURL,          // starred_songs.json
+            pendingStarChangesURL,    // pending_star_changes.json
+            pendingUnstarChangesURL,  // pending_unstar_changes.json
+            incompleteDownloadsURL    // incomplete_downloads.json
+        ]
+
+        for metadataFile in metadataFiles {
+            do {
+                if fileManager.fileExists(atPath: metadataFile.path) {
+                    try fileManager.removeItem(at: metadataFile)
+                    print("🗑️ Deleted: \(metadataFile.lastPathComponent)")
+                }
+            } catch {
+                print("❌ Error deleting \(metadataFile.lastPathComponent): \(error)")
+            }
+        }
+
+        // 4. Clear all in-memory caches
+        print("🗑️ Clearing in-memory caches...")
+        downloadedSongs.removeAll()
+        songMetadata.removeAll()
+        cachedPlaylists.removeAll()
+        radioPlaylists.removeAll()
+        starredSongIds.removeAll()
+        pendingStarChanges.removeAll()
+        pendingUnstarChanges.removeAll()
+        downloadQueue.removeAll()
+        activeDownloads.removeAll()
+        downloadTasks.removeAll()
+        taskToSongId.removeAll()
+        downloadBytesReceived.removeAll()
+        downloadTotalBytes.removeAll()
+        pendingProgressUpdates.removeAll()
+
+        // 5. Reset session counters
+        sessionBytesDownloaded = 0
+        sessionBytesTotal = 0
+        sessionCompletedCount = 0
+        sessionTotalCount = 0
+        isPaused = false
+
+        print("✅ User data cleanup complete")
+    }
+
     // MARK: - Offline Mode Filtering
 
     func hasDownloadedSongsForAlbum(_ albumId: String) -> Bool {
