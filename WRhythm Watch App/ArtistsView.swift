@@ -18,6 +18,7 @@ struct ArtistsView: View {
     @ObservedObject var downloadManager = DownloadManager.shared
     @AppStorage("offlineMode") private var offlineMode = false
     private let batchSize = 20
+    private let viewIdentifier = CachedView.artists
 
     private var filteredDisplayedArtists: [Artist] {
         if offlineMode {
@@ -91,12 +92,22 @@ struct ArtistsView: View {
                 }
             }
             .onAppear {
+                ViewCacheManager.shared.recordViewAccess(viewIdentifier)
                 if !offlineMode {
                     libraryDataManager.fetchArtists()
                     if !libraryDataManager.artists.isEmpty && displayedArtists.isEmpty {
                         loadMoreArtists()
                     }
                 }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .evictViewCache)) { notification in
+                if let view = notification.userInfo?["view"] as? CachedView,
+                   view == viewIdentifier {
+                    clearCache()
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .clearAllViewCaches)) { _ in
+                clearCache()
             }
             .onChange(of: libraryDataManager.artists) { newArtists in
                 if !newArtists.isEmpty && displayedArtists.isEmpty {
@@ -278,6 +289,13 @@ struct ArtistsView: View {
         let nextBatch = artists[loadedCount..<min(loadedCount + batchSize, artists.count)]
         displayedArtists.append(contentsOf: nextBatch)
         loadedCount += nextBatch.count
+    }
+
+    private func clearCache() {
+        print("🗑️ Clearing \(viewIdentifier.rawValue) cache")
+        displayedArtists.removeAll()
+        loadedCount = 0
+        searchResults.removeAll()
     }
 
     private func performSearch(query: String) {

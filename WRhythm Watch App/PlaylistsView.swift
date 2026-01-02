@@ -14,6 +14,7 @@ struct PlaylistsView: View {
     @State private var showingSearchSheet = false
     @ObservedObject var downloadManager = DownloadManager.shared
     @AppStorage("offlineMode") private var offlineMode = false
+    private let viewIdentifier = CachedView.playlists
 
     private var filteredPlaylists: [PlaylistSummary] {
         if searchText.isEmpty {
@@ -104,9 +105,19 @@ struct PlaylistsView: View {
             }
         }
         .onAppear {
+            ViewCacheManager.shared.recordViewAccess(viewIdentifier)
             if !offlineMode {
                 libraryDataManager.fetchPlaylists()
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .evictViewCache)) { notification in
+            if let view = notification.userInfo?["view"] as? CachedView,
+               view == viewIdentifier {
+                clearCache()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .clearAllViewCaches)) { _ in
+            clearCache()
         }
     }
 
@@ -279,6 +290,12 @@ struct PlaylistsView: View {
                 print("❌ Failed to sync playlists: \(error)")
             }
         }
+    }
+
+    private func clearCache() {
+        print("🗑️ Clearing \(viewIdentifier.rawValue) cache")
+        // Playlists cache is managed by LibraryDataManager, just clear search
+        searchText = ""
     }
 }
 

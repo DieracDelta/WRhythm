@@ -11,6 +11,7 @@ struct FavouritesView: View {
     @EnvironmentObject var libraryDataManager: LibraryDataManager
     @ObservedObject var downloadManager = DownloadManager.shared
     @AppStorage("offlineMode") private var offlineMode = false
+    private let viewIdentifier = CachedView.favourites
 
     private var player: AudioPlayer { AudioPlayer.shared }
 
@@ -52,10 +53,20 @@ struct FavouritesView: View {
         content
             .navigationTitle("Favourites")
             .onAppear {
+                ViewCacheManager.shared.recordViewAccess(viewIdentifier)
                 print("📱 FavouritesView appeared - offlineMode=\(offlineMode), starred=\(libraryDataManager.starred != nil ? "loaded" : "nil"), isLoading=\(libraryDataManager.isLoadingStarred)")
                 if !offlineMode && libraryDataManager.starred == nil && !libraryDataManager.isLoadingStarred {
                     libraryDataManager.fetchStarred()
                 }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .evictViewCache)) { notification in
+                if let view = notification.userInfo?["view"] as? CachedView,
+                   view == viewIdentifier {
+                    clearCache()
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .clearAllViewCaches)) { _ in
+                clearCache()
             }
     }
 
@@ -302,6 +313,12 @@ struct FavouritesView: View {
                 print("⚠️ FavouritesView in unexpected state - starred=nil, isLoading=\(libraryDataManager.isLoadingStarred), offlineMode=\(offlineMode)")
             }
         }
+    }
+
+    private func clearCache() {
+        print("🗑️ Clearing \(viewIdentifier.rawValue) cache")
+        // Clear the starred content from LibraryDataManager
+        libraryDataManager.starred = nil
     }
 }
 

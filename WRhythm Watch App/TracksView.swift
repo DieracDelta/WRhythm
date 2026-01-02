@@ -18,6 +18,7 @@ struct TracksView: View {
     @ObservedObject var downloadManager = DownloadManager.shared
     @ObservedObject var player = AudioPlayer.shared
     @AppStorage("offlineMode") private var offlineMode = false
+    private let viewIdentifier = CachedView.tracks
 
     private var displayedSongs: [Song] {
         if offlineMode {
@@ -419,6 +420,18 @@ struct TracksView: View {
                 }
             }
         }
+        .onAppear {
+            ViewCacheManager.shared.recordViewAccess(viewIdentifier)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .evictViewCache)) { notification in
+            if let view = notification.userInfo?["view"] as? CachedView,
+               view == viewIdentifier {
+                clearCache()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .clearAllViewCaches)) { _ in
+            clearCache()
+        }
     }
 
     @ViewBuilder
@@ -556,6 +569,14 @@ struct TracksView: View {
         let minutes = seconds / 60
         let remainingSeconds = seconds % 60
         return String(format: "%d:%02d", minutes, remainingSeconds)
+    }
+
+    private func clearCache() {
+        print("🗑️ Clearing \(viewIdentifier.rawValue) cache")
+        searchResults.removeAll()
+        albumResults.removeAll()
+        artistResults.removeAll()
+        searchText = ""
     }
 }
 

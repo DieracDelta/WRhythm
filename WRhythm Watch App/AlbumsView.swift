@@ -16,6 +16,7 @@ struct AlbumsView: View {
     @ObservedObject var downloadManager = DownloadManager.shared
     @AppStorage("offlineMode") private var offlineMode = false
     private let pageSize = 20
+    private let viewIdentifier = CachedView.albums
 
     private var filteredAlbums: [AlbumSummary] {
         if offlineMode {
@@ -135,13 +136,19 @@ struct AlbumsView: View {
                 }
 
                 .onAppear {
-
+                    ViewCacheManager.shared.recordViewAccess(viewIdentifier)
                     if !offlineMode && libraryDataManager.albums.isEmpty {
-
                         libraryDataManager.fetchInitialAlbums()
-
                     }
-
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .evictViewCache)) { notification in
+                    if let view = notification.userInfo?["view"] as? CachedView,
+                       view == viewIdentifier {
+                        clearCache()
+                    }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .clearAllViewCaches)) { _ in
+                    clearCache()
                 }
 
         }
@@ -463,6 +470,11 @@ struct AlbumsView: View {
             }
 
         }
+
+    private func clearCache() {
+        print("🗑️ Clearing \(viewIdentifier.rawValue) cache")
+        searchResults.removeAll()
+    }
 
     private func performSearch(query: String) {
         guard !query.isEmpty else {

@@ -12,6 +12,7 @@ struct SpontaneousMusicView: View {
     @ObservedObject var downloadManager = DownloadManager.shared
     @State private var isLoading = false
     @State private var errorMessage = ""
+    private let viewIdentifier = CachedView.spontaneous
 
     private var player: AudioPlayer { AudioPlayer.shared }
 
@@ -102,6 +103,18 @@ struct SpontaneousMusicView: View {
             .padding()
         }
         .navigationTitle("Spontaneous")
+        .onAppear {
+            ViewCacheManager.shared.recordViewAccess(viewIdentifier)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .evictViewCache)) { notification in
+            if let view = notification.userInfo?["view"] as? CachedView,
+               view == viewIdentifier {
+                clearCache()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .clearAllViewCaches)) { _ in
+            clearCache()
+        }
     }
 
     private func shuffleAll() {
@@ -179,6 +192,12 @@ struct SpontaneousMusicView: View {
                 }
             }
         }
+    }
+
+    private func clearCache() {
+        print("🗑️ Clearing \(viewIdentifier.rawValue) cache")
+        errorMessage = ""
+        isLoading = false
     }
 }
 

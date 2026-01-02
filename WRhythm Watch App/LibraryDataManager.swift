@@ -14,25 +14,34 @@ final class LibraryDataManager: ObservableObject {
     @Published var artists: [Artist] = []
     @Published var isLoadingArtists = false
     @Published var artistsErrorMessage = ""
-    
+
     // MARK: - Playlists
     @Published var playlists: [PlaylistSummary] = []
     @Published var isLoadingPlaylists = false
     @Published var playlistsErrorMessage = ""
-    
+
     // MARK: - Albums
     @Published var albums: [AlbumSummary] = []
     @Published var isLoadingAlbums = false
     @Published var albumsErrorMessage = ""
     @Published var albumOffset = 0
     @Published var hasMoreAlbums = true
-    
+
     // MARK: - Favourites
     @Published var starred: StarredContent?
     @Published var isLoadingStarred = false
     @Published var starredErrorMessage = ""
-    
+
     private let pageSize = 20
+
+    // MARK: - Battery Saver Cache Limits
+    private var maxArtists: Int {
+        BatterySaverManager.shared.isActive ? 100 : Int.max
+    }
+
+    private var maxAlbums: Int {
+        BatterySaverManager.shared.isActive ? 50 : Int.max
+    }
     
     // MARK: - Artists Methods
     func fetchArtists(forceRefresh: Bool = false) {
@@ -47,6 +56,13 @@ final class LibraryDataManager: ObservableObject {
                 let fetchedArtists = try await NavidromeAPI.shared.getArtists()
                 await MainActor.run {
                     self.artists = fetchedArtists
+
+                    // Enforce limit if battery saver active
+                    if BatterySaverManager.shared.isActive && self.artists.count > self.maxArtists {
+                        self.artists = Array(self.artists.prefix(self.maxArtists))
+                        print("🔋 Limited artists cache to \(self.maxArtists) items")
+                    }
+
                     self.isLoadingArtists = false
                 }
             } catch {
@@ -114,9 +130,17 @@ final class LibraryDataManager: ObservableObject {
                     if fetchedAlbums.count < self.pageSize {
                         self.hasMoreAlbums = false
                     }
-                    
+
                     self.albums.append(contentsOf: fetchedAlbums)
                     self.albumOffset += fetchedAlbums.count
+
+                    // Enforce limit if battery saver active
+                    if BatterySaverManager.shared.isActive && self.albums.count > self.maxAlbums {
+                        self.albums = Array(self.albums.prefix(self.maxAlbums))
+                        self.hasMoreAlbums = false // Stop loading more if limit reached
+                        print("🔋 Limited albums cache to \(self.maxAlbums) items")
+                    }
+
                     self.isLoadingAlbums = false
                 }
             } catch {

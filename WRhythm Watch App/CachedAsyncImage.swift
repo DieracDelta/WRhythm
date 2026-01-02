@@ -12,14 +12,32 @@ class ImageCache {
     static let shared = ImageCache()
 
     private init() {
-        // Configure URLCache with larger capacity for image caching
-        // 50MB memory cache, 200MB disk cache
+        // Configure URLCache with capacity based on battery saver mode
+        updateCacheSize()
+
+        // Listen for battery saver changes
+        NotificationCenter.default.addObserver(
+            forName: .batterySaverModeChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.updateCacheSize()
+        }
+    }
+
+    private func updateCacheSize() {
+        // Reduce cache size in battery saver mode
+        let memoryCapacity = BatterySaverManager.shared.isActive ? 10 * 1024 * 1024 : 50 * 1024 * 1024
+        let diskCapacity = BatterySaverManager.shared.isActive ? 50 * 1024 * 1024 : 200 * 1024 * 1024
+
         let cache = URLCache(
-            memoryCapacity: 50 * 1024 * 1024,
-            diskCapacity: 200 * 1024 * 1024,
+            memoryCapacity: memoryCapacity,
+            diskCapacity: diskCapacity,
             diskPath: "image_cache"
         )
         URLCache.shared = cache
+
+        print("🔋 Updated image cache: \(memoryCapacity / 1024 / 1024)MB memory, \(diskCapacity / 1024 / 1024)MB disk")
     }
 
     func getImage(for url: URL) -> UIImage? {
@@ -56,10 +74,14 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
 
     @State private var image: UIImage?
     @State private var isLoading = false
+    @ObservedObject private var batterySaver = BatterySaverManager.shared
 
     var body: some View {
         Group {
-            if let image = image {
+            if batterySaver.isActive {
+                // Battery saver mode: show placeholder with battery icon
+                batterySaverPlaceholder
+            } else if let image = image {
                 content(Image(uiImage: image))
             } else {
                 placeholder()
@@ -68,10 +90,27 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
                     }
             }
         }
+        .onChange(of: batterySaver.isActive) { active in
+            if !active && image == nil {
+                loadImage() // Load image when battery saver disabled
+            } else if active {
+                image = nil // Clear image when battery saver enabled
+            }
+        }
+    }
+
+    private var batterySaverPlaceholder: some View {
+        Rectangle()
+            .fill(Color.gray.opacity(0.3))
+            .overlay(
+                Image(systemName: "bolt.slash.fill")
+                    .foregroundColor(.orange)
+                    .font(.caption2)
+            )
     }
 
     private func loadImage() {
-        guard let url = url, !isLoading else { return }
+        guard let url = url, !isLoading, !batterySaver.isActive else { return }
 
         // Check cache first
         if let cachedImage = ImageCache.shared.getImage(for: url) {
