@@ -14,6 +14,7 @@ struct SettingsView: View {
     @AppStorage("radioDownloadCount") private var radioDownloadCount = 25
     @State private var showingLogoutConfirmation = false
     @State private var logoutConfirmationText = ""
+    @State private var selectedQuality: AudioQuality = DownloadManager.shared.audioQuality
 
     var body: some View {
         List {
@@ -100,7 +101,74 @@ struct SettingsView: View {
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
+            }
 
+            Section(header: Text("Audio Quality")) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Download Quality")
+                        .font(.caption)
+
+                    Picker("Quality", selection: $selectedQuality) {
+                        ForEach(AudioQuality.allCases, id: \.self) { quality in
+                            Text("\(quality.label) (\(quality.rawValue)kbps)").tag(quality)
+                        }
+                    }
+                    .disabled(api.transcodingSupported == false || downloadManager.isExecutingQualityChange)
+                    .opacity((api.transcodingSupported == false || downloadManager.isExecutingQualityChange) ? 0.5 : 1.0)
+                    .onChange(of: selectedQuality) { _, newValue in
+                        // Only trigger if actually different from current setting
+                        if newValue != downloadManager.audioQuality {
+                            downloadManager.requestQualityChange(to: newValue)
+                        }
+                    }
+
+                    // Show current quality description
+                    Text(selectedQuality.description)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+
+                    // Transcoding status
+                    if api.transcodingSupported == false {
+                        HStack(spacing: 4) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.orange)
+                                .font(.caption2)
+                            Text("Server doesn't support transcoding")
+                                .font(.caption2)
+                                .foregroundColor(.orange)
+                        }
+                    } else if downloadManager.isExecutingQualityChange {
+                        HStack(spacing: 4) {
+                            ProgressView()
+                                .scaleEffect(0.6)
+                            Text("Re-downloading songs...")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+
+                // Recheck transcoding support button
+                Button(action: {
+                    Task {
+                        await api.checkTranscodingSupport()
+                    }
+                }) {
+                    HStack {
+                        if api.isCheckingTranscoding {
+                            ProgressView()
+                                .scaleEffect(0.7)
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        Text("Check Server Capabilities")
+                            .font(.caption)
+                    }
+                }
+                .disabled(api.isCheckingTranscoding)
+            }
+
+            Section(header: Text("Offline")) {
                 Toggle(isOn: $offlineMode) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Offline Mode")
@@ -122,11 +190,40 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Settings")
-        .onChange(of: offlineMode) { newValue in
+        .onChange(of: offlineMode) { _, newValue in
             if newValue {
                 // Stop playback when entering offline mode
                 AudioPlayer.shared.stop()
                 print("🔇 Stopped playback due to offline mode")
+            }
+        }
+        .onChange(of: downloadManager.audioQuality) { _, newValue in
+            // Sync picker with actual quality (e.g., after migration resume)
+            if selectedQuality != newValue {
+                selectedQuality = newValue
+            }
+        }
+        .onChange(of: downloadManager.showQualityChangePrompt) { _, showing in
+            // If prompt was dismissed without action (e.g., cancelled), reset picker
+            if !showing && downloadManager.pendingQualityChange == nil {
+                selectedQuality = downloadManager.audioQuality
+            }
+        }
+        .alert("Re-download Required", isPresented: $downloadManager.showQualityChangePrompt) {
+            Button("Re-download All", role: .destructive) {
+                Task {
+                    await downloadManager.executeQualityChange()
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                downloadManager.cancelQualityChange()
+                selectedQuality = downloadManager.audioQuality  // Reset picker
+            }
+        } message: {
+            if let pending = downloadManager.pendingQualityChange {
+                Text("Changing quality to \(pending.label) will delete \(downloadManager.downloadedSongs.count) downloaded songs and re-download them. Active downloads will be cancelled.")
+            } else {
+                Text("This will re-download all songs in the new quality.")
             }
         }
         .sheet(isPresented: $showingLogoutConfirmation) {

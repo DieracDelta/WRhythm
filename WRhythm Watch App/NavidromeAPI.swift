@@ -67,6 +67,8 @@ class NavidromeAPI: ObservableObject {
     static let shared = NavidromeAPI()
 
     @Published var isAuthenticated = false
+    @Published var transcodingSupported: Bool? = nil  // nil = not yet checked
+    @Published var isCheckingTranscoding: Bool = false
 
     private var baseURL: String
     private var username: String
@@ -82,6 +84,11 @@ class NavidromeAPI: ObservableObject {
         self.password = UserDefaults.standard.string(forKey: "navidrome_password") ?? ""
 
         self.isAuthenticated = !baseURL.isEmpty && !username.isEmpty && !password.isEmpty
+
+        // Load cached transcoding support status
+        if UserDefaults.standard.object(forKey: "server_supports_transcoding") != nil {
+            self.transcodingSupported = UserDefaults.standard.bool(forKey: "server_supports_transcoding")
+        }
     }
 
     func configure(baseURL: String, username: String, password: String) {
@@ -118,6 +125,12 @@ class NavidromeAPI: ObservableObject {
                 UserDefaults.standard.set(self.username, forKey: "navidrome_username")
                 UserDefaults.standard.set(self.password, forKey: "navidrome_password")
                 self.isAuthenticated = true
+
+                // Check transcoding support after successful login
+                Task {
+                    await self.checkTranscodingSupport()
+                }
+
                 return true
             } else {
                 // Validation failed - restore original credentials
@@ -167,6 +180,104 @@ class NavidromeAPI: ObservableObject {
         // NOTE: radioDownloadCount is preserved (app-level setting)
 
         print("✅ Logout complete")
+    }
+
+    // MARK: - Transcoding Support Check
+
+    /// Checks if the server supports transcoding by probing with a test request
+    /// This is necessary because the Subsonic API doesn't provide a direct capability check
+    @discardableResult
+    func checkTranscodingSupport() async -> Bool {
+        print("🔍 Checking server transcoding support...")
+
+        await MainActor.run {
+            isCheckingTranscoding = true
+        }
+
+        defer {
+            Task { @MainActor in
+                isCheckingTranscoding = false
+            }
+        }
+
+        do {
+            // Get a random song to test with
+            let songs = try await getRandomSongs(size: 1)
+            guard let testSong = songs.first else {
+                print("⚠️ No songs available to test transcoding")
+                // Assume supported if we can't test (better UX)
+                await updateTranscodingSupport(true)
+                return true
+            }
+
+            print("🔍 Testing transcoding with song: \(testSong.title)")
+
+            // Build a stream URL with format=mp3 to request transcoding
+            guard let testURL = getStreamURL(id: testSong.id, format: "mp3", maxBitRate: 64) else {
+                print("❌ Failed to build test stream URL")
+                await updateTranscodingSupport(false)
+                return false
+            }
+
+            // Make a HEAD request to check response without downloading the whole file
+            var request = URLRequest(url: testURL)
+            request.httpMethod = "HEAD"
+            request.timeoutInterval = 10
+
+            let (_, response) = try await URLSession.shared.data(for: request)
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("❌ Invalid response type for transcoding check")
+                await updateTranscodingSupport(false)
+                return false
+            }
+
+            print("📡 Transcoding check response: HTTP \(httpResponse.statusCode)")
+
+            // Check if server returned success
+            if httpResponse.statusCode == 200 {
+                // Check Content-Type header
+                let contentType = httpResponse.value(forHTTPHeaderField: "Content-Type") ?? ""
+                print("📡 Content-Type: \(contentType)")
+
+                // If it's audio/mpeg, transcoding is working
+                let supported = contentType.lowercased().contains("audio/mpeg") ||
+                               contentType.lowercased().contains("audio/mp3")
+
+                if supported {
+                    print("✅ Server supports transcoding (Content-Type: \(contentType))")
+                } else {
+                    // Server might still support it, just returning different content type
+                    // Be optimistic if we got HTTP 200
+                    print("⚠️ Got HTTP 200 but Content-Type is \(contentType). Assuming transcoding supported.")
+                }
+                await updateTranscodingSupport(true)
+                return true
+            } else if httpResponse.statusCode == 501 || httpResponse.statusCode == 500 {
+                // Server explicitly doesn't support transcoding
+                print("❌ Server does not support transcoding (HTTP \(httpResponse.statusCode))")
+                await updateTranscodingSupport(false)
+                return false
+            } else {
+                // Other error - assume supported (better UX, will fail gracefully on download)
+                print("⚠️ Unexpected response \(httpResponse.statusCode), assuming transcoding supported")
+                await updateTranscodingSupport(true)
+                return true
+            }
+        } catch {
+            print("❌ Error checking transcoding support: \(error)")
+            // On error, assume supported (optimistic approach)
+            await updateTranscodingSupport(true)
+            return true
+        }
+    }
+
+    private func updateTranscodingSupport(_ supported: Bool) async {
+        await MainActor.run {
+            self.transcodingSupported = supported
+            UserDefaults.standard.set(supported, forKey: "server_supports_transcoding")
+            print("💾 Cached transcoding support: \(supported)")
+        }
     }
 
     private func generateAuthParams() -> [String: String] {

@@ -8,6 +8,46 @@
 import Foundation
 import Combine
 
+// MARK: - Audio Quality Settings
+
+enum AudioQuality: Int, CaseIterable, Codable {
+    case low = 64
+    case medium = 128
+    case high = 192
+    case max = 320
+
+    var label: String {
+        switch self {
+        case .low: return "Low"
+        case .medium: return "Medium"
+        case .high: return "High"
+        case .max: return "Max"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .low: return "64 kbps - Smallest files"
+        case .medium: return "128 kbps - Balanced"
+        case .high: return "192 kbps - Better quality"
+        case .max: return "320 kbps - Best quality"
+        }
+    }
+
+    var shortDescription: String {
+        "\(rawValue) kbps"
+    }
+}
+
+// MARK: - Migration State (for crash recovery during codec change)
+
+struct MigrationState: Codable {
+    let inProgress: Bool
+    let targetBitRate: Int
+    let songsToRedownload: [String]  // song IDs
+    let startedAt: Date
+}
+
 struct DownloadedSong: Codable {
     let songId: String
     let title: String
@@ -17,6 +57,20 @@ struct DownloadedSong: Codable {
     let filePath: String
     let downloadedAt: Date
     let fileSize: Int64
+    let downloadedBitRate: Int?  // nil = original/legacy download
+
+    // For backwards compatibility with existing downloads.json
+    init(songId: String, title: String, artist: String?, album: String?, coverArt: String?, filePath: String, downloadedAt: Date, fileSize: Int64, downloadedBitRate: Int? = nil) {
+        self.songId = songId
+        self.title = title
+        self.artist = artist
+        self.album = album
+        self.coverArt = coverArt
+        self.filePath = filePath
+        self.downloadedAt = downloadedAt
+        self.fileSize = fileSize
+        self.downloadedBitRate = downloadedBitRate
+    }
 }
 
 struct CachedPlaylist: Codable {
@@ -77,6 +131,17 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     // Pause state
     @Published var isPaused: Bool = false
 
+    // Audio quality settings
+    @Published var audioQuality: AudioQuality = {
+        let savedValue = UserDefaults.standard.integer(forKey: "audioQuality")
+        return AudioQuality(rawValue: savedValue) ?? .medium
+    }()
+
+    // Quality change state (for prompting user)
+    @Published var showQualityChangePrompt: Bool = false
+    @Published var pendingQualityChange: AudioQuality? = nil
+    @Published var isExecutingQualityChange: Bool = false
+
     // Low-priority background queue for downloads to prevent UI freezing
     private lazy var downloadQueue_background: OperationQueue = {
         let queue = OperationQueue()
@@ -135,6 +200,10 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         documentsDirectory.appendingPathComponent("incomplete_downloads.json")
     }
 
+    private var migrationStateURL: URL {
+        documentsDirectory.appendingPathComponent("migration_state.json")
+    }
+
     override init() {
         super.init()
         loadMetadata()
@@ -144,6 +213,7 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         loadStarredSongs()
         loadPendingChanges()
         loadIncompleteDownloads()
+        checkAndResumeMigration()
 
         // Log when app becomes active to see download state
         NotificationCenter.default.addObserver(
@@ -414,6 +484,201 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         } catch {
             print("❌ Failed to clear incomplete downloads: \(error)")
         }
+    }
+
+    // MARK: - Migration State (Codec Change Recovery)
+
+    private func loadMigrationState() -> MigrationState? {
+        guard fileManager.fileExists(atPath: migrationStateURL.path) else {
+            return nil
+        }
+
+        do {
+            let data = try Data(contentsOf: migrationStateURL)
+            return try JSONDecoder().decode(MigrationState.self, from: data)
+        } catch {
+            print("❌ Failed to load migration state: \(error)")
+            return nil
+        }
+    }
+
+    private func saveMigrationState(_ state: MigrationState) {
+        do {
+            let data = try JSONEncoder().encode(state)
+            try data.write(to: migrationStateURL)
+            print("💾 Saved migration state")
+        } catch {
+            print("❌ Failed to save migration state: \(error)")
+        }
+    }
+
+    private func clearMigrationState() {
+        do {
+            if fileManager.fileExists(atPath: migrationStateURL.path) {
+                try fileManager.removeItem(at: migrationStateURL)
+                print("🗑️ Cleared migration state")
+            }
+        } catch {
+            print("❌ Failed to clear migration state: \(error)")
+        }
+    }
+
+    private func checkAndResumeMigration() {
+        guard let state = loadMigrationState(), state.inProgress else {
+            return
+        }
+
+        print("🔄 Found incomplete migration from \(state.startedAt)")
+        print("   Target bitrate: \(state.targetBitRate)kbps")
+        print("   Songs to redownload: \(state.songsToRedownload.count)")
+
+        // Resume the migration
+        Task {
+            await resumeMigration(state)
+        }
+    }
+
+    private func resumeMigration(_ state: MigrationState) async {
+        guard let targetQuality = AudioQuality(rawValue: state.targetBitRate) else {
+            print("❌ Invalid target bitrate in migration state: \(state.targetBitRate)")
+            clearMigrationState()
+            return
+        }
+
+        print("🔄 Resuming migration to \(targetQuality.label) quality...")
+
+        await MainActor.run {
+            isExecutingQualityChange = true
+            audioQuality = targetQuality
+            UserDefaults.standard.set(targetQuality.rawValue, forKey: "audioQuality")
+        }
+
+        // Get song objects from metadata for songs that still need re-download
+        let songsToQueue = state.songsToRedownload.compactMap { songMetadata[$0] }
+            .filter { !isDownloaded($0.id) }
+
+        if songsToQueue.isEmpty {
+            print("✅ Migration already complete, clearing state")
+            clearMigrationState()
+            await MainActor.run {
+                isExecutingQualityChange = false
+            }
+            return
+        }
+
+        await MainActor.run {
+            // Queue the songs for download
+            for song in songsToQueue {
+                if !downloadQueue.contains(where: { $0.id == song.id }) && !isDownloading(song.id) {
+                    downloadQueue.append(song)
+                    sessionTotalCount += 1
+                }
+            }
+            saveIncompleteDownloads()
+            processQueue()
+            isExecutingQualityChange = false
+        }
+
+        print("📥 Re-queued \(songsToQueue.count) songs for download")
+        clearMigrationState()
+    }
+
+    // MARK: - Quality Change Handling
+
+    func requestQualityChange(to newQuality: AudioQuality) {
+        // Don't change if same quality
+        guard newQuality != audioQuality else {
+            print("ℹ️ Quality unchanged, no action needed")
+            return
+        }
+
+        // If no downloads exist, just change the setting
+        if downloadedSongs.isEmpty && activeDownloads.isEmpty && downloadQueue.isEmpty {
+            audioQuality = newQuality
+            UserDefaults.standard.set(newQuality.rawValue, forKey: "audioQuality")
+            print("✅ Changed audio quality to \(newQuality.label) (no downloads to migrate)")
+            return
+        }
+
+        // Otherwise, prompt for confirmation
+        pendingQualityChange = newQuality
+        showQualityChangePrompt = true
+        print("⚠️ Quality change requested: \(audioQuality.label) -> \(newQuality.label)")
+        print("   \(downloadedSongs.count) downloaded songs will need re-download")
+    }
+
+    func cancelQualityChange() {
+        pendingQualityChange = nil
+        showQualityChangePrompt = false
+        print("❌ Quality change cancelled")
+    }
+
+    func executeQualityChange() async {
+        guard let newQuality = pendingQualityChange else {
+            print("❌ No pending quality change to execute")
+            return
+        }
+
+        print("🔄 Executing quality change: \(audioQuality.label) -> \(newQuality.label)")
+
+        await MainActor.run {
+            isExecutingQualityChange = true
+            showQualityChangePrompt = false
+        }
+
+        // 1. Collect song IDs to re-download BEFORE any deletion
+        let songsToRedownload = Array(downloadedSongs.keys)
+        print("📋 Songs to re-download: \(songsToRedownload.count)")
+
+        // 2. Save migration state for crash recovery
+        let migrationState = MigrationState(
+            inProgress: true,
+            targetBitRate: newQuality.rawValue,
+            songsToRedownload: songsToRedownload,
+            startedAt: Date()
+        )
+        saveMigrationState(migrationState)
+
+        // 3. Cancel all active downloads
+        await MainActor.run {
+            cancelAllDownloads()
+        }
+
+        // 4. Get song metadata BEFORE deleting (so we can re-queue)
+        let songObjectsToRedownload = songsToRedownload.compactMap { songMetadata[$0] }
+
+        // 5. Delete all downloaded files
+        await MainActor.run {
+            deleteAll()
+        }
+
+        // 6. Update quality setting
+        await MainActor.run {
+            audioQuality = newQuality
+            UserDefaults.standard.set(newQuality.rawValue, forKey: "audioQuality")
+        }
+
+        // 7. Re-queue all songs for download
+        await MainActor.run {
+            sessionTotalCount = songObjectsToRedownload.count
+            for song in songObjectsToRedownload {
+                // Re-add metadata since deleteAll() removed it
+                songMetadata[song.id] = song
+                downloadQueue.append(song)
+            }
+            saveSongMetadata()
+            saveIncompleteDownloads()
+            processQueue()
+        }
+
+        // 8. Clear migration state and pending change
+        clearMigrationState()
+        await MainActor.run {
+            pendingQualityChange = nil
+            isExecutingQualityChange = false
+        }
+
+        print("✅ Quality change complete, re-downloading \(songObjectsToRedownload.count) songs at \(newQuality.label)")
     }
 
     // Star a song locally, and track for sync if offline
@@ -710,14 +975,19 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         while (isUnlimited || activeDownloads.count < maxConcurrentDownloads) && !downloadQueue.isEmpty {
             let song = downloadQueue.removeFirst()
 
-            guard let streamURL = NavidromeAPI.shared.getStreamURL(id: song.id) else {
+            // Use selected audio quality for transcoding
+            guard let streamURL = NavidromeAPI.shared.getStreamURL(
+                id: song.id,
+                format: "mp3",
+                maxBitRate: audioQuality.rawValue
+            ) else {
                 print("❌ Failed to get stream URL for: \(song.title)")
                 continue
             }
 
             let timestamp = ISO8601DateFormatter().string(from: Date())
             let limitText = isUnlimited ? "∞" : "\(maxConcurrentDownloads)"
-            print("📥 [\(timestamp)] Starting download (\(activeDownloads.count + 1)/\(limitText)): \(song.title)")
+            print("📥 [\(timestamp)] Starting download (\(activeDownloads.count + 1)/\(limitText)): \(song.title) @ \(audioQuality.shortDescription)")
 
             let task = downloadSession.downloadTask(with: streamURL)
 
@@ -818,7 +1088,8 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
             return
         }
 
-        let filename = "\(song.id).\(song.suffix ?? "mp3")"
+        // Always use .mp3 extension since we're transcoding to MP3
+        let filename = "\(song.id).mp3"
         let destinationURL = downloadsDirectory.appendingPathComponent(filename)
 
         do {
@@ -833,7 +1104,7 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
             let attributes = try fileManager.attributesOfItem(atPath: destinationURL.path)
             let fileSize = attributes[.size] as? Int64 ?? 0
 
-            // Save metadata
+            // Save metadata with current audio quality
             let downloadedSong = DownloadedSong(
                 songId: song.id,
                 title: song.title,
@@ -842,7 +1113,8 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
                 coverArt: song.coverArt,
                 filePath: filename,
                 downloadedAt: Date(),
-                fileSize: fileSize
+                fileSize: fileSize,
+                downloadedBitRate: self.audioQuality.rawValue
             )
 
             DispatchQueue.main.async {
