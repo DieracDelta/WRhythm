@@ -97,7 +97,7 @@ struct LoginView: View {
             }
         }
         .onAppear {
-            serverURL = "https://instance-20251227-1707.tail5ca7.ts.net/gonic"
+            serverURL = "https://nixos-arm.tail5ca7.ts.net/gonic/"
             username = "apple-tester"
             password = "ajsdekkkkk8383fndae!U#(*&&"
         }
