@@ -96,11 +96,6 @@ struct LoginView: View {
                 .navigationBarTitleDisplayMode(.inline)
             }
         }
-        .onAppear {
-            serverURL = "https://nixos-arm.tail5ca7.ts.net/gonic/"
-            username = "apple-tester"
-            password = "ajsdekkkkk8383fndae!U#(*&&"
-        }
     }
 
     private func login() {
