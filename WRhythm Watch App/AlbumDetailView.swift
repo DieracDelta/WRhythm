@@ -257,9 +257,11 @@ struct AlbumDetailView: View {
                                     CachedAsyncImage(url: coverURL) { image in
                                         image
                                             .resizable()
-                                            .aspectRatio(contentMode: .fill)
+                                            .aspectRatio(contentMode: .fit)
                                     }
-                                    .frame(height: 120)
+                                    .id(coverURL)
+                                    .frame(maxWidth: 300, maxHeight: 300)
+                                    .frame(maxWidth: .infinity)
                                     .cornerRadius(8)
                                 }
                             }
@@ -328,9 +330,11 @@ struct AlbumDetailView: View {
                                     let _ = print("🖼️ AlbumDetail CachedAsyncImage rendering image for album: \(album.id)")
                                     return image
                                         .resizable()
-                                        .aspectRatio(contentMode: .fill)
+                                        .aspectRatio(contentMode: .fit)
                                 }
-                                .frame(height: 120)
+                                .id(coverURL)
+                                .frame(maxWidth: 300, maxHeight: 300)
+                                .frame(maxWidth: .infinity)
                                 .cornerRadius(8)
                                 .onAppear {
                                     print("✅ AlbumDetail CachedAsyncImage appeared for album: \(album.id), URL: \(coverURL)")

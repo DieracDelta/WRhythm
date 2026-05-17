@@ -127,39 +127,64 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
     let placeholder: () -> Placeholder
 
     @State private var image: PlatformImage?
-    @State private var isLoading = false
+    @State private var loadedURL: URL?
+    @State private var loadingURL: URL?
 
     var body: some View {
         let cachedImage = url.flatMap { ImageCache.shared.getImage(for: $0) }
+        let stateImage = loadedURL == url ? image : nil
 
         Group {
-            if let image = image ?? cachedImage {
+            if let image = stateImage ?? cachedImage {
                 content(Image(platformImage: image))
             } else {
                 placeholder()
-                    .onAppear {
-                        loadImage()
-                    }
             }
+        }
+        .onAppear {
+            loadImage()
+        }
+        .onChange(of: url) { _, _ in
+            image = nil
+            loadedURL = nil
+            loadingURL = nil
+            loadImage()
         }
     }
 
     private func loadImage() {
-        guard let url = url, !isLoading else { return }
+        guard let url else {
+            image = nil
+            loadedURL = nil
+            loadingURL = nil
+            return
+        }
 
         // Check cache first
         if let cachedImage = ImageCache.shared.getImage(for: url) {
             self.image = cachedImage
+            self.loadedURL = url
+            self.loadingURL = nil
             return
         }
 
+        guard loadingURL != url else { return }
+
         // Load from network
-        isLoading = true
+        loadingURL = url
         ImageCache.shared.loadImage(for: url) { loadedImage in
+            guard self.url == url else {
+                if self.loadingURL == url {
+                    self.loadingURL = nil
+                }
+                return
+            }
+
             if let loadedImage {
                 self.image = loadedImage
+                self.loadedURL = url
             }
-            isLoading = false
+            self.loadingURL = nil
         }
     }
 }

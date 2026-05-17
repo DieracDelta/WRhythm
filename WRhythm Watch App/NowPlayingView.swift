@@ -13,7 +13,6 @@ struct NowPlayingView: View {
     @ObservedObject var downloadManager = DownloadManager.shared
     @ObservedObject var deviceSyncManager = DeviceSyncManager.shared
     @State private var isStarring = false
-    @State private var isSyncing = false
     @State private var hasLoadedStarredSongs = false
     @State private var showVolumeControl = false
     @State private var showAudioRouteMenu = false
@@ -29,17 +28,8 @@ struct NowPlayingView: View {
                     .padding()
             } else if let song = player.currentSong {
                 VStack(spacing: 12) {
-                    if let coverArtId = song.coverArt,
-                       let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 300) {
-                        CachedAsyncImage(url: coverURL) { image in
-                            image
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                        }
-                        .frame(maxWidth: 360, maxHeight: 360)
-                        .frame(maxWidth: .infinity)
-                        .cornerRadius(8)
-                    }
+                    NowPlayingArtwork(coverArtId: song.coverArt, maxSize: 360)
+                        .equatable()
 
                     VStack(spacing: 4) {
                         Text(song.title)
@@ -111,6 +101,11 @@ struct NowPlayingView: View {
                         .buttonStyle(.plain)
                         .disabled(player.currentIndex >= player.queue.count - 1)
                     }
+
+                    InlineVolumeSlider(volume: Binding(
+                        get: { player.volume },
+                        set: { player.volume = $0 }
+                    ))
 
                     // Action buttons
                     HStack(spacing: 8) {
@@ -220,20 +215,6 @@ struct NowPlayingView: View {
         .sheet(isPresented: $showAudioRouteMenu) {
             AudioRouteView()
         }
-        .toolbar {
-            ToolbarItem(placement: .platformTopBarTrailing) {
-                Button(action: {
-                    syncFavorites()
-                }) {
-                    if isSyncing {
-                        ProgressView()
-                    } else {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                }
-                .disabled(isSyncing)
-            }
-        }
         .onAppear {
             if !hasLoadedStarredSongs {
                 loadStarredSongs()
@@ -278,30 +259,6 @@ struct NowPlayingView: View {
                 }
             } catch {
                 print("❌ Failed to load starred songs: \(error)")
-            }
-        }
-    }
-
-    private func syncFavorites() {
-        isSyncing = true
-        Task {
-            do {
-                // First, sync any pending local changes to server
-                try await downloadManager.syncPendingStarChanges()
-
-                // Then fetch the latest from server
-                let starred = try await NavidromeAPI.shared.getStarred()
-                let songIds = Set(starred.song?.map { $0.id } ?? [])
-                await MainActor.run {
-                    downloadManager.cacheStarredSongs(songIds)
-                    isSyncing = false
-                }
-                print("✅ Favorites synced: \(songIds.count) songs")
-            } catch {
-                print("❌ Failed to sync favorites: \(error)")
-                await MainActor.run {
-                    isSyncing = false
-                }
             }
         }
     }
@@ -404,6 +361,30 @@ struct NowPlayingView: View {
     }
 }
 
+private struct NowPlayingArtwork: View, Equatable {
+    let coverArtId: String?
+    let maxSize: CGFloat
+
+    static func == (lhs: NowPlayingArtwork, rhs: NowPlayingArtwork) -> Bool {
+        lhs.coverArtId == rhs.coverArtId && lhs.maxSize == rhs.maxSize
+    }
+
+    var body: some View {
+        if let coverArtId,
+           let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 300) {
+            CachedAsyncImage(url: coverURL) { image in
+                image
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+            }
+            .id(coverURL)
+            .frame(maxWidth: maxSize, maxHeight: maxSize)
+            .frame(maxWidth: .infinity)
+            .cornerRadius(8)
+        }
+    }
+}
+
 struct PlaybackTargetPicker: View {
     @ObservedObject var deviceSyncManager = DeviceSyncManager.shared
 
@@ -442,6 +423,8 @@ struct RemotePlaybackControls: View {
     let playback: PlaybackSnapshot
     let compact: Bool
     @ObservedObject var deviceSyncManager = DeviceSyncManager.shared
+    @ObservedObject var player = AudioPlayer.shared
+    @State private var pendingVolume: Double?
 
     var body: some View {
         VStack(spacing: compact ? 8 : 12) {
@@ -458,17 +441,9 @@ struct RemotePlaybackControls: View {
             }
 
             if let song = playback.song {
-                if !compact,
-                   let coverArtId = song.coverArt,
-                   let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 300) {
-                    CachedAsyncImage(url: coverURL) { image in
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                    }
-                    .frame(maxWidth: 320, maxHeight: 320)
-                    .frame(maxWidth: .infinity)
-                    .cornerRadius(8)
+                if !compact {
+                    NowPlayingArtwork(coverArtId: song.coverArt, maxSize: 320)
+                        .equatable()
                 }
 
                 VStack(spacing: 4) {
@@ -538,8 +513,24 @@ struct RemotePlaybackControls: View {
                     }
                     .buttonStyle(.plain)
                 }
+
+                InlineVolumeSlider(volume: Binding(
+                    get: { displayedVolume },
+                    set: { newVolume in
+                        pendingVolume = newVolume
+                        deviceSyncManager.setVolume(newVolume, targetDeviceID: playback.id)
+                    }
+                ))
             }
         }
+        .onChange(of: playback.volume ?? -1) { _, _ in
+            pendingVolume = nil
+        }
+    }
+
+    private var displayedVolume: Double {
+        let volume = pendingVolume ?? playback.volume ?? player.volume
+        return min(max(volume.isFinite ? volume : 1, 0), 1)
     }
 
     private func formatTime(_ seconds: TimeInterval) -> String {
@@ -549,6 +540,21 @@ struct RemotePlaybackControls: View {
         let minutes = Int(max(0, seconds)) / 60
         let remainingSeconds = Int(max(0, seconds)) % 60
         return String(format: "%d:%02d", minutes, remainingSeconds)
+    }
+}
+
+struct InlineVolumeSlider: View {
+    @Binding var volume: Double
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "speaker.fill")
+                .foregroundColor(.secondary)
+            Slider(value: $volume, in: 0...1)
+                .tint(.accentColor)
+            Image(systemName: "speaker.wave.3.fill")
+                .foregroundColor(.secondary)
+        }
     }
 }
 

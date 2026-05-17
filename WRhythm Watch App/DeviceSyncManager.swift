@@ -34,6 +34,7 @@ struct PlaybackSnapshot: Codable, Identifiable {
     let platform: String
     let song: Song?
     let isPlaying: Bool
+    let volume: Double?
     let currentTime: TimeInterval
     let duration: TimeInterval
     let queue: [Song]
@@ -48,6 +49,7 @@ struct PlaybackSession: Codable, Identifiable {
     let currentIndex: Int
     let position: TimeInterval
     let isPlaying: Bool
+    let volume: Double?
     let outputDeviceID: String
     let updatedAt: Date
     let updatedByDeviceID: String
@@ -119,6 +121,7 @@ private struct PlaybackCommand: Codable {
         case next
         case previous
         case seek
+        case setVolume
         case playQueue
         case enqueue
         case syncQueue
@@ -130,13 +133,15 @@ private struct PlaybackCommand: Codable {
     let songs: [Song]?
     let startingIndex: Int?
     let time: TimeInterval?
+    let volume: Double?
 
-    init(action: Action, commandID: String? = nil, songs: [Song]?, startingIndex: Int?, time: TimeInterval?) {
+    init(action: Action, commandID: String? = nil, songs: [Song]?, startingIndex: Int?, time: TimeInterval?, volume: Double? = nil) {
         self.action = action
         self.commandID = commandID
         self.songs = songs
         self.startingIndex = startingIndex
         self.time = time
+        self.volume = volume
     }
 
     func withCommandID() -> PlaybackCommand {
@@ -145,7 +150,8 @@ private struct PlaybackCommand: Codable {
             commandID: commandID ?? UUID().uuidString,
             songs: songs,
             startingIndex: startingIndex,
-            time: time
+            time: time,
+            volume: volume
         )
     }
 }
@@ -249,6 +255,11 @@ final class DeviceSyncManager: NSObject, ObservableObject {
     private var peerDisplayNames: [MCPeerID: String] = [:]
     private var multipeerDeviceIDs = Set<String>()
     private var deviceIDsByPeerDisplayName: [String: String] = [:]
+    private var multipeerRestartAttempt = 0
+    private var multipeerRestartTask: Task<Void, Never>?
+    private var discoveredMultipeerPeers: [String: MCPeerID] = [:]
+    private var inviteAttemptsByPeerDisplayName: [String: Int] = [:]
+    private var inviteRetryTasksByPeerDisplayName: [String: Task<Void, Never>] = [:]
 #endif
 
     private override init() {
@@ -339,6 +350,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             platform: outputPeer?.platform ?? remotePlayback?.platform ?? "Device",
             song: song,
             isPlaying: sharedSession.isPlaying,
+            volume: sharedSession.volume,
             currentTime: sharedSession.position,
             duration: TimeInterval(song.duration ?? 0),
             queue: sharedSession.queue,
@@ -429,7 +441,8 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         position: TimeInterval,
         isPlaying: Bool,
         outputDeviceID: String,
-        revision: Int? = nil
+        revision: Int? = nil,
+        volume: Double? = nil
     ) -> PlaybackSession {
         PlaybackSession(
             id: sharedSession?.id ?? sharedSessionID,
@@ -438,10 +451,15 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             currentIndex: min(max(currentIndex, 0), max(queue.count - 1, 0)),
             position: max(0, position.isFinite ? position : 0),
             isPlaying: isPlaying,
+            volume: clampedVolume(volume ?? sharedSession?.volume ?? AudioPlayer.shared.volume),
             outputDeviceID: outputDeviceID,
             updatedAt: Date(),
             updatedByDeviceID: localDeviceID
         )
+    }
+
+    private func clampedVolume(_ volume: Double) -> Double {
+        min(max(volume.isFinite ? volume : 1, 0), 1)
     }
 
     private func publishSharedSession(_ session: PlaybackSession, applyLocally: Bool = true) {
@@ -501,6 +519,9 @@ final class DeviceSyncManager: NSObject, ObservableObject {
                 if drift > 3 {
                     player.seek(to: session.estimatedPosition)
                 }
+                if let volume = session.volume, abs(player.volume - volume) > 0.01 {
+                    player.volume = clampedVolume(volume)
+                }
                 if session.isPlaying, !player.isPlaying {
                     player.play()
                 } else if !session.isPlaying, player.isPlaying {
@@ -510,6 +531,9 @@ final class DeviceSyncManager: NSObject, ObservableObject {
                 isApplyingRemoteCommand = true
                 player.playQueue(session.queue, startingAt: session.currentIndex)
                 player.seek(to: session.estimatedPosition)
+                if let volume = session.volume {
+                    player.volume = clampedVolume(volume)
+                }
                 if !session.isPlaying {
                     player.pause()
                 }
@@ -601,6 +625,31 @@ final class DeviceSyncManager: NSObject, ObservableObject {
 
     func sendSeek(to time: TimeInterval, targetDeviceID: String? = nil) {
         _ = sendCommand(.init(action: .seek, songs: nil, startingIndex: nil, time: time), targetDeviceID: targetDeviceID ?? selectedRemotePlaybackTargetID)
+    }
+
+    func setVolume(_ volume: Double, targetDeviceID: String? = nil) {
+        let volume = clampedVolume(volume)
+        let targetDeviceID = targetDeviceID ?? selectedRemotePlaybackTargetID
+
+        if targetDeviceID == nil || targetDeviceID == localDeviceID {
+            AudioPlayer.shared.volume = volume
+            broadcastLocalQueueAsShared()
+            broadcastPlaybackState(force: true)
+            return
+        }
+
+        if let sharedSession, sharedSession.outputDeviceID == targetDeviceID {
+            publishSharedSession(makeSession(
+                queue: sharedSession.queue,
+                currentIndex: sharedSession.currentIndex,
+                position: sharedSession.estimatedPosition,
+                isPlaying: sharedSession.isPlaying,
+                outputDeviceID: sharedSession.outputDeviceID,
+                volume: volume
+            ), applyLocally: false)
+        }
+
+        _ = sendCommand(.init(action: .setVolume, songs: nil, startingIndex: nil, time: nil, volume: volume), targetDeviceID: targetDeviceID)
     }
 
     func playRemoteQueueItem(_ playback: PlaybackSnapshot, at index: Int) {
@@ -708,7 +757,8 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             currentIndex: min(player.currentIndex, queue.count - 1),
             position: player.currentTime,
             isPlaying: player.isPlaying,
-            outputDeviceID: localDeviceID
+            outputDeviceID: localDeviceID,
+            volume: player.volume
         ), applyLocally: false)
     }
 
@@ -737,6 +787,15 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             .removeDuplicates { abs($0 - $1) < 5 }
             .sink { [weak self] _ in
                 self?.broadcastPlaybackState()
+            }
+            .store(in: &cancellables)
+
+        player.$volume
+            .removeDuplicates { abs($0 - $1) < 0.01 }
+            .sink { [weak self] _ in
+                guard let self, !self.isApplyingRemoteCommand else { return }
+                self.broadcastLocalQueueAsShared()
+                self.broadcastPlaybackState(force: true)
             }
             .store(in: &cancellables)
     }
@@ -773,26 +832,14 @@ final class DeviceSyncManager: NSObject, ObservableObject {
                 newSession.delegate = self
                 session = newSession
             }
-            if advertiser == nil {
-                advertiser = MCNearbyServiceAdvertiser(peer: peerID, discoveryInfo: ["deviceID": localDeviceID], serviceType: "wrhythm-sync")
-                advertiser?.delegate = self
-                advertiser?.startAdvertisingPeer()
-                print("📡 Sync advertiser started as \(peerID.displayName)")
-            }
-            if browser == nil {
-                browser = MCNearbyServiceBrowser(peer: peerID, serviceType: "wrhythm-sync")
-                browser?.delegate = self
-                browser?.startBrowsingForPeers()
-                print("🔎 Sync browser started as \(peerID.displayName)")
-            }
+            startMultipeerDiscovery()
         } else {
-            advertiser?.stopAdvertisingPeer()
-            browser?.stopBrowsingForPeers()
+            stopMultipeerDiscovery()
             session?.disconnect()
-            advertiser = nil
-            browser = nil
             session = nil
             peerDisplayNames.removeAll()
+            multipeerDeviceIDs.removeAll()
+            deviceIDsByPeerDisplayName.removeAll()
             connectedDeviceNames = []
             remotePlayback = nil
             sharedSession = nil
@@ -819,6 +866,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             platform: platformName,
             song: player.currentSong,
             isPlaying: player.isPlaying,
+            volume: player.volume,
             currentTime: player.currentTime,
             duration: player.duration,
             queue: player.queue,
@@ -849,6 +897,21 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         guard force || Date().timeIntervalSince(lastPlaybackBroadcast) > 1.5 else { return }
         lastPlaybackBroadcast = Date()
         _ = sendEnvelope(.init(kind: .playbackState, sender: localPeerInfo(), playback: localPlaybackSnapshot(), command: nil, credentials: nil, targetDeviceID: nil))
+    }
+
+    private func shouldPublishRemotePlayback(_ playback: PlaybackSnapshot) -> Bool {
+        guard let current = remotePlayback, current.id == playback.id else { return true }
+        if current.deviceName != playback.deviceName || current.platform != playback.platform { return true }
+        if current.song?.id != playback.song?.id { return true }
+        if current.isPlaying != playback.isPlaying { return true }
+        if abs(current.duration - playback.duration) > 1 { return true }
+        if abs((current.volume ?? -1) - (playback.volume ?? -1)) > 0.01 { return true }
+        if current.currentIndex != playback.currentIndex { return true }
+        if current.queue.map(\.id) != playback.queue.map(\.id) { return true }
+
+        // The progress bar can estimate time locally between snapshots. Publishing
+        // every remote clock tick forces Now Playing to rebuild and visibly flicker.
+        return abs(current.estimatedCurrentTime - playback.currentTime) > 4
     }
 
     private func maybeSendCredentialsToInterestedPeers() {
@@ -951,7 +1014,9 @@ final class DeviceSyncManager: NSObject, ObservableObject {
 
         case .playbackState:
             guard syncModeEnabled, envelope.sender.syncModeEnabled, let playback = envelope.playback else { return }
-            remotePlayback = playback
+            if shouldPublishRemotePlayback(playback) {
+                remotePlayback = playback
+            }
             if sharedSession == nil,
                playback.isPlaying,
                !AudioPlayer.shared.isPlaying {
@@ -1021,6 +1086,8 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             player.previous()
         case .seek:
             player.seek(to: command.time ?? 0)
+        case .setVolume:
+            player.volume = clampedVolume(command.volume ?? player.volume)
         case .playQueue:
             guard let songs = command.songs, !songs.isEmpty else { return }
             selectedPlaybackTargetID = localDeviceID
@@ -1104,8 +1171,102 @@ final class DeviceSyncManager: NSObject, ObservableObject {
 #endif
 
 #if os(iOS) || os(macOS)
+    private func startMultipeerDiscovery() {
+        guard syncModeEnabled || credentialSyncEnabled else { return }
+
+        if advertiser == nil {
+            advertiser = MCNearbyServiceAdvertiser(peer: peerID, discoveryInfo: ["deviceID": localDeviceID], serviceType: "wrhythm-sync")
+            advertiser?.delegate = self
+            advertiser?.startAdvertisingPeer()
+            print("📡 Sync advertiser started as \(peerID.displayName)")
+        }
+
+        if browser == nil {
+            browser = MCNearbyServiceBrowser(peer: peerID, serviceType: "wrhythm-sync")
+            browser?.delegate = self
+            browser?.startBrowsingForPeers()
+            print("🔎 Sync browser started as \(peerID.displayName)")
+        }
+    }
+
+    private func stopMultipeerDiscovery() {
+        multipeerRestartTask?.cancel()
+        multipeerRestartTask = nil
+        inviteRetryTasksByPeerDisplayName.values.forEach { $0.cancel() }
+        inviteRetryTasksByPeerDisplayName.removeAll()
+        inviteAttemptsByPeerDisplayName.removeAll()
+        discoveredMultipeerPeers.removeAll()
+        multipeerRestartAttempt = 0
+
+        advertiser?.stopAdvertisingPeer()
+        browser?.stopBrowsingForPeers()
+        advertiser = nil
+        browser = nil
+    }
+
+    private func scheduleMultipeerDiscoveryRestart(reason: String) {
+        guard syncModeEnabled || credentialSyncEnabled else { return }
+        guard multipeerRestartTask == nil else { return }
+
+        let delay = min(pow(2.0, Double(multipeerRestartAttempt)), 60)
+        multipeerRestartAttempt += 1
+        print("⏳ Restarting sync discovery in \(Int(delay))s after \(reason)")
+
+        multipeerRestartTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            self.multipeerRestartTask = nil
+            self.advertiser?.stopAdvertisingPeer()
+            self.browser?.stopBrowsingForPeers()
+            self.advertiser = nil
+            self.browser = nil
+            self.startMultipeerDiscovery()
+        }
+    }
+
+    private func resetMultipeerBackoff(for peerID: MCPeerID? = nil) {
+        multipeerRestartAttempt = 0
+
+        guard let peerID else { return }
+        inviteAttemptsByPeerDisplayName.removeValue(forKey: peerID.displayName)
+        inviteRetryTasksByPeerDisplayName.removeValue(forKey: peerID.displayName)?.cancel()
+        discoveredMultipeerPeers.removeValue(forKey: peerID.displayName)
+    }
+
+    private func scheduleInvite(to peerID: MCPeerID) {
+        let key = peerID.displayName
+        discoveredMultipeerPeers[key] = peerID
+        guard inviteRetryTasksByPeerDisplayName[key] == nil else { return }
+
+        let attempt = inviteAttemptsByPeerDisplayName[key, default: 0]
+        let delay = attempt == 0 ? 0 : min(pow(2.0, Double(attempt)), 30)
+
+        inviteRetryTasksByPeerDisplayName[key] = Task { @MainActor in
+            if delay > 0 {
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            }
+
+            guard !Task.isCancelled else { return }
+            self.inviteRetryTasksByPeerDisplayName[key] = nil
+            guard self.syncModeEnabled || self.credentialSyncEnabled else { return }
+            guard let browser = self.browser, let session = self.session else { return }
+            guard self.discoveredMultipeerPeers[key] != nil else { return }
+            guard !session.connectedPeers.contains(where: { $0.displayName == key }) else {
+                self.resetMultipeerBackoff(for: peerID)
+                return
+            }
+
+            print("📨 Sync peer found, inviting: \(key) (attempt \(attempt + 1))")
+            browser.invitePeer(peerID, to: session, withContext: nil, timeout: 10)
+            self.inviteAttemptsByPeerDisplayName[key] = attempt + 1
+            self.scheduleInvite(to: peerID)
+        }
+    }
+
     private func removeMultipeerPeer(_ peerID: MCPeerID) {
         peerDisplayNames.removeValue(forKey: peerID)
+        discoveredMultipeerPeers.removeValue(forKey: peerID.displayName)
+        inviteRetryTasksByPeerDisplayName.removeValue(forKey: peerID.displayName)?.cancel()
 
         if let deviceID = deviceIDsByPeerDisplayName.removeValue(forKey: peerID.displayName) {
             multipeerDeviceIDs.remove(deviceID)
@@ -1164,6 +1325,7 @@ extension DeviceSyncManager: MCSessionDelegate {
             let manager = DeviceSyncManager.shared
             switch state {
             case .connected:
+                manager.resetMultipeerBackoff(for: peerID)
                 manager.peerDisplayNames[peerID] = peerID.displayName
                 manager.connectedDeviceNames = Array(Set(manager.peerDisplayNames.values)).sorted()
                 print("✅ Sync peer connected: \(peerID.displayName)")
@@ -1173,6 +1335,10 @@ extension DeviceSyncManager: MCSessionDelegate {
             case .notConnected:
                 print("⚠️ Sync peer disconnected: \(peerID.displayName)")
                 manager.removeMultipeerPeer(peerID)
+                if (manager.syncModeEnabled || manager.credentialSyncEnabled),
+                   manager.peerID.displayName < peerID.displayName {
+                    manager.scheduleInvite(to: peerID)
+                }
             case .connecting:
                 print("🔄 Sync peer connecting: \(peerID.displayName)")
                 break
@@ -1204,7 +1370,10 @@ extension DeviceSyncManager: MCNearbyServiceAdvertiserDelegate {
     }
 
     nonisolated func advertiser(_ advertiser: MCNearbyServiceAdvertiser, didNotStartAdvertisingPeer error: Error) {
-        print("❌ Sync advertiser failed: \(error)")
+        Task { @MainActor in
+            print("❌ Sync advertiser failed: \(error)")
+            DeviceSyncManager.shared.scheduleMultipeerDiscoveryRestart(reason: "advertiser failure")
+        }
     }
 }
 
@@ -1213,7 +1382,7 @@ extension DeviceSyncManager: MCNearbyServiceBrowserDelegate {
         Task { @MainActor in
             let manager = DeviceSyncManager.shared
             guard manager.syncModeEnabled || manager.credentialSyncEnabled else { return }
-            guard let session = manager.session else { return }
+            guard manager.session != nil else { return }
 
             // Avoid dueling invitations. The lexically smaller peer initiates.
             guard manager.peerID.displayName < peerID.displayName else {
@@ -1221,8 +1390,7 @@ extension DeviceSyncManager: MCNearbyServiceBrowserDelegate {
                 return
             }
 
-            print("📨 Sync peer found, inviting: \(peerID.displayName)")
-            browser.invitePeer(peerID, to: session, withContext: nil, timeout: 20)
+            manager.scheduleInvite(to: peerID)
         }
     }
 
@@ -1230,12 +1398,17 @@ extension DeviceSyncManager: MCNearbyServiceBrowserDelegate {
         Task { @MainActor in
             let manager = DeviceSyncManager.shared
             print("⚠️ Sync peer lost: \(peerID.displayName)")
+            manager.discoveredMultipeerPeers.removeValue(forKey: peerID.displayName)
+            manager.inviteRetryTasksByPeerDisplayName.removeValue(forKey: peerID.displayName)?.cancel()
             manager.removeMultipeerPeer(peerID)
         }
     }
 
     nonisolated func browser(_ browser: MCNearbyServiceBrowser, didNotStartBrowsingForPeers error: Error) {
-        print("❌ Sync browser failed: \(error)")
+        Task { @MainActor in
+            print("❌ Sync browser failed: \(error)")
+            DeviceSyncManager.shared.scheduleMultipeerDiscoveryRestart(reason: "browser failure")
+        }
     }
 }
 #endif

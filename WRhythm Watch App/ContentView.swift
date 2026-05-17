@@ -9,7 +9,6 @@ import SwiftUI
 
 struct ContentView: View {
     @ObservedObject var api = NavidromeAPI.shared
-    @ObservedObject var player = AudioPlayer.shared
 #if os(macOS)
     @State private var selectedMacDestination: MacDestination? = .nowPlaying
 #else
@@ -38,10 +37,10 @@ struct ContentView: View {
                     }
                     .tag(1)
                 }
-                .onChange(of: scenePhase) { newPhase in
+                .onChange(of: scenePhase) { _, newPhase in
                     if newPhase == .active {
                         // When app becomes active, go to Now Playing if music is playing
-                        if player.isPlaying {
+                        if AudioPlayer.shared.isPlaying {
                             selectedTab = 1
                         }
                     }
