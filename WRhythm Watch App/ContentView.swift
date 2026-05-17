@@ -323,7 +323,7 @@ struct MacMiniPlayerBar: View {
                     isPlaying: remote.isPlaying,
                     queuePosition: remote.queue.count > 1 ? "\(remote.deviceName): \(remote.currentIndex + 1) of \(remote.queue.count)" : remote.deviceName,
                     previous: { deviceSyncManager.sendPrevious(targetDeviceID: remote.id) },
-                    toggle: { deviceSyncManager.sendPlayPause(targetDeviceID: remote.id) },
+                    toggle: { deviceSyncManager.setPlaying(!remote.isPlaying, targetDeviceID: remote.id) },
                     next: { deviceSyncManager.sendNext(targetDeviceID: remote.id) },
                     previousDisabled: remote.currentIndex == 0 && remote.currentTime < 3,
                     nextDisabled: remote.currentIndex >= remote.queue.count - 1

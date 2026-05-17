@@ -541,7 +541,7 @@ class AudioPlayer: NSObject, ObservableObject {
 
     func togglePlayPause() {
         if !DeviceSyncManager.shared.isLocalPlaybackOutput {
-            DeviceSyncManager.shared.sendPlayPause()
+            DeviceSyncManager.shared.toggleSelectedPlaybackTarget()
             return
         }
         if isPlaying {

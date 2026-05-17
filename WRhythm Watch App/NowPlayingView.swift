@@ -233,15 +233,7 @@ struct NowPlayingView: View {
             return nil
         }
 
-        if player.currentSong == nil {
-            return remote
-        }
-
-        if !player.isPlaying, remote.isPlaying {
-            return remote
-        }
-
-        if !player.isPlaying, player.currentSong?.id == remote.song?.id {
+        if player.currentSong == nil || deviceSyncManager.validSelectedPlaybackTargetID == remote.id {
             return remote
         }
 
@@ -495,7 +487,7 @@ struct RemotePlaybackControls: View {
                     }
                     .buttonStyle(.plain)
 
-                    Button(action: { deviceSyncManager.sendPlayPause(targetDeviceID: playback.id) }) {
+                    Button(action: { deviceSyncManager.setPlaying(!playback.isPlaying, targetDeviceID: playback.id) }) {
                         Image(systemName: playback.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                             .font(compact ? .title3 : .largeTitle)
                     }

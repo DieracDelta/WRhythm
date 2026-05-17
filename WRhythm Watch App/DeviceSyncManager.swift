@@ -615,6 +615,63 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         _ = sendCommand(.init(action: .toggle, songs: nil, startingIndex: nil, time: nil), targetDeviceID: targetDeviceID ?? selectedRemotePlaybackTargetID)
     }
 
+    func toggleSelectedPlaybackTarget() {
+        validateSelectedPlaybackTarget()
+        let targetDeviceID = validSelectedPlaybackTargetID
+
+        if targetDeviceID == localDeviceID {
+            setPlaying(!AudioPlayer.shared.isPlaying, targetDeviceID: localDeviceID)
+        } else if let sharedSession, sharedSession.outputDeviceID == targetDeviceID {
+            setPlaying(!sharedSession.isPlaying, targetDeviceID: targetDeviceID)
+        } else if let remotePlayback, remotePlayback.id == targetDeviceID {
+            setPlaying(!remotePlayback.isPlaying, targetDeviceID: targetDeviceID)
+        } else {
+            sendPlayPause(targetDeviceID: targetDeviceID)
+        }
+    }
+
+    func setPlaying(_ isPlaying: Bool, targetDeviceID: String? = nil) {
+        let targetDeviceID = targetDeviceID ?? selectedRemotePlaybackTargetID
+
+        if targetDeviceID == nil || targetDeviceID == localDeviceID {
+            if isPlaying {
+                AudioPlayer.shared.play()
+            } else {
+                AudioPlayer.shared.pause()
+            }
+            broadcastLocalQueueAsShared()
+            broadcastPlaybackState(force: true)
+            return
+        }
+
+        if let sharedSession, sharedSession.outputDeviceID == targetDeviceID {
+            publishSharedSession(makeSession(
+                queue: sharedSession.queue,
+                currentIndex: sharedSession.currentIndex,
+                position: sharedSession.estimatedPosition,
+                isPlaying: isPlaying,
+                outputDeviceID: sharedSession.outputDeviceID,
+                volume: sharedSession.volume
+            ), applyLocally: false)
+        } else if let remotePlayback, remotePlayback.id == targetDeviceID {
+            self.remotePlayback = PlaybackSnapshot(
+                id: remotePlayback.id,
+                deviceName: remotePlayback.deviceName,
+                platform: remotePlayback.platform,
+                song: remotePlayback.song,
+                isPlaying: isPlaying,
+                volume: remotePlayback.volume,
+                currentTime: remotePlayback.estimatedCurrentTime,
+                duration: remotePlayback.duration,
+                queue: remotePlayback.queue,
+                currentIndex: remotePlayback.currentIndex,
+                updatedAt: Date()
+            )
+        }
+
+        _ = sendCommand(.init(action: isPlaying ? .play : .pause, songs: nil, startingIndex: nil, time: nil), targetDeviceID: targetDeviceID)
+    }
+
     func sendNext(targetDeviceID: String? = nil) {
         _ = sendCommand(.init(action: .next, songs: nil, startingIndex: nil, time: nil), targetDeviceID: targetDeviceID ?? selectedRemotePlaybackTargetID)
     }
