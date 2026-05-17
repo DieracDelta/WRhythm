@@ -239,6 +239,9 @@ final class DeviceSyncManager: NSObject, ObservableObject {
     private var isApplyingRemoteCommand = false
     private var peerInfos: [String: SyncPeerInfo] = [:]
     private var pendingTargetedCommands: [String: PlaybackCommand] = [:]
+    private var pendingTargetedCommandDeadlines: [String: Date] = [:]
+    private var pendingTargetedCommandRetryAttempts: [String: Int] = [:]
+    private var pendingTargetedCommandRetryTasks: [String: Task<Void, Never>] = [:]
     private var processedCommandIDs = Set<String>()
     private var processedCommandIDOrder: [String] = []
     private let sharedSessionID: String
@@ -1004,14 +1007,23 @@ final class DeviceSyncManager: NSObject, ObservableObject {
     private func sendCommand(_ command: PlaybackCommand, targetDeviceID: String? = nil) -> Bool {
         guard syncModeEnabled else { return false }
         let command = command.withCommandID()
+        let needsAcknowledgment = commandNeedsPlaybackAcknowledgment(command)
+
         if let targetDeviceID {
             pendingTargetedCommands[targetDeviceID] = command
+            pendingTargetedCommandDeadlines[targetDeviceID] = Date().addingTimeInterval(needsAcknowledgment ? 20 : 6)
         }
+
         let sent = sendEnvelope(.init(kind: .playbackCommand, sender: localPeerInfo(), playback: nil, command: command, credentials: nil, targetDeviceID: targetDeviceID))
+
         if sent, let targetDeviceID {
-            pendingTargetedCommands.removeValue(forKey: targetDeviceID)
+            if needsAcknowledgment {
+                schedulePendingCommandRetry(for: targetDeviceID)
+            } else {
+                clearPendingCommand(for: targetDeviceID)
+            }
         } else if let targetDeviceID {
-            retryPendingCommand(for: targetDeviceID)
+            schedulePendingCommandRetry(for: targetDeviceID)
         }
         return sent
     }
@@ -1080,7 +1092,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
                 selectedPlaybackTargetID = playback.id
             }
             if playback.song != nil {
-                pendingTargetedCommands.removeValue(forKey: playback.id)
+                acknowledgePendingCommandIfSatisfied(by: playback)
             }
 
         case .playbackSession:
@@ -1196,24 +1208,75 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         isApplyingRemoteCommand = previousValue
     }
 
-    private func flushPendingCommand(for deviceID: String) {
-        guard let command = pendingTargetedCommands[deviceID] else { return }
-        let sent = sendEnvelope(.init(kind: .playbackCommand, sender: localPeerInfo(), playback: nil, command: command, credentials: nil, targetDeviceID: deviceID))
-        if sent {
-            pendingTargetedCommands.removeValue(forKey: deviceID)
-        } else {
-            retryPendingCommand(for: deviceID)
+    private func commandNeedsPlaybackAcknowledgment(_ command: PlaybackCommand) -> Bool {
+        switch command.action {
+        case .play, .pause, .setVolume:
+            return true
+        case .toggle, .next, .previous, .seek, .playQueue, .enqueue, .syncQueue, .stop:
+            return false
         }
     }
 
-    private func retryPendingCommand(for deviceID: String) {
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
+    private func pendingCommand(_ command: PlaybackCommand, isAcknowledgedBy playback: PlaybackSnapshot) -> Bool {
+        switch command.action {
+        case .play:
+            return playback.isPlaying
+        case .pause:
+            return !playback.isPlaying
+        case .setVolume:
+            guard let expectedVolume = command.volume, let actualVolume = playback.volume else { return false }
+            return abs(expectedVolume - actualVolume) < 0.02
+        case .toggle, .next, .previous, .seek, .playQueue, .enqueue, .syncQueue, .stop:
+            return false
+        }
+    }
+
+    private func acknowledgePendingCommandIfSatisfied(by playback: PlaybackSnapshot) {
+        guard let command = pendingTargetedCommands[playback.id],
+              commandNeedsPlaybackAcknowledgment(command),
+              pendingCommand(command, isAcknowledgedBy: playback) else {
+            return
+        }
+
+        clearPendingCommand(for: playback.id)
+    }
+
+    private func clearPendingCommand(for deviceID: String) {
+        pendingTargetedCommands.removeValue(forKey: deviceID)
+        pendingTargetedCommandDeadlines.removeValue(forKey: deviceID)
+        pendingTargetedCommandRetryAttempts.removeValue(forKey: deviceID)
+        pendingTargetedCommandRetryTasks.removeValue(forKey: deviceID)?.cancel()
+    }
+
+    private func flushPendingCommand(for deviceID: String) {
+        guard let command = pendingTargetedCommands[deviceID] else { return }
+
+        if let deadline = pendingTargetedCommandDeadlines[deviceID], Date() > deadline {
+            print("⚠️ Dropping unacknowledged sync command \(command.action.rawValue) for \(deviceID)")
+            clearPendingCommand(for: deviceID)
+            return
+        }
+
+        let sent = sendEnvelope(.init(kind: .playbackCommand, sender: localPeerInfo(), playback: nil, command: command, credentials: nil, targetDeviceID: deviceID))
+        if sent, !commandNeedsPlaybackAcknowledgment(command) {
+            clearPendingCommand(for: deviceID)
+        } else {
+            schedulePendingCommandRetry(for: deviceID)
+        }
+    }
+
+    private func schedulePendingCommandRetry(for deviceID: String) {
+        guard pendingTargetedCommandRetryTasks[deviceID] == nil else { return }
+
+        let attempt = pendingTargetedCommandRetryAttempts[deviceID, default: 0]
+        let delay = min(pow(2.0, Double(attempt)), 8)
+        pendingTargetedCommandRetryAttempts[deviceID] = attempt + 1
+
+        pendingTargetedCommandRetryTasks[deviceID] = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            self.pendingTargetedCommandRetryTasks[deviceID] = nil
             guard self.pendingTargetedCommands[deviceID] != nil else { return }
             self.flushPendingCommand(for: deviceID)
-
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            self.pendingTargetedCommands.removeValue(forKey: deviceID)
         }
     }
 
@@ -1251,6 +1314,8 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         multipeerRestartTask = nil
         inviteRetryTasksByPeerDisplayName.values.forEach { $0.cancel() }
         inviteRetryTasksByPeerDisplayName.removeAll()
+        pendingTargetedCommandRetryTasks.values.forEach { $0.cancel() }
+        pendingTargetedCommandRetryTasks.removeAll()
         inviteAttemptsByPeerDisplayName.removeAll()
         discoveredMultipeerPeers.removeAll()
         multipeerRestartAttempt = 0
@@ -1328,7 +1393,6 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         if let deviceID = deviceIDsByPeerDisplayName.removeValue(forKey: peerID.displayName) {
             multipeerDeviceIDs.remove(deviceID)
             peerInfos.removeValue(forKey: deviceID)
-            pendingTargetedCommands.removeValue(forKey: deviceID)
             if remotePlayback?.id == deviceID {
                 remotePlayback = nil
             }
