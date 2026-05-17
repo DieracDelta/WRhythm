@@ -8,7 +8,21 @@
 import Foundation
 import AVFoundation
 import Combine
+
+#if os(macOS)
+import ApplicationServices
+import CoreGraphics
+#endif
+
+#if os(iOS) || os(watchOS)
 import MediaPlayer
+#endif
+
+#if canImport(UIKit)
+import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 
 class AudioPlayer: NSObject, ObservableObject {
     static let shared = AudioPlayer()
@@ -27,6 +41,9 @@ class AudioPlayer: NSObject, ObservableObject {
     @Published var duration: TimeInterval = 0
     @Published var queue: [Song] = []
     @Published var currentIndex: Int = 0
+    @Published var playlistGenQueue: [Song] = []
+    @Published var playlistGenSourceTitle: String?
+    @Published var playlistGenSourceArtist: String?
     @Published var isShuffled = false
     @Published var repeatMode: RepeatMode = .off
     @Published var volume: Double = 1.0 {
@@ -47,28 +64,35 @@ class AudioPlayer: NSObject, ObservableObject {
     private var originalQueue: [Song] = []
     private var originalIndex: Int = 0
     private var baseTimeOffset: TimeInterval = 0
+#if os(macOS)
+    private var mediaKeyMonitors: [Any] = []
+    private var mediaKeyEventTap: CFMachPort?
+    private var mediaKeyRunLoopSource: CFRunLoopSource?
+#endif
 
     override init() {
         self.player = AVPlayer()
         super.init()
 
-        setupAudioSession()
         setupRemoteCommands()
         addPeriodicTimeObserver()
     }
 
-    private func setupAudioSession() {
+    private func prepareAudioSessionForPlayback() {
+#if os(iOS) || os(watchOS)
         do {
             let audioSession = AVAudioSession.sharedInstance()
             try audioSession.setCategory(.playback, mode: .default, options: [])
             try audioSession.setActive(true)
-            print("✅ Audio session configured for background playback")
+            print("✅ Audio session configured for playback")
         } catch {
             print("❌ Failed to set up audio session: \(error)")
         }
+#endif
     }
 
     private func setupRemoteCommands() {
+#if os(iOS) || os(watchOS)
         let commandCenter = MPRemoteCommandCenter.shared()
 
         commandCenter.playCommand.addTarget { [weak self] _ in
@@ -98,22 +122,162 @@ class AudioPlayer: NSObject, ObservableObject {
             self?.seek(to: event.positionTime)
             return .success
         }
+#elseif os(macOS)
+        setupMacMediaKeyCommands()
+#endif
     }
 
+#if os(macOS)
+    private func setupMacMediaKeyCommands() {
+        if setupMacMediaKeyEventTap() {
+            return
+        }
+
+        let localMonitor = NSEvent.addLocalMonitorForEvents(matching: .systemDefined) { [weak self] event in
+            guard self?.handleMacMediaKeyEvent(event) == true else {
+                return event
+            }
+            return nil
+        }
+
+        let globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .systemDefined) { [weak self] event in
+            _ = self?.handleMacMediaKeyEvent(event)
+        }
+
+        mediaKeyMonitors = [localMonitor, globalMonitor].compactMap { $0 }
+    }
+
+    private func setupMacMediaKeyEventTap() -> Bool {
+        let accessibilityOptions = [
+            kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true
+        ] as CFDictionary
+        guard AXIsProcessTrustedWithOptions(accessibilityOptions) else {
+            print("⚠️ WRhythm needs macOS Accessibility permission to fully claim media keys before Apple Music.")
+            return false
+        }
+
+        let systemDefinedRawValue = UInt64(Self.systemDefinedEventType.rawValue)
+        let eventMask = CGEventMask(1 << systemDefinedRawValue)
+        let userInfo = Unmanaged.passUnretained(self).toOpaque()
+
+        guard let eventTap = CGEvent.tapCreate(
+            tap: .cgSessionEventTap,
+            place: .headInsertEventTap,
+            options: .defaultTap,
+            eventsOfInterest: eventMask,
+            callback: AudioPlayer.macMediaKeyEventTapCallback,
+            userInfo: userInfo
+        ) else {
+            print("⚠️ Could not install macOS media key event tap; media keys may still reach the system music app.")
+            return false
+        }
+
+        guard let runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0) else {
+            print("⚠️ Could not create macOS media key run loop source.")
+            return false
+        }
+
+        mediaKeyEventTap = eventTap
+        mediaKeyRunLoopSource = runLoopSource
+        CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
+        CGEvent.tapEnable(tap: eventTap, enable: true)
+        return true
+    }
+
+    private static let systemDefinedEventType = CGEventType(rawValue: UInt32(NSEvent.EventType.systemDefined.rawValue))!
+
+    private static let macMediaKeyEventTapCallback: CGEventTapCallBack = { _, type, event, userInfo in
+        guard let userInfo else {
+            return Unmanaged.passUnretained(event)
+        }
+
+        let player = Unmanaged<AudioPlayer>.fromOpaque(userInfo).takeUnretainedValue()
+
+        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            if let mediaKeyEventTap = player.mediaKeyEventTap {
+                CGEvent.tapEnable(tap: mediaKeyEventTap, enable: true)
+            }
+            return Unmanaged.passUnretained(event)
+        }
+
+        guard type == systemDefinedEventType,
+              let nsEvent = NSEvent(cgEvent: event),
+              player.handleMacMediaKeyEvent(nsEvent) else {
+            return Unmanaged.passUnretained(event)
+        }
+
+        return nil
+    }
+
+    private func handleMacMediaKeyEvent(_ event: NSEvent) -> Bool {
+        guard event.subtype.rawValue == 8 else { return false }
+
+        let keyCode = Int((event.data1 & 0xFFFF0000) >> 16)
+        let keyState = Int((event.data1 & 0x0000FF00) >> 8)
+        let isKeyDown = (keyState & 0xFF) == 0xA
+        guard isKeyDown else { return false }
+
+        switch keyCode {
+        case 16:
+            DispatchQueue.main.async { [weak self] in
+                self?.togglePlayPause()
+            }
+        case 17:
+            DispatchQueue.main.async { [weak self] in
+                self?.next()
+            }
+        case 18:
+            DispatchQueue.main.async { [weak self] in
+                self?.previous()
+            }
+        default:
+            return false
+        }
+
+        return true
+    }
+#endif
+
     func playSong(_ song: Song) {
+        clearPlaylistGen()
+        if DeviceSyncManager.shared.routePlaybackRequestToConnectedDevice([song], startingAt: 0) {
+            return
+        }
         self.queue = [song]
         self.currentIndex = 0
         startPlayback(song)
+        DeviceSyncManager.shared.broadcastLocalQueueAsShared()
     }
 
-    func playQueue(_ songs: [Song], startingAt index: Int = 0) {
+    func playQueue(_ songs: [Song], startingAt index: Int = 0, clearGeneratedPlaylist: Bool = true) {
         guard !songs.isEmpty, index < songs.count else { return }
+        if clearGeneratedPlaylist {
+            clearPlaylistGen()
+        }
+        if DeviceSyncManager.shared.routePlaybackRequestToConnectedDevice(songs, startingAt: index) {
+            return
+        }
 
         self.isShuffled = false
         self.originalQueue = []
         self.queue = songs
         self.currentIndex = index
         startPlayback(songs[index])
+        DeviceSyncManager.shared.broadcastLocalQueueAsShared()
+    }
+
+    func playGeneratedPlaylist(sourceSong: Song, songs: [Song], startingAt index: Int = 0) {
+        guard !songs.isEmpty else { return }
+        playlistGenSourceTitle = sourceSong.title
+        playlistGenSourceArtist = sourceSong.artist
+        playlistGenQueue = songs
+        playQueue(songs, startingAt: index, clearGeneratedPlaylist: false)
+    }
+
+    func clearPlaylistGen() {
+        playlistGenQueue = []
+        playlistGenSourceTitle = nil
+        playlistGenSourceArtist = nil
     }
 
     func playQueueShuffled(_ songs: [Song]) {
@@ -122,7 +286,12 @@ class AudioPlayer: NSObject, ObservableObject {
             return
         }
 
+        clearPlaylistGen()
         print("🔀 playQueueShuffled called with \(songs.count) songs")
+        if DeviceSyncManager.shared.routePlaybackRequestToConnectedDevice(songs, startingAt: 0, shuffled: true) {
+            return
+        }
+
         self.isShuffled = true
         self.originalQueue = songs
         self.originalIndex = 0
@@ -135,6 +304,7 @@ class AudioPlayer: NSObject, ObservableObject {
         self.currentIndex = 0
         print("🔀 Queue set to \(self.queue.count) songs, currentIndex=\(self.currentIndex)")
         startPlayback(shuffled[0])
+        DeviceSyncManager.shared.broadcastLocalQueueAsShared()
     }
 
     func toggleRepeat() {
@@ -181,13 +351,41 @@ class AudioPlayer: NSObject, ObservableObject {
         }
     }
 
-    // Check if a format is natively supported by watchOS
-    private func isFormatSupportedOnWatchOS(_ contentType: String?, _ suffix: String?) -> Bool {
-        // watchOS natively supports: MP3, AAC, ALAC, WAV, AIFF
-        // watchOS does NOT support: FLAC, Ogg Vorbis, Opus, WMA, etc.
+    func enqueue(_ songs: [Song]) {
+        guard !songs.isEmpty else { return }
+        if DeviceSyncManager.shared.routeEnqueueRequestToConnectedDevice(songs) {
+            return
+        }
 
+        queue.append(contentsOf: songs)
+        if currentSong == nil, let firstSong = queue.first {
+            currentIndex = 0
+            startPlayback(firstSong)
+        }
+        DeviceSyncManager.shared.broadcastLocalQueueAsShared()
+    }
+
+    func mirrorQueueWithoutPlayback(_ songs: [Song], currentIndex index: Int, currentTime: TimeInterval = 0) {
+        guard !songs.isEmpty else { return }
+        let safeIndex = min(max(index, 0), songs.count - 1)
+        player.pause()
+        player.replaceCurrentItem(with: nil)
+        queue = songs
+        currentIndex = safeIndex
+        currentSong = songs[safeIndex]
+        self.currentTime = currentTime
+        duration = TimeInterval(songs[safeIndex].duration ?? 0)
+        isPlaying = false
+    }
+
+    private func isFormatSupportedNatively(_ contentType: String?, _ suffix: String?) -> Bool {
+#if os(watchOS)
         let supportedTypes = ["audio/mpeg", "audio/mp3", "audio/aac", "audio/mp4", "audio/x-m4a", "audio/wav", "audio/x-wav", "audio/aiff", "audio/x-aiff"]
         let supportedSuffixes = ["mp3", "aac", "m4a", "mp4", "wav", "aiff", "aif"]
+#else
+        let supportedTypes = ["audio/mpeg", "audio/mp3", "audio/aac", "audio/mp4", "audio/x-m4a", "audio/wav", "audio/x-wav", "audio/aiff", "audio/x-aiff", "audio/flac", "audio/x-flac", "audio/alac", "audio/x-alac"]
+        let supportedSuffixes = ["mp3", "aac", "m4a", "mp4", "wav", "aiff", "aif", "flac", "alac"]
+#endif
 
         if let contentType = contentType?.lowercased() {
             if supportedTypes.contains(where: { contentType.contains($0) }) {
@@ -234,13 +432,15 @@ class AudioPlayer: NSObject, ObservableObject {
             // Local file seeking is handled by AVPlayer seek, not URL offset
             self.baseTimeOffset = 0
         } else {
-            // Check if we need transcoding for unsupported formats
-            let needsTranscoding = !isFormatSupportedOnWatchOS(song.contentType, song.suffix)
+            let streamingQuality = StreamingQuality.current
+            let isNativelySupported = isFormatSupportedNatively(song.contentType, song.suffix)
+            let shouldTranscode = streamingQuality != .original || !isNativelySupported
 
-            if needsTranscoding {
-                // Request transcoding to MP3 for unsupported formats
-                print("⚠️ Format '\(song.contentType ?? song.suffix ?? "unknown")' not natively supported - requesting MP3 transcode")
-                if let streamURL = NavidromeAPI.shared.getStreamURL(id: song.id, format: "mp3", maxBitRate: 128, timeOffset: Int(startTime)) {
+            if shouldTranscode {
+                let bitRate = streamingQuality.maxBitRate ?? StreamingQuality.max.rawValue
+                let reason = isNativelySupported ? streamingQuality.description : "Unsupported format"
+                print("⚠️ \(reason) - requesting MP3 transcode at \(bitRate) kbps")
+                if let streamURL = NavidromeAPI.shared.getStreamURL(id: song.id, format: "mp3", maxBitRate: bitRate, timeOffset: Int(startTime)) {
                     playURL = streamURL
                     print("🎵 Streaming transcoded: \(streamURL.absoluteString)")
                 } else {
@@ -248,8 +448,7 @@ class AudioPlayer: NSObject, ObservableObject {
                     return
                 }
             } else {
-                // Native format - stream as-is WITHOUT format parameter
-                print("✅ Format '\(song.contentType ?? song.suffix ?? "unknown")' natively supported")
+                print("✅ Streaming original format '\(song.contentType ?? song.suffix ?? "unknown")'")
                 if let streamURL = NavidromeAPI.shared.getStreamURL(id: song.id, timeOffset: Int(startTime)) {
                     playURL = streamURL
                     print("🎵 Streaming from: \(streamURL.absoluteString)")
@@ -271,13 +470,7 @@ class AudioPlayer: NSObject, ObservableObject {
         // Clear all old subscriptions to prevent duplicate notifications
         cancellables.removeAll()
 
-        // Re-activate audio session before playback
-        do {
-            try AVAudioSession.sharedInstance().setActive(true)
-            print("✅ Audio session re-activated for playback")
-        } catch {
-            print("⚠️ Failed to re-activate audio session: \(error)")
-        }
+        prepareAudioSessionForPlayback()
 
         // Follow Submariner's approach: Always use AVURLAsset with options
         // This works reliably on both macOS and watchOS
@@ -323,6 +516,7 @@ class AudioPlayer: NSObject, ObservableObject {
     }
 
     func play() {
+        prepareAudioSessionForPlayback()
         player.play()
         isPlaying = true
     }
@@ -341,6 +535,7 @@ class AudioPlayer: NSObject, ObservableObject {
         currentIndex = 0
         currentTime = 0
         duration = 0
+        clearPlaylistGen()
         print("⏹️ Playback stopped and queue cleared")
     }
 
@@ -467,7 +662,7 @@ class AudioPlayer: NSObject, ObservableObject {
                                     print("❌ Error log events: \(errorLog.events.count)")
                                     for errorEvent in errorLog.events {
                                         print("❌ Error status code: \(errorEvent.errorStatusCode)")
-                                        print("❌ Error domain: \(errorEvent.errorDomain ?? "nil")")
+                                        print("❌ Error domain: \(errorEvent.errorDomain)")
                                         print("❌ Error comment: \(errorEvent.errorComment ?? "nil")")
                                     }
                                 }
@@ -534,6 +729,7 @@ class AudioPlayer: NSObject, ObservableObject {
     }
 
     private func updateNowPlayingInfo() {
+#if os(iOS) || os(watchOS)
         guard let song = currentSong else { return }
 
         var nowPlayingInfo = [String: Any]()
@@ -553,10 +749,10 @@ class AudioPlayer: NSObject, ObservableObject {
             Task {
                 do {
                     let (data, _) = try await URLSession.shared.data(from: coverURL)
-                    if let image = UIImage(data: data) {
+                    if let image = PlatformImage(data: data) {
                         let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
                         await MainActor.run {
-                            var updatedInfo = nowPlayingInfo
+                            var updatedInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
                             updatedInfo[MPMediaItemPropertyArtwork] = artwork
                             MPNowPlayingInfoCenter.default().nowPlayingInfo = updatedInfo
                         }
@@ -568,6 +764,7 @@ class AudioPlayer: NSObject, ObservableObject {
         }
 
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
+#endif
     }
 
     deinit {

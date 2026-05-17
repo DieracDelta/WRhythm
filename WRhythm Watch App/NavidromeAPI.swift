@@ -77,6 +77,10 @@ class NavidromeAPI: ObservableObject {
     private let clientName = "WRhythm"
     private let apiVersion = "1.16.1"
 
+    var hasCredentials: Bool {
+        !baseURL.isEmpty && !username.isEmpty && !password.isEmpty
+    }
+
     init() {
         // Load saved credentials
         self.baseURL = UserDefaults.standard.string(forKey: "navidrome_url") ?? ""
@@ -101,6 +105,7 @@ class NavidromeAPI: ObservableObject {
         UserDefaults.standard.set(self.password, forKey: "navidrome_password")
 
         self.isAuthenticated = true
+        DeviceSyncManager.shared.credentialsDidChange()
     }
 
     func validateAndConfigure(baseURL: String, username: String, password: String) async throws -> Bool {
@@ -125,6 +130,7 @@ class NavidromeAPI: ObservableObject {
                 UserDefaults.standard.set(self.username, forKey: "navidrome_username")
                 UserDefaults.standard.set(self.password, forKey: "navidrome_password")
                 self.isAuthenticated = true
+                DeviceSyncManager.shared.credentialsDidChange()
 
                 // Check transcoding support after successful login
                 Task {
@@ -176,10 +182,32 @@ class NavidromeAPI: ObservableObject {
         self.username = ""
         self.password = ""
         self.isAuthenticated = false
+        DeviceSyncManager.shared.credentialsDidChange()
 
         // NOTE: radioDownloadCount is preserved (app-level setting)
 
         print("✅ Logout complete")
+    }
+
+    func exportCredentialsForSync() -> SyncedCredentials? {
+        guard hasCredentials else { return nil }
+        return SyncedCredentials(baseURL: baseURL, username: username, password: password)
+    }
+
+    @discardableResult
+    func importCredentialsIfMissing(_ credentials: SyncedCredentials) -> Bool {
+        guard !hasCredentials, !isAuthenticated else {
+            print("🔐 Skipped credential import because this device already has credentials")
+            return false
+        }
+
+        configure(
+            baseURL: credentials.baseURL,
+            username: credentials.username,
+            password: credentials.password
+        )
+        print("🔐 Imported credentials from a trusted nearby WRhythm device")
+        return true
     }
 
     // MARK: - Transcoding Support Check
@@ -552,7 +580,7 @@ class NavidromeAPI: ObservableObject {
         return buildURL(endpoint: "getCoverArt", additionalParams: ["id": id, "size": String(size)])
     }
 
-    func getStreamURL(id: String, format: String? = nil, maxBitRate: Int = 128, timeOffset: Int = 0) -> URL? {
+    func getStreamURL(id: String, format: String? = nil, maxBitRate: Int? = nil, timeOffset: Int = 0) -> URL? {
         // Build stream URL - use .view suffix like Submariner for compatibility
         let salt = UUID().uuidString.replacingOccurrences(of: "-", with: "")
         let token = Insecure.MD5.hash(data: Data((password + salt).utf8))
@@ -567,9 +595,12 @@ class NavidromeAPI: ObservableObject {
             URLQueryItem(name: "s", value: salt),
             URLQueryItem(name: "c", value: clientName),
             URLQueryItem(name: "v", value: apiVersion),
-            URLQueryItem(name: "id", value: id),
-            URLQueryItem(name: "maxBitRate", value: String(maxBitRate))
+            URLQueryItem(name: "id", value: id)
         ]
+
+        if let maxBitRate {
+            queryItems.append(URLQueryItem(name: "maxBitRate", value: String(maxBitRate)))
+        }
 
         // Only add format if explicitly requested (for transcoding)
         if let format = format {
@@ -584,9 +615,9 @@ class NavidromeAPI: ObservableObject {
 
         let url = components?.url
         if let format = format {
-            print("🔊 Stream URL built (format: \(format), maxBitRate: \(maxBitRate)): \(url?.absoluteString ?? "nil")")
+            print("🔊 Stream URL built (format: \(format), maxBitRate: \(maxBitRate.map(String.init) ?? "original")): \(url?.absoluteString ?? "nil")")
         } else {
-            print("🔊 Stream URL built (maxBitRate: \(maxBitRate)): \(url?.absoluteString ?? "nil")")
+            print("🔊 Stream URL built (maxBitRate: \(maxBitRate.map(String.init) ?? "original")): \(url?.absoluteString ?? "nil")")
         }
         return url
     }

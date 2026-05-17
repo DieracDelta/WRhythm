@@ -53,6 +53,7 @@
 		26632C3B2EFB21FF003C8ABA /* WRhythm Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "WRhythm Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		26632C4A2EFB2200003C8ABA /* WRhythm Watch AppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "WRhythm Watch AppTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		26632C542EFB2200003C8ABA /* WRhythm Watch AppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "WRhythm Watch AppUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		F00000012EFC000000000001 /* WRhythm macOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = "WRhythm macOS.app"; path = WRhythm.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -95,6 +96,20 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F00000052EFC000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F000000C2EFC000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -113,6 +128,7 @@
 			children = (
 				26632C352EFB21FF003C8ABA /* WRhythm.app */,
 				26632C3B2EFB21FF003C8ABA /* WRhythm Watch App.app */,
+				F00000012EFC000000000001 /* WRhythm macOS.app */,
 				26632C4A2EFB2200003C8ABA /* WRhythm Watch AppTests.xctest */,
 				26632C542EFB2200003C8ABA /* WRhythm Watch AppUITests.xctest */,
 			);
@@ -126,6 +142,8 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 26632C622EFB2200003C8ABA /* Build configuration list for PBXNativeTarget "WRhythm" */;
 			buildPhases = (
+				F000000B2EFC000000000001 /* Sources */,
+				F000000C2EFC000000000001 /* Frameworks */,
 				26632C332EFB21FF003C8ABA /* Resources */,
 				26632C612EFB2200003C8ABA /* Embed Watch Content */,
 			);
@@ -134,12 +152,15 @@
 			dependencies = (
 				26632C3E2EFB21FF003C8ABA /* PBXTargetDependency */,
 			);
+			fileSystemSynchronizedGroups = (
+				26632C3F2EFB21FF003C8ABA /* WRhythm Watch App */,
+			);
 			name = WRhythm;
 			packageProductDependencies = (
 			);
 			productName = WRhythm;
 			productReference = 26632C352EFB21FF003C8ABA /* WRhythm.app */;
-			productType = "com.apple.product-type.application.watchapp2-container";
+			productType = "com.apple.product-type.application";
 		};
 		26632C3A2EFB21FF003C8ABA /* WRhythm Watch App */ = {
 			isa = PBXNativeTarget;
@@ -209,6 +230,28 @@
 			productReference = 26632C542EFB2200003C8ABA /* WRhythm Watch AppUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		F00000072EFC000000000001 /* WRhythm macOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F000000A2EFC000000000001 /* Build configuration list for PBXNativeTarget "WRhythm macOS" */;
+			buildPhases = (
+				F00000042EFC000000000001 /* Sources */,
+				F00000052EFC000000000001 /* Frameworks */,
+				F00000062EFC000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				26632C3F2EFB21FF003C8ABA /* WRhythm Watch App */,
+			);
+			name = "WRhythm macOS";
+			packageProductDependencies = (
+			);
+			productName = "WRhythm macOS";
+			productReference = F00000012EFC000000000001 /* WRhythm macOS.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -233,6 +276,9 @@
 						CreatedOnToolsVersion = 26.2;
 						TestTargetID = 26632C3A2EFB21FF003C8ABA;
 					};
+					F00000072EFC000000000001 = {
+						CreatedOnToolsVersion = 26.2;
+					};
 				};
 			};
 			buildConfigurationList = 26632C322EFB21FF003C8ABA /* Build configuration list for PBXProject "WRhythm" */;
@@ -251,6 +297,7 @@
 			targets = (
 				26632C342EFB21FF003C8ABA /* WRhythm */,
 				26632C3A2EFB21FF003C8ABA /* WRhythm Watch App */,
+				F00000072EFC000000000001 /* WRhythm macOS */,
 				26632C492EFB2200003C8ABA /* WRhythm Watch AppTests */,
 				26632C532EFB2200003C8ABA /* WRhythm Watch AppUITests */,
 			);
@@ -286,6 +333,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F00000062EFC000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -304,6 +358,20 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		26632C502EFB2200003C8ABA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F00000042EFC000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F000000B2EFC000000000001 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -459,7 +527,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = WRhythm;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
-				INFOPLIST_KEY_WKWatchOnly = YES;
+				INFOPLIST_KEY_WKWatchOnly = NO;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -494,7 +562,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = WRhythm;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
-				INFOPLIST_KEY_WKWatchOnly = YES;
+				INFOPLIST_KEY_WKWatchOnly = NO;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -519,34 +587,60 @@
 		26632C632EFB2200003C8ABA /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 96HMU8KS93;
+				ENABLE_PREVIEWS = YES;
+				INFOPLIST_FILE = "WRhythm-iOS-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = WRhythm;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.restivollc.wrhythm;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
 		26632C642EFB2200003C8ABA /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 96HMU8KS93;
+				ENABLE_PREVIEWS = YES;
+				INFOPLIST_FILE = "WRhythm-iOS-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = WRhythm;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.restivollc.wrhythm;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
 				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;
@@ -639,6 +733,65 @@
 			};
 			name = Release;
 		};
+		F00000082EFC000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 96HMU8KS93;
+				ENABLE_PREVIEWS = YES;
+				INFOPLIST_FILE = "WRhythm-macOS-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = WRhythm;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.restivollc.wrhythm.macos;
+				PRODUCT_NAME = WRhythm;
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		F00000092EFC000000000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 96HMU8KS93;
+				ENABLE_PREVIEWS = YES;
+				INFOPLIST_FILE = "WRhythm-macOS-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = WRhythm;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.restivollc.wrhythm.macos;
+				PRODUCT_NAME = WRhythm;
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -683,6 +836,15 @@
 			buildConfigurations = (
 				26632C692EFB2200003C8ABA /* Debug */,
 				26632C6A2EFB2200003C8ABA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F000000A2EFC000000000001 /* Build configuration list for PBXNativeTarget "WRhythm macOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F00000082EFC000000000001 /* Debug */,
+				F00000092EFC000000000001 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

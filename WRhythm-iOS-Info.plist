@@ -18,16 +18,20 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
-	<key>WKCompanionAppBundleIdentifier</key>
-	<string>com.restivollc.wrhythm</string>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>audio</string>
-	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_wrhythm-sync._tcp</string>
+	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>WRhythm uses your local network to find nearby WRhythm devices for optional playback and credential sync.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 </dict>
 </plist>

@@ -39,6 +39,51 @@ enum AudioQuality: Int, CaseIterable, Codable {
     }
 }
 
+enum StreamingQuality: Int, CaseIterable, Codable {
+    case original = 0
+    case low = 64
+    case medium = 128
+    case high = 192
+    case max = 320
+
+    static var platformDefault: StreamingQuality {
+#if os(watchOS)
+        return .medium
+#else
+        return .original
+#endif
+    }
+
+    static var current: StreamingQuality {
+        let savedValue = UserDefaults.standard.object(forKey: "streamingQuality") as? Int
+        return savedValue.flatMap { StreamingQuality(rawValue: $0) } ?? platformDefault
+    }
+
+    var label: String {
+        switch self {
+        case .original: return "Original"
+        case .low: return "Low"
+        case .medium: return "Medium"
+        case .high: return "High"
+        case .max: return "Max"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .original: return "Original stream - FLAC/lossless when the server and device support it"
+        case .low: return "64 kbps MP3"
+        case .medium: return "128 kbps MP3"
+        case .high: return "192 kbps MP3"
+        case .max: return "320 kbps MP3"
+        }
+    }
+
+    var maxBitRate: Int? {
+        self == .original ? nil : rawValue
+    }
+}
+
 // MARK: - Migration State (for crash recovery during codec change)
 
 struct MigrationState: Codable {
@@ -158,50 +203,58 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         return URLSession(configuration: config, delegate: self, delegateQueue: downloadQueue_background)
     }()
 
-    private var documentsDirectory: URL {
-        fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    private var storageDirectory: URL {
+        #if os(macOS)
+        let url = fileManager
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("WRhythm", isDirectory: true)
+        try? fileManager.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+        #else
+        return fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        #endif
     }
 
     private var downloadsDirectory: URL {
-        let url = documentsDirectory.appendingPathComponent("Downloads", isDirectory: true)
+        let url = storageDirectory.appendingPathComponent("Downloads", isDirectory: true)
         try? fileManager.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }
 
     private var metadataURL: URL {
-        documentsDirectory.appendingPathComponent("downloads.json")
+        storageDirectory.appendingPathComponent("downloads.json")
     }
 
     private var playlistsMetadataURL: URL {
-        documentsDirectory.appendingPathComponent("playlists.json")
+        storageDirectory.appendingPathComponent("playlists.json")
     }
 
     private var radioPlaylistsURL: URL {
-        documentsDirectory.appendingPathComponent("radio_playlists.json")
+        storageDirectory.appendingPathComponent("radio_playlists.json")
     }
 
     private var starredSongsURL: URL {
-        documentsDirectory.appendingPathComponent("starred_songs.json")
+        storageDirectory.appendingPathComponent("starred_songs.json")
     }
 
     private var pendingStarChangesURL: URL {
-        documentsDirectory.appendingPathComponent("pending_star_changes.json")
+        storageDirectory.appendingPathComponent("pending_star_changes.json")
     }
 
     private var songMetadataURL: URL {
-        documentsDirectory.appendingPathComponent("song_metadata.json")
+        storageDirectory.appendingPathComponent("song_metadata.json")
     }
 
     private var pendingUnstarChangesURL: URL {
-        documentsDirectory.appendingPathComponent("pending_unstar_changes.json")
+        storageDirectory.appendingPathComponent("pending_unstar_changes.json")
     }
 
     private var incompleteDownloadsURL: URL {
-        documentsDirectory.appendingPathComponent("incomplete_downloads.json")
+        storageDirectory.appendingPathComponent("incomplete_downloads.json")
     }
 
     private var migrationStateURL: URL {
-        documentsDirectory.appendingPathComponent("migration_state.json")
+        storageDirectory.appendingPathComponent("migration_state.json")
     }
 
     override init() {
@@ -217,7 +270,7 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
 
         // Log when app becomes active to see download state
         NotificationCenter.default.addObserver(
-            forName: NSNotification.Name.NSExtensionHostDidBecomeActive,
+            forName: NSNotification.Name("NSExtensionHostDidBecomeActive"),
             object: nil,
             queue: .main
         ) { [weak self] _ in

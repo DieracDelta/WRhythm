@@ -108,7 +108,7 @@ struct RadioOptionsView: View {
             .padding()
         }
         .navigationTitle("Playlist Gen")
-        .navigationBarTitleDisplayMode(.inline)
+        .platformNavigationBarTitleDisplayModeInline()
         .onAppear {
             selectedCount = radioDownloadCount
         }
@@ -150,7 +150,7 @@ struct RadioOptionsView: View {
                         queue.append(contentsOf: filteredSongs)
 
                         print("✅ Radio queue ready: 1 source song + \(filteredSongs.count) similar songs = \(queue.count) total")
-                        AudioPlayer.shared.playQueue(queue, startingAt: 0)
+                        AudioPlayer.shared.playGeneratedPlaylist(sourceSong: sourceSong, songs: queue)
                         print("📻 Queue after playQueue: \(AudioPlayer.shared.queue.count) songs")
                     }
                     dismiss()

@@ -46,7 +46,7 @@ struct ArtistsView: View {
             .navigationTitle(offlineMode ? "Artists (\(downloadManager.getDownloadedArtists().count))" : "Artists (\(filteredDisplayedArtists.count))")
             .toolbar {
                 if !offlineMode {
-                    ToolbarItem(placement: .topBarTrailing) {
+                    ToolbarItem(placement: .platformTopBarTrailing) {
                         if !searchText.isEmpty {
                             Button(action: {
                                 searchText = ""
@@ -66,10 +66,13 @@ struct ArtistsView: View {
                 }
             }
             .sheet(isPresented: $showingSearchSheet) {
-                NavigationView {
+                PlatformSearchSheet("Search Artists", onCancel: {
+                    showingSearchSheet = false
+                }) {
                     VStack(spacing: 16) {
                         TextField("Search artists", text: $searchText)
-                            .padding()
+                            .platformSearchTextFieldStyle()
+                            .frame(maxWidth: .infinity)
 
                         Button("Search") {
                             showingSearchSheet = false
@@ -79,14 +82,6 @@ struct ArtistsView: View {
                         .disabled(searchText.isEmpty)
 
                         Spacer()
-                    }
-                    .navigationTitle("Search Artists")
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Cancel") {
-                                showingSearchSheet = false
-                            }
-                        }
                     }
                 }
             }
@@ -159,7 +154,6 @@ struct ArtistsView: View {
                                 }
                                 .frame(width: 40, height: 40)
                                 .cornerRadius(4)
-                                .id(coverURL)
                             }
 
                             VStack(alignment: .leading) {
@@ -180,6 +174,9 @@ struct ArtistsView: View {
                                 .font(.caption2)
                                 .foregroundColor(.green)
                         }
+                    }
+                    .contextMenu {
+                        ArtistContextMenuItems(artistId: "offline-\(artist.name)", artistName: artist.name)
                     }
                 }
             }
@@ -233,7 +230,6 @@ struct ArtistsView: View {
                                 }
                                 .frame(width: 40, height: 40)
                                 .cornerRadius(4)
-                                .id(coverURL)
                             }
 
                             VStack(alignment: .leading) {
@@ -247,6 +243,9 @@ struct ArtistsView: View {
                                 }
                             }
                         }
+                    }
+                    .contextMenu {
+                        ArtistContextMenuItems(artistId: artist.id, artistName: artist.name)
                     }
                     .onAppear {
                         if artist.id == displayedArtists.last?.id {

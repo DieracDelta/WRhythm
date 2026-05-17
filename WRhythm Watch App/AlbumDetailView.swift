@@ -12,6 +12,7 @@ struct SongRowView: View {
     let onTap: () -> Void
     @ObservedObject var player = AudioPlayer.shared
     @ObservedObject var downloadManager = DownloadManager.shared
+    @ObservedObject var deviceSyncManager = DeviceSyncManager.shared
 
     var body: some View {
         Button(action: onTap) {
@@ -73,6 +74,14 @@ struct SongRowView: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
+            if deviceSyncManager.syncModeEnabled && deviceSyncManager.hasActiveRemotePlayback {
+                Button(action: {
+                    deviceSyncManager.enqueueOnConnectedDevices([song])
+                }) {
+                    Label("Queue on Connected Device", systemImage: "text.badge.plus")
+                }
+            }
+
             Button(action: {
                 startRadio(for: song)
             }) {
@@ -127,7 +136,7 @@ struct SongRowView: View {
                         queue.append(contentsOf: filteredSongs)
 
                         print("✅ Radio queue ready: 1 source song + \(filteredSongs.count) similar songs = \(queue.count) total")
-                        AudioPlayer.shared.playQueue(queue, startingAt: 0)
+                        AudioPlayer.shared.playGeneratedPlaylist(sourceSong: song, songs: queue)
                         print("📻 Queue after playQueue: \(AudioPlayer.shared.queue.count) songs")
                     }
                 }
@@ -481,7 +490,7 @@ struct AlbumDetailView: View {
                         queue.append(contentsOf: filteredSongs)
 
                         print("✅ Radio queue ready: 1 source song + \(filteredSongs.count) similar songs = \(queue.count) total")
-                        AudioPlayer.shared.playQueue(queue, startingAt: 0)
+                        AudioPlayer.shared.playGeneratedPlaylist(sourceSong: song, songs: queue)
                         print("📻 Queue after playQueue: \(AudioPlayer.shared.queue.count) songs")
                     }
                 }

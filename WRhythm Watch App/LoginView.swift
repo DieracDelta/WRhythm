@@ -9,6 +9,7 @@ import SwiftUI
 
 struct LoginView: View {
     @ObservedObject var api = NavidromeAPI.shared
+    @ObservedObject var deviceSyncManager = DeviceSyncManager.shared
     @State private var serverURL = ""
     @State private var username = ""
     @State private var password = ""
@@ -38,11 +39,11 @@ struct LoginView: View {
 
                     TextField("Server URL", text: $serverURL)
                         .textContentType(.URL)
-                        .textInputAutocapitalization(.never)
+                        .platformAutocapitalizationNever()
 
                     TextField("Username", text: $username)
                         .textContentType(.username)
-                        .textInputAutocapitalization(.never)
+                        .platformAutocapitalizationNever()
 
                     SecureField("Password", text: $password)
                         .textContentType(.password)
@@ -56,6 +57,17 @@ struct LoginView: View {
                     }
                     .disabled(serverURL.isEmpty || username.isEmpty || password.isEmpty || isLoading)
                     .padding(.top, 8)
+
+                    Toggle(isOn: $deviceSyncManager.credentialSyncEnabled) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Sync Credentials")
+                                .font(.caption)
+                            Text(deviceSyncManager.connectedDeviceNames.isEmpty ? "Looking for nearby WRhythm devices" : "Connected: \(deviceSyncManager.connectedDeviceNames.joined(separator: ", "))")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding(.top, 4)
 
                     if showError {
                         Text(errorMessage)
@@ -93,8 +105,11 @@ struct LoginView: View {
                     .padding()
                 }
                 .navigationTitle("Help")
-                .navigationBarTitleDisplayMode(.inline)
+                .platformNavigationBarTitleDisplayModeInline()
             }
+        }
+        .onAppear {
+            deviceSyncManager.requestCredentialSyncNow()
         }
     }
 

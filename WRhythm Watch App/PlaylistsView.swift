@@ -78,12 +78,15 @@ struct PlaylistsView: View {
             content
         }
         .navigationTitle("Playlists")
-        .navigationBarTitleDisplayMode(.inline)
+        .platformNavigationBarTitleDisplayModeInline()
         .sheet(isPresented: $showingSearchSheet) {
-            NavigationView {
+            PlatformSearchSheet("Search Playlists", onCancel: {
+                showingSearchSheet = false
+            }) {
                 VStack(spacing: 16) {
                     TextField("Search playlists", text: $searchText)
-                        .padding()
+                        .platformSearchTextFieldStyle()
+                        .frame(maxWidth: .infinity)
 
                     Button("Search") {
                         showingSearchSheet = false
@@ -92,14 +95,6 @@ struct PlaylistsView: View {
                     .disabled(searchText.isEmpty)
 
                     Spacer()
-                }
-                .navigationTitle("Search Playlists")
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") {
-                            showingSearchSheet = false
-                        }
-                    }
                 }
             }
         }
@@ -148,7 +143,6 @@ struct PlaylistsView: View {
                             }
                             .frame(width: 40, height: 40)
                             .cornerRadius(4)
-                            .id(coverURL)
                         } else {
                             ZStack {
                                 Color.gray
@@ -168,6 +162,9 @@ struct PlaylistsView: View {
                                 .foregroundColor(.secondary)
                         }
                     }
+                }
+                .contextMenu {
+                    PlaylistContextMenuItems(playlistId: playlist.id, playlistName: playlist.name)
                 }
             }
             .searchable(text: $searchText, prompt: "Search playlists")
@@ -210,7 +207,6 @@ struct PlaylistsView: View {
                             }
                             .frame(width: 40, height: 40)
                             .cornerRadius(4)
-                            .id(coverURL)
                         } else {
                             ZStack {
                                 Color.gray
@@ -230,6 +226,9 @@ struct PlaylistsView: View {
                                 .foregroundColor(.secondary)
                         }
                     }
+                }
+                .contextMenu {
+                    PlaylistContextMenuItems(playlistId: playlist.id, playlistName: playlist.name)
                 }
             }
         }

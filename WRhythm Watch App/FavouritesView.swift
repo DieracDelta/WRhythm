@@ -225,7 +225,6 @@ struct FavouritesView: View {
                                                 }
                                                 .frame(width: 40, height: 40)
                                                 .cornerRadius(4)
-                                                .id(coverURL)
                                             }
 
                                             VStack(alignment: .leading) {
@@ -240,6 +239,9 @@ struct FavouritesView: View {
                                                 }
                                             }
                                         }
+                                    }
+                                    .contextMenu {
+                                        AlbumContextMenuItems(albumId: album.id, albumName: album.name)
                                     }
                                 }
                             }
@@ -268,7 +270,6 @@ struct FavouritesView: View {
                                                 }
                                                 .frame(width: 40, height: 40)
                                                 .cornerRadius(4)
-                                                .id(coverURL)
                                             }
 
                                             VStack(alignment: .leading) {
@@ -282,6 +283,9 @@ struct FavouritesView: View {
                                                 }
                                             }
                                         }
+                                    }
+                                    .contextMenu {
+                                        ArtistContextMenuItems(artistId: artist.id, artistName: artist.name)
                                     }
                                 }
                             }

@@ -11,6 +11,7 @@ import AVFoundation
 struct NowPlayingView: View {
     @ObservedObject var player = AudioPlayer.shared
     @ObservedObject var downloadManager = DownloadManager.shared
+    @ObservedObject var deviceSyncManager = DeviceSyncManager.shared
     @State private var isStarring = false
     @State private var isSyncing = false
     @State private var hasLoadedStarredSongs = false
@@ -20,16 +21,23 @@ struct NowPlayingView: View {
 
     var body: some View {
         ScrollView {
-            if let song = player.currentSong {
+            if let remote = primaryRemotePlayback {
+                VStack(spacing: 12) {
+                    PlaybackTargetPicker()
+                    RemotePlaybackControls(playback: remote, compact: false)
+                }
+                    .padding()
+            } else if let song = player.currentSong {
                 VStack(spacing: 12) {
                     if let coverArtId = song.coverArt,
                        let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 300) {
                         CachedAsyncImage(url: coverURL) { image in
                             image
                                 .resizable()
-                                .aspectRatio(contentMode: .fill)
+                                .aspectRatio(contentMode: .fit)
                         }
-                        .frame(height: 120)
+                        .frame(maxWidth: 360, maxHeight: 360)
+                        .frame(maxWidth: .infinity)
                         .cornerRadius(8)
                     }
 
@@ -53,6 +61,8 @@ struct NowPlayingView: View {
                                 .lineLimit(1)
                         }
                     }
+
+                    PlaybackTargetPicker()
 
                     VStack(spacing: 4) {
                         Slider(
@@ -170,11 +180,29 @@ struct NowPlayingView: View {
                         }
                         .buttonStyle(.plain)
                     }
+
+                    if primaryRemotePlayback == nil,
+                       deviceSyncManager.syncModeEnabled,
+                       let remote = deviceSyncManager.remotePlayback,
+                       remote.song != nil {
+                        Divider()
+                        RemotePlaybackControls(playback: remote, compact: true)
+                    }
                 }
                 .padding()
                 .id(song.id)
+            } else if deviceSyncManager.syncModeEnabled,
+                      let remote = deviceSyncManager.remotePlayback,
+                      remote.song != nil {
+                VStack(spacing: 12) {
+                    PlaybackTargetPicker()
+                    RemotePlaybackControls(playback: remote, compact: false)
+                }
+                    .padding()
             } else {
                 VStack(spacing: 8) {
+                    PlaybackTargetPicker()
+
                     Image(systemName: "music.note")
                         .font(.largeTitle)
                         .foregroundColor(.secondary)
@@ -193,7 +221,7 @@ struct NowPlayingView: View {
             AudioRouteView()
         }
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .platformTopBarTrailing) {
                 Button(action: {
                     syncFavorites()
                 }) {
@@ -211,6 +239,28 @@ struct NowPlayingView: View {
                 loadStarredSongs()
             }
         }
+    }
+
+    private var primaryRemotePlayback: PlaybackSnapshot? {
+        guard deviceSyncManager.syncModeEnabled,
+              let remote = deviceSyncManager.remotePlayback,
+              remote.song != nil else {
+            return nil
+        }
+
+        if player.currentSong == nil {
+            return remote
+        }
+
+        if !player.isPlaying, remote.isPlaying {
+            return remote
+        }
+
+        if !player.isPlaying, player.currentSong?.id == remote.song?.id {
+            return remote
+        }
+
+        return nil
     }
 
     private func loadStarredSongs() {
@@ -326,7 +376,7 @@ struct NowPlayingView: View {
                         queue.append(contentsOf: filteredSongs)
 
                         print("✅ Radio queue ready: 1 source song + \(filteredSongs.count) similar songs = \(queue.count) total")
-                        player.playQueue(queue, startingAt: 0)
+                        player.playGeneratedPlaylist(sourceSong: song, songs: queue)
                         print("📻 Queue after playQueue: \(player.queue.count) songs")
                     }
                 }
@@ -346,6 +396,154 @@ struct NowPlayingView: View {
         }
         let minutes = Int(seconds) / 60
         let remainingSeconds = Int(seconds) % 60
+        return String(format: "%d:%02d", minutes, remainingSeconds)
+    }
+}
+
+struct PlaybackTargetPicker: View {
+    @ObservedObject var deviceSyncManager = DeviceSyncManager.shared
+
+    var body: some View {
+        if deviceSyncManager.syncModeEnabled {
+            let targets = deviceSyncManager.availablePlaybackTargets
+            Picker(
+                "Play On",
+                selection: Binding(
+                    get: { deviceSyncManager.validSelectedPlaybackTargetID },
+                    set: { deviceSyncManager.selectPlaybackTarget($0) }
+                )
+            ) {
+                ForEach(targets) { target in
+                    Label(target.displayName, systemImage: target.iconName)
+                        .tag(target.id)
+                }
+            }
+            #if os(watchOS)
+            .pickerStyle(.navigationLink)
+            #else
+            .pickerStyle(.menu)
+            #endif
+            .font(.caption)
+            .onAppear {
+                deviceSyncManager.validateSelectedPlaybackTarget()
+            }
+            .onChange(of: targets.map(\.id)) { _, _ in
+                deviceSyncManager.validateSelectedPlaybackTarget()
+            }
+        }
+    }
+}
+
+struct RemotePlaybackControls: View {
+    let playback: PlaybackSnapshot
+    let compact: Bool
+    @ObservedObject var deviceSyncManager = DeviceSyncManager.shared
+
+    var body: some View {
+        VStack(spacing: compact ? 8 : 12) {
+            HStack(spacing: 8) {
+                Image(systemName: playback.platform == "Mac" ? "desktopcomputer" : playback.platform == "iPhone" ? "iphone" : "applewatch")
+                    .foregroundColor(.accentColor)
+                Text(playback.deviceName)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text(playback.isPlaying ? "Playing" : "Paused")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+
+            if let song = playback.song {
+                if !compact,
+                   let coverArtId = song.coverArt,
+                   let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 300) {
+                    CachedAsyncImage(url: coverURL) { image in
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                    }
+                    .frame(maxWidth: 320, maxHeight: 320)
+                    .frame(maxWidth: .infinity)
+                    .cornerRadius(8)
+                }
+
+                VStack(spacing: 4) {
+                    Text(song.title)
+                        .font(compact ? .caption : .headline)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+
+                    if let artist = song.artist {
+                        Text(artist)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+
+                if !compact {
+                    TimelineView(.periodic(from: .now, by: 1)) { _ in
+                        let currentTime = playback.estimatedCurrentTime
+                        VStack(spacing: 4) {
+                            Slider(
+                                value: Binding(
+                                    get: { currentTime },
+                                    set: { deviceSyncManager.sendSeek(to: $0, targetDeviceID: playback.id) }
+                                ),
+                                in: 0...max(1, playback.duration.isFinite ? playback.duration : 1)
+                            )
+                            .tint(.accentColor)
+
+                            HStack {
+                                Text(formatTime(currentTime))
+                                    .font(.caption2)
+                                    .monospacedDigit()
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Text("-" + formatTime(max(0, playback.duration - currentTime)))
+                                    .font(.caption2)
+                                    .monospacedDigit()
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                }
+
+                HStack(spacing: compact ? 18 : 25) {
+                    Button(action: { deviceSyncManager.sendPrevious(targetDeviceID: playback.id) }) {
+                        Image(systemName: "backward.end.fill")
+                            .font(compact ? .caption : .title2)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: { deviceSyncManager.sendPlayPause(targetDeviceID: playback.id) }) {
+                        Image(systemName: playback.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                            .font(compact ? .title3 : .largeTitle)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: { deviceSyncManager.sendNext(targetDeviceID: playback.id) }) {
+                        Image(systemName: "forward.end.fill")
+                            .font(compact ? .caption : .title2)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: deviceSyncManager.takeOverRemotePlayback) {
+                        Image(systemName: "speaker.wave.2.circle.fill")
+                            .font(compact ? .title3 : .title2)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private func formatTime(_ seconds: TimeInterval) -> String {
+        guard seconds.isFinite else {
+            return "0:00"
+        }
+        let minutes = Int(max(0, seconds)) / 60
+        let remainingSeconds = Int(max(0, seconds)) % 60
         return String(format: "%d:%02d", minutes, remainingSeconds)
     }
 }
@@ -376,6 +574,7 @@ struct VolumeControlView: View {
             }
             .padding()
         }
+#if os(watchOS)
         .focusable()
         .focused($isFocused)
         .digitalCrownRotation(
@@ -390,9 +589,11 @@ struct VolumeControlView: View {
         .onAppear {
             isFocused = true
         }
+#endif
     }
 }
 
+#if os(iOS) || os(watchOS)
 struct AudioRouteView: View {
     @Environment(\.dismiss) var dismiss
     @State private var activeOutputs: [(name: String, type: String, portType: AVAudioSession.Port)] = []
@@ -556,6 +757,22 @@ struct AudioRouteView: View {
         }
     }
 }
+#else
+struct AudioRouteView: View {
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "airplayaudio")
+                .font(.largeTitle)
+                .foregroundColor(.secondary)
+            Text("Use the macOS audio menu to change output")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding()
+    }
+}
+#endif
 
 #Preview {
     NavigationView {

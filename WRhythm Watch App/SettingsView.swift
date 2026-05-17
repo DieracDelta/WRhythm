@@ -10,11 +10,21 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var api = NavidromeAPI.shared
     @ObservedObject var downloadManager = DownloadManager.shared
+    @ObservedObject var deviceSyncManager = DeviceSyncManager.shared
     @AppStorage("offlineMode") private var offlineMode = false
     @AppStorage("radioDownloadCount") private var radioDownloadCount = 25
     @State private var showingLogoutConfirmation = false
     @State private var logoutConfirmationText = ""
     @State private var selectedQuality: AudioQuality = DownloadManager.shared.audioQuality
+    @AppStorage("streamingQuality") private var streamingQualityRaw = StreamingQuality.platformDefault.rawValue
+
+    private var streamingQuality: Binding<StreamingQuality> {
+        Binding {
+            StreamingQuality(rawValue: streamingQualityRaw) ?? .platformDefault
+        } set: { newValue in
+            streamingQualityRaw = newValue.rawValue
+        }
+    }
 
     var body: some View {
         List {
@@ -105,6 +115,21 @@ struct SettingsView: View {
 
             Section(header: Text("Audio Quality")) {
                 VStack(alignment: .leading, spacing: 8) {
+                    Text("Streaming Quality")
+                        .font(.caption)
+
+                    Picker("Streaming", selection: streamingQuality) {
+                        ForEach(StreamingQuality.allCases, id: \.self) { quality in
+                            Text(quality.label).tag(quality)
+                        }
+                    }
+
+                    Text(streamingQuality.wrappedValue.description)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
                     Text("Download Quality")
                         .font(.caption)
 
@@ -180,6 +205,37 @@ struct SettingsView: View {
                 }
             }
 
+            Section(header: Text("Devices")) {
+                Toggle(isOn: $deviceSyncManager.syncModeEnabled) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Sync Mode")
+                            .font(.caption)
+                        Text("Show and control playback on nearby WRhythm devices")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                Toggle(isOn: $deviceSyncManager.credentialSyncEnabled) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Sync Credentials")
+                            .font(.caption)
+                        Text("Only fills empty logins on devices that also enabled this")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Connected")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text(deviceSyncManager.connectedDeviceNames.isEmpty ? "No nearby devices" : deviceSyncManager.connectedDeviceNames.joined(separator: ", "))
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+
             Section {
                 Button(role: .destructive, action: {
                     showingLogoutConfirmation = true
@@ -192,9 +248,15 @@ struct SettingsView: View {
         .navigationTitle("Settings")
         .onChange(of: offlineMode) { _, newValue in
             if newValue {
+                deviceSyncManager.syncModeEnabled = false
                 // Stop playback when entering offline mode
                 AudioPlayer.shared.stop()
                 print("🔇 Stopped playback due to offline mode")
+            }
+        }
+        .onChange(of: deviceSyncManager.syncModeEnabled) { _, newValue in
+            if newValue {
+                offlineMode = false
             }
         }
         .onChange(of: downloadManager.audioQuality) { _, newValue in
@@ -278,7 +340,7 @@ struct SettingsView: View {
                             .padding(.top, 6)
 
                         TextField("Type LOGOUT", text: $logoutConfirmationText)
-                            .textInputAutocapitalization(.characters)
+                            .platformAutocapitalizationCharacters()
                             .padding(.vertical, 6)
 
                         Button(action: {

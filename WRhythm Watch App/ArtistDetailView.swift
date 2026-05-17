@@ -98,7 +98,6 @@ struct ArtistDetailView: View {
                                                 }
                                                 .frame(width: 40, height: 40)
                                                 .cornerRadius(4)
-                                                .id(coverURL)
                                             }
 
                                             VStack(alignment: .leading) {
@@ -115,6 +114,9 @@ struct ArtistDetailView: View {
                                         }
                                     }
                                     .buttonStyle(.plain)
+                                    .contextMenu {
+                                        AlbumContextMenuItems(albumId: album.id, albumName: album.name)
+                                    }
                                 }
                             }
                         } else {
@@ -231,7 +233,6 @@ struct ArtistDetailView: View {
                                             }
                                             .frame(width: 40, height: 40)
                                             .cornerRadius(4)
-                                            .id(coverURL)
                                         }
 
                                         VStack(alignment: .leading) {
@@ -255,6 +256,9 @@ struct ArtistDetailView: View {
                                     }
                                 }
                                 .buttonStyle(.plain)
+                                .contextMenu {
+                                    AlbumContextMenuItems(albumId: album.id, albumName: album.name)
+                                }
                             }
                         }
                     }

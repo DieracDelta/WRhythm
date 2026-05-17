@@ -65,7 +65,7 @@ struct TrackRowView: View {
                     // Heart/favorite button (online mode only)
                     if !offlineMode {
                         Button(action: {
-                            toggleFavorite()
+                            TrackActions.toggleFavorite(song)
                         }) {
                             Image(systemName: downloadManager.starredSongIds.contains(song.id) ? "heart.fill" : "heart")
                                 .font(.caption2)
@@ -98,27 +98,8 @@ struct TrackRowView: View {
             }
         }
         .buttonStyle(.plain)
-    }
-
-    private func toggleFavorite() {
-        let isStarred = downloadManager.starredSongIds.contains(song.id)
-
-        Task {
-            do {
-                if isStarred {
-                    try await NavidromeAPI.shared.unstar(songId: song.id)
-                    await MainActor.run {
-                        downloadManager.unstarSong(song.id, isOffline: false)
-                    }
-                } else {
-                    try await NavidromeAPI.shared.star(songId: song.id)
-                    await MainActor.run {
-                        downloadManager.starSong(song.id, isOffline: false)
-                    }
-                }
-            } catch {
-                print("❌ Failed to toggle favorite: \(error)")
-            }
+        .contextMenu {
+            TrackContextMenuItems(song: song)
         }
     }
 }

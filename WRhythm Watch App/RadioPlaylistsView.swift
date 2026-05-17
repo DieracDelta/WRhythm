@@ -13,27 +13,104 @@ struct RadioPlaylistsView: View {
 
     var body: some View {
         List {
-            if downloadManager.radioPlaylists.isEmpty {
+            if player.playlistGenQueue.isEmpty && downloadManager.radioPlaylists.isEmpty {
                 VStack(spacing: 12) {
                     Image(systemName: "music.note.list")
                         .font(.largeTitle)
                         .foregroundColor(.secondary)
-                    Text("No Playlist Gen Downloads")
+                    Text("No Playlist Gen")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    Text("Download from Playlist Gen to play offline")
+                    Text("Start Playlist Gen from a song, album, artist, or playlist")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
                 }
                 .padding()
-            } else {
-                ForEach(downloadManager.radioPlaylists) { radio in
-                    RadioPlaylistRow(radio: radio)
+            }
+
+            if !player.playlistGenQueue.isEmpty {
+                Section("Current Playlist Gen") {
+                    CurrentPlaylistGenSummary()
+
+                    ForEach(Array(player.playlistGenQueue.enumerated()), id: \.element.id) { index, song in
+                        TrackRowView(song: song) {
+                            player.playQueue(player.playlistGenQueue, startingAt: index, clearGeneratedPlaylist: false)
+                        }
+                    }
+                }
+            }
+
+            if !downloadManager.radioPlaylists.isEmpty {
+                Section("Downloaded Playlist Gen") {
+                    ForEach(downloadManager.radioPlaylists) { radio in
+                        RadioPlaylistRow(radio: radio)
+                    }
                 }
             }
         }
         .navigationTitle("Playlist Gen")
+    }
+}
+
+struct CurrentPlaylistGenSummary: View {
+    @ObservedObject var player = AudioPlayer.shared
+    @ObservedObject var downloadManager = DownloadManager.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(player.playlistGenSourceTitle ?? "Current Playlist Gen")
+                    .font(.headline)
+                    .lineLimit(1)
+
+                if let artist = player.playlistGenSourceArtist {
+                    Text(artist)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+
+                Text("\(player.playlistGenQueue.count) songs")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+
+            HStack(spacing: 8) {
+                Button(action: playCurrentPlaylist) {
+                    Label("Play", systemImage: "play.fill")
+                }
+                .buttonStyle(.borderedProminent)
+
+                Button(action: downloadCurrentPlaylist) {
+                    Label("Download", systemImage: "arrow.down.circle")
+                }
+                .buttonStyle(.bordered)
+
+                Button(action: {
+                    player.clearPlaylistGen()
+                }) {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.bordered)
+                .accessibilityLabel("Clear Playlist Gen")
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func playCurrentPlaylist() {
+        player.playQueue(player.playlistGenQueue, startingAt: 0, clearGeneratedPlaylist: false)
+    }
+
+    private func downloadCurrentPlaylist() {
+        guard let sourceSong = player.playlistGenQueue.first else { return }
+
+        for song in player.playlistGenQueue {
+            downloadManager.downloadSong(song)
+        }
+
+        downloadManager.saveRadioPlaylist(sourceSong: sourceSong, songs: player.playlistGenQueue)
     }
 }
 

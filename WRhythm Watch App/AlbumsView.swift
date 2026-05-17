@@ -46,7 +46,7 @@ struct AlbumsView: View {
 
                     if !offlineMode {
 
-                        ToolbarItem(placement: .topBarTrailing) {
+                        ToolbarItem(placement: .platformTopBarTrailing) {
 
                             if !searchText.isEmpty {
 
@@ -81,57 +81,27 @@ struct AlbumsView: View {
                         }
 
                     }
-
                 }
 
                 .sheet(isPresented: $showingSearchSheet) {
-
-                    NavigationView {
-
+                    PlatformSearchSheet("Search Albums", onCancel: {
+                        showingSearchSheet = false
+                    }) {
                         VStack(spacing: 16) {
-
                             TextField("Search albums", text: $searchText)
-
-                                .padding()
-
-    
+                                .platformSearchTextFieldStyle()
+                                .frame(maxWidth: .infinity)
 
                             Button("Search") {
-
                                 showingSearchSheet = false
-
                                 performSearch(query: searchText)
-
                             }
-
                             .buttonStyle(.borderedProminent)
-
                             .disabled(searchText.isEmpty)
 
-    
-
                             Spacer()
-
                         }
-
-                        .navigationTitle("Search Albums")
-
-                        .toolbar {
-
-                            ToolbarItem(placement: .cancellationAction) {
-
-                                Button("Cancel") {
-
-                                    showingSearchSheet = false
-
-                                }
-
-                            }
-
-                        }
-
                     }
-
                 }
 
                 .onAppear {
@@ -258,8 +228,6 @@ struct AlbumsView: View {
 
                                     .cornerRadius(4)
 
-                                    .id(coverURL)
-
                                 }
 
     
@@ -300,6 +268,9 @@ struct AlbumsView: View {
 
                             }
 
+                        }
+                        .contextMenu {
+                            AlbumContextMenuItems(albumId: album.id, albumName: album.name)
                         }
 
                     }
@@ -398,8 +369,6 @@ struct AlbumsView: View {
 
                                     .cornerRadius(4)
 
-                                        .id(coverURL)
-
                                 }
 
     
@@ -428,6 +397,9 @@ struct AlbumsView: View {
 
                             }
 
+                        }
+                        .contextMenu {
+                            AlbumContextMenuItems(albumId: album.id, albumName: album.name)
                         }
 
                         .onAppear {

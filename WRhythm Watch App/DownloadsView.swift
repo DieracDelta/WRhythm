@@ -246,7 +246,7 @@ struct DownloadsView: View {
                                         .foregroundColor(.red)
 
                                     TextField("Type DELETE", text: $deleteConfirmationText)
-                                        .textInputAutocapitalization(.characters)
+                                        .platformAutocapitalizationCharacters()
                                         .padding()
 
                                     Button(action: {
@@ -266,7 +266,7 @@ struct DownloadsView: View {
                                 }
                                 .padding()
                                 .navigationTitle("Confirm Delete")
-                                .navigationBarTitleDisplayMode(.inline)
+                                .platformNavigationBarTitleDisplayModeInline()
                                 .toolbar {
                                     ToolbarItem(placement: .cancellationAction) {
                                         Button("Cancel") {

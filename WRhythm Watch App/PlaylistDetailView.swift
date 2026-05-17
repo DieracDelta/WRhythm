@@ -277,7 +277,7 @@ struct PlaylistDetailView: View {
         .navigationTitle("Playlist")
         .toolbar {
             if !offlineMode && playlist != nil {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .platformTopBarTrailing) {
                     Button(action: {
                         syncPlaylist()
                     }) {

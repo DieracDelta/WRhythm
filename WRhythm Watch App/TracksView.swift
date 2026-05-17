@@ -151,7 +151,7 @@ struct TracksView: View {
                         if !offlinePlaylistResults.isEmpty {
                             Section(header: Text("Playlists")) {
                                 ForEach(offlinePlaylistResults, id: \.id) { playlist in
-                                    NavigationLink(destination: PlaylistDetailView(playlistId: playlist.id, playlistName: playlist.name)) {
+                                NavigationLink(destination: PlaylistDetailView(playlistId: playlist.id, playlistName: playlist.name)) {
                                         HStack {
                                             if let coverArtId = playlist.coverArt,
                                                let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 100) {
@@ -173,6 +173,9 @@ struct TracksView: View {
                                                     .foregroundColor(.secondary)
                                             }
                                         }
+                                    }
+                                    .contextMenu {
+                                        PlaylistContextMenuItems(playlistId: playlist.id, playlistName: playlist.name)
                                     }
                                 }
                             }
@@ -201,6 +204,9 @@ struct TracksView: View {
                                                 .font(.headline)
                                                 .lineLimit(1)
                                         }
+                                    }
+                                    .contextMenu {
+                                        ArtistContextMenuItems(artistId: "offline-\(artist.name)", artistName: artist.name)
                                     }
                                 }
                             }
@@ -237,6 +243,9 @@ struct TracksView: View {
                                                 }
                                             }
                                         }
+                                    }
+                                    .contextMenu {
+                                        AlbumContextMenuItems(albumId: album.id, albumName: album.name)
                                     }
                                 }
                             }
@@ -319,6 +328,9 @@ struct TracksView: View {
                                             }
                                         }
                                     }
+                                    .contextMenu {
+                                        ArtistContextMenuItems(artistId: artist.id, artistName: artist.name)
+                                    }
                                 }
                             }
                         }
@@ -352,6 +364,9 @@ struct TracksView: View {
                                             }
                                         }
                                     }
+                                    .contextMenu {
+                                        AlbumContextMenuItems(albumId: album.id, albumName: album.name)
+                                    }
                                 }
                             }
                         }
@@ -369,7 +384,7 @@ struct TracksView: View {
         }
         .navigationTitle(offlineMode ? "Offline Search" : "Search")
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .platformTopBarTrailing) {
                 if !searchText.isEmpty {
                     Button(action: {
                         searchText = ""
@@ -392,10 +407,13 @@ struct TracksView: View {
             }
         }
         .sheet(isPresented: $showingSearchSheet) {
-            NavigationView {
+            PlatformSearchSheet(offlineMode ? "Offline Search" : "Search", onCancel: {
+                showingSearchSheet = false
+            }) {
                 VStack(spacing: 16) {
                     TextField(offlineMode ? "Search offline music" : "Search music", text: $searchText)
-                        .padding()
+                        .platformSearchTextFieldStyle()
+                        .frame(maxWidth: .infinity)
 
                     Button("Search") {
                         showingSearchSheet = false
@@ -408,14 +426,6 @@ struct TracksView: View {
                     .disabled(searchText.isEmpty)
 
                     Spacer()
-                }
-                .navigationTitle(offlineMode ? "Offline Search" : "Search")
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") {
-                            showingSearchSheet = false
-                        }
-                    }
                 }
             }
         }
@@ -501,17 +511,7 @@ struct TracksView: View {
             }
         }
         .contextMenu {
-            if let artistId = song.artistId, let artist = song.artist {
-                NavigationLink(destination: ArtistDetailView(artistId: artistId, artistName: artist)) {
-                    Label("Go to Artist", systemImage: "person.fill")
-                }
-            }
-
-            if let albumId = song.albumId {
-                NavigationLink(destination: AlbumDetailView(albumId: albumId)) {
-                    Label("Go to Album", systemImage: "square.stack")
-                }
-            }
+            TrackContextMenuItems(song: song)
         }
     }
 
