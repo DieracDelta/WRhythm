@@ -14,7 +14,7 @@ import ApplicationServices
 import CoreGraphics
 #endif
 
-#if os(iOS) || os(watchOS)
+#if os(iOS) || os(watchOS) || os(macOS)
 import MediaPlayer
 #endif
 
@@ -92,26 +92,61 @@ class AudioPlayer: NSObject, ObservableObject {
     }
 
     private func setupRemoteCommands() {
-#if os(iOS) || os(watchOS)
+#if os(iOS) || os(watchOS) || os(macOS)
         let commandCenter = MPRemoteCommandCenter.shared()
 
         commandCenter.playCommand.addTarget { [weak self] _ in
+#if os(macOS)
+            Task { @MainActor in
+                PlaybackKeyboardActions.setPlaying(true)
+            }
+#else
             self?.play()
+#endif
             return .success
         }
 
         commandCenter.pauseCommand.addTarget { [weak self] _ in
+#if os(macOS)
+            Task { @MainActor in
+                PlaybackKeyboardActions.setPlaying(false)
+            }
+#else
             self?.pause()
+#endif
+            return .success
+        }
+
+        commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
+#if os(macOS)
+            Task { @MainActor in
+                PlaybackKeyboardActions.togglePlayback()
+            }
+#else
+            self?.togglePlayPause()
+#endif
             return .success
         }
 
         commandCenter.nextTrackCommand.addTarget { [weak self] _ in
+#if os(macOS)
+            Task { @MainActor in
+                PlaybackKeyboardActions.nextTrack()
+            }
+#else
             self?.next()
+#endif
             return .success
         }
 
         commandCenter.previousTrackCommand.addTarget { [weak self] _ in
+#if os(macOS)
+            Task { @MainActor in
+                PlaybackKeyboardActions.previousTrack()
+            }
+#else
             self?.previous()
+#endif
             return .success
         }
 
@@ -122,8 +157,9 @@ class AudioPlayer: NSObject, ObservableObject {
             self?.seek(to: event.positionTime)
             return .success
         }
-#elseif os(macOS)
+#if os(macOS)
         setupMacMediaKeyCommands()
+#endif
 #endif
     }
 
@@ -219,16 +255,16 @@ class AudioPlayer: NSObject, ObservableObject {
 
         switch keyCode {
         case 16:
-            DispatchQueue.main.async { [weak self] in
-                self?.togglePlayPause()
+            DispatchQueue.main.async {
+                PlaybackKeyboardActions.togglePlayback()
             }
         case 17:
-            DispatchQueue.main.async { [weak self] in
-                self?.next()
+            DispatchQueue.main.async {
+                PlaybackKeyboardActions.nextTrack()
             }
         case 18:
-            DispatchQueue.main.async { [weak self] in
-                self?.previous()
+            DispatchQueue.main.async {
+                PlaybackKeyboardActions.previousTrack()
             }
         default:
             return false
@@ -519,11 +555,13 @@ class AudioPlayer: NSObject, ObservableObject {
         prepareAudioSessionForPlayback()
         player.play()
         isPlaying = true
+        updateNowPlayingInfo()
     }
 
     func pause() {
         player.pause()
         isPlaying = false
+        updateNowPlayingInfo()
     }
 
     func stop() {
@@ -536,6 +574,7 @@ class AudioPlayer: NSObject, ObservableObject {
         currentTime = 0
         duration = 0
         clearPlaylistGen()
+        updateNowPlayingInfo()
         print("⏹️ Playback stopped and queue cleared")
     }
 
@@ -745,8 +784,11 @@ class AudioPlayer: NSObject, ObservableObject {
     }
 
     private func updateNowPlayingInfo() {
-#if os(iOS) || os(watchOS)
-        guard let song = currentSong else { return }
+#if os(iOS) || os(watchOS) || os(macOS)
+        guard let song = currentSong else {
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+            return
+        }
 
         var nowPlayingInfo = [String: Any]()
         nowPlayingInfo[MPMediaItemPropertyTitle] = song.title

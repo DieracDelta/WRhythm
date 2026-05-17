@@ -73,6 +73,13 @@ enum PlaybackKeyboardActions {
     }
 
     @MainActor
+    static func setPlaying(_ isPlaying: Bool) {
+        let manager = DeviceSyncManager.shared
+        manager.validateSelectedPlaybackTarget()
+        manager.setPlaying(isPlaying, targetDeviceID: manager.validSelectedPlaybackTargetID)
+    }
+
+    @MainActor
     static func toggleFavoriteCurrentSong() {
         guard let song = activeSongForSelectedTarget() else { return }
         TrackActions.toggleFavorite(song)
