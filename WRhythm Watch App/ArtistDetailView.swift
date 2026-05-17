@@ -79,7 +79,7 @@ struct ArtistDetailView: View {
                                 sourceTitle: artistName,
                                 sourceType: .artist
                             )) {
-                                Label("Radio", systemImage: "antenna.radiowaves.left.and.right")
+                                Label("Playlist Gen", systemImage: "music.note.list")
                             }
                             .buttonStyle(.bordered)
 
@@ -193,7 +193,7 @@ struct ArtistDetailView: View {
                             sourceTitle: artistName,
                             sourceType: .artist
                         )) {
-                            Label("Radio", systemImage: "antenna.radiowaves.left.and.right")
+                            Label("Playlist Gen", systemImage: "music.note.list")
                         }
                         .buttonStyle(.bordered)
 

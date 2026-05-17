@@ -28,10 +28,10 @@ struct RadioOptionsView: View {
             VStack(spacing: 16) {
                 // Header
                 VStack(spacing: 4) {
-                    Image(systemName: "antenna.radiowaves.left.and.right")
+                    Image(systemName: "music.note.list")
                         .font(.largeTitle)
                         .foregroundColor(.blue)
-                    Text("Radio Options")
+                    Text("Playlist Gen Options")
                         .font(.headline)
                     Text(sourceTitle)
                         .font(.caption)
@@ -66,7 +66,7 @@ struct RadioOptionsView: View {
                         )
                     }
 
-                    Text("Similar songs to include in radio")
+                    Text("Similar songs to include in Playlist Gen")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
@@ -80,7 +80,7 @@ struct RadioOptionsView: View {
                     }) {
                         HStack {
                             Image(systemName: "play.fill")
-                            Text("Play Radio")
+                            Text("Play Playlist Gen")
                         }
                         .frame(maxWidth: .infinity)
                     }
@@ -92,7 +92,7 @@ struct RadioOptionsView: View {
                     }) {
                         HStack {
                             Image(systemName: "arrow.down.circle.fill")
-                            Text("Download Radio")
+                            Text("Download Playlist Gen")
                         }
                         .frame(maxWidth: .infinity)
                     }
@@ -107,7 +107,7 @@ struct RadioOptionsView: View {
             }
             .padding()
         }
-        .navigationTitle("Radio")
+        .navigationTitle("Playlist Gen")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             selectedCount = radioDownloadCount

@@ -15,13 +15,13 @@ struct RadioPlaylistsView: View {
         List {
             if downloadManager.radioPlaylists.isEmpty {
                 VStack(spacing: 12) {
-                    Image(systemName: "antenna.radiowaves.left.and.right")
+                    Image(systemName: "music.note.list")
                         .font(.largeTitle)
                         .foregroundColor(.secondary)
-                    Text("No Radio Playlists")
+                    Text("No Playlist Gen Downloads")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    Text("Download a radio to play it offline")
+                    Text("Download from Playlist Gen to play offline")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
@@ -33,7 +33,7 @@ struct RadioPlaylistsView: View {
                 }
             }
         }
-        .navigationTitle("Radio Playlists")
+        .navigationTitle("Playlist Gen")
     }
 }
 
@@ -132,7 +132,7 @@ struct RadioPlaylistDetailView: View {
                     Button(action: {
                         deleteRadio()
                     }) {
-                        Label("Delete Radio", systemImage: "trash")
+                        Label("Delete Playlist Gen", systemImage: "trash")
                     }
                     .buttonStyle(.bordered)
                     .tint(.red)
@@ -182,7 +182,7 @@ struct RadioPlaylistDetailView: View {
             }
             .padding()
         }
-        .navigationTitle("Radio")
+        .navigationTitle("Playlist Gen")
     }
 
     private var downloadedSongs: [String] {

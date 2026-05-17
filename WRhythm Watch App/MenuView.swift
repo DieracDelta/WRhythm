@@ -24,7 +24,7 @@ struct MenuView: View {
                 }
 
                 NavigationLink(destination: RadioPlaylistsView()) {
-                    Label("Radios", systemImage: "antenna.radiowaves.left.and.right")
+                    Label("Playlist Gen", systemImage: "music.note.list")
                 }
 
                 NavigationLink(destination: TracksView()) {

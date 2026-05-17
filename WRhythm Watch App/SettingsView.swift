@@ -80,7 +80,7 @@ struct SettingsView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Default Radio Size")
+                    Text("Default Playlist Gen Size")
                         .font(.caption)
                     HStack {
                         Text("\(radioDownloadCount)")
@@ -97,7 +97,7 @@ struct SettingsView: View {
                             step: 10
                         )
                     }
-                    Text("Default number of songs for radio (can adjust per-radio)")
+                    Text("Default number of songs for Playlist Gen")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }

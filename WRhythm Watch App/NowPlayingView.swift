@@ -129,7 +129,7 @@ struct NowPlayingView: View {
                             sourceTitle: song.title,
                             sourceType: .song
                         )) {
-                            Image(systemName: "antenna.radiowaves.left.and.right")
+                            Image(systemName: "music.note.list")
                                 .font(.title3)
                                 .symbolVariant(.fill)
                                 .foregroundStyle(.purple.gradient)

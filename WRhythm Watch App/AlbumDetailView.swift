@@ -64,7 +64,7 @@ struct SongRowView: View {
                     sourceTitle: song.title,
                     sourceType: .song
                 )) {
-                    Image(systemName: "antenna.radiowaves.left.and.right")
+                    Image(systemName: "music.note.list")
                         .font(.caption2)
                         .foregroundColor(.blue)
                 }
@@ -76,13 +76,13 @@ struct SongRowView: View {
             Button(action: {
                 startRadio(for: song)
             }) {
-                Label("Start Radio", systemImage: "antenna.radiowaves.left.and.right")
+                Label("Start Playlist Gen", systemImage: "music.note.list")
             }
 
             Button(action: {
                 downloadRadio(for: song)
             }) {
-                Label("Download Radio", systemImage: "arrow.down.circle")
+                Label("Download Playlist Gen", systemImage: "arrow.down.circle")
             }
 
             if let artistId = song.artistId, let artist = song.artist {
@@ -376,7 +376,7 @@ struct AlbumDetailView: View {
                                 sourceTitle: album.name,
                                 sourceType: .album
                             )) {
-                                Label("Radio", systemImage: "antenna.radiowaves.left.and.right")
+                                Label("Playlist Gen", systemImage: "music.note.list")
                             }
                             .buttonStyle(.bordered)
                         }

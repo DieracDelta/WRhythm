@@ -492,7 +492,7 @@ struct TracksView: View {
                     sourceTitle: song.title,
                     sourceType: .song
                 )) {
-                    Image(systemName: "antenna.radiowaves.left.and.right")
+                    Image(systemName: "music.note.list")
                         .font(.caption2)
                         .foregroundColor(.blue)
                         .frame(width: 30, height: 30)
