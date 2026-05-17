@@ -39,6 +39,7 @@ struct ContentView: View {
                 }
                 .onChange(of: scenePhase) { _, newPhase in
                     if newPhase == .active {
+                        DeviceSyncManager.shared.requestPlaybackSyncRefresh()
                         // When app becomes active, go to Now Playing if music is playing
                         if AudioPlayer.shared.isPlaying {
                             selectedTab = 1

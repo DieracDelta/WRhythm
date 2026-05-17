@@ -159,6 +159,7 @@ private struct PlaybackCommand: Codable {
 private struct SyncEnvelope: Codable {
     enum Kind: String, Codable {
         case hello
+        case syncRequest
         case playbackState
         case playbackSession
         case playbackCommand
@@ -438,6 +439,13 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         (sharedSession?.revision ?? 0) + 1
     }
 
+    func requestPlaybackSyncRefresh() {
+        guard syncModeEnabled || credentialSyncEnabled else { return }
+        configureTransports()
+        _ = sendEnvelope(.init(kind: .syncRequest, sender: localPeerInfo(), playback: nil, command: nil, credentials: nil, targetDeviceID: nil))
+        sendCurrentSyncState(includeHello: true)
+    }
+
     private func makeSession(
         queue: [Song],
         currentIndex: Int,
@@ -485,6 +493,11 @@ final class DeviceSyncManager: NSObject, ObservableObject {
                 return
             }
             if session.revision == existing.revision,
+               session.updatedAt < existing.updatedAt {
+                return
+            }
+            if session.revision == existing.revision,
+               session.updatedAt == existing.updatedAt,
                session.updatedByDeviceID <= existing.updatedByDeviceID {
                 return
             }
@@ -518,7 +531,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
                     player.queue = session.queue
                     player.currentIndex = session.currentIndex
                 }
-                let drift = abs(player.currentTime - session.estimatedPosition)
+                let drift = abs(player.liveCurrentTime - session.estimatedPosition)
                 if drift > 3 {
                     player.seek(to: session.estimatedPosition)
                 }
@@ -602,7 +615,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         publishSharedSession(makeSession(
             queue: sharedQueue,
             currentIndex: currentIndex,
-            position: sharedSession?.outputDeviceID == selectedPlaybackTargetID ? sharedSession?.estimatedPosition ?? 0 : player.currentTime,
+            position: sharedSession?.outputDeviceID == selectedPlaybackTargetID ? sharedSession?.estimatedPosition ?? 0 : player.liveCurrentTime,
             isPlaying: sharedSession?.outputDeviceID == selectedPlaybackTargetID ? sharedSession?.isPlaying ?? false : player.isPlaying,
             outputDeviceID: selectedPlaybackTargetID
         ))
@@ -800,7 +813,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         publishSharedSession(makeSession(
             queue: queue,
             currentIndex: index,
-            position: player.currentTime,
+            position: player.liveCurrentTime,
             isPlaying: player.isPlaying,
             outputDeviceID: targetID
         ))
@@ -815,7 +828,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         publishSharedSession(makeSession(
             queue: queue,
             currentIndex: min(player.currentIndex, queue.count - 1),
-            position: player.currentTime,
+            position: player.liveCurrentTime,
             isPlaying: player.isPlaying,
             outputDeviceID: localDeviceID,
             volume: player.volume
@@ -927,12 +940,38 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             song: player.currentSong,
             isPlaying: player.isPlaying,
             volume: player.volume,
-            currentTime: player.currentTime,
+            currentTime: player.liveCurrentTime,
             duration: player.duration,
             queue: player.queue,
             currentIndex: player.currentIndex,
             updatedAt: Date()
         )
+    }
+
+    private func refreshLocalSharedSessionIfNeeded() {
+        guard syncModeEnabled, !isApplyingRemoteCommand else { return }
+        guard sharedSession?.outputDeviceID == localDeviceID else { return }
+
+        let player = AudioPlayer.shared
+        let queue = player.queue.isEmpty ? player.currentSong.map { [$0] } ?? [] : player.queue
+        guard !queue.isEmpty else { return }
+
+        publishSharedSession(makeSession(
+            queue: queue,
+            currentIndex: min(player.currentIndex, queue.count - 1),
+            position: player.liveCurrentTime,
+            isPlaying: player.isPlaying,
+            outputDeviceID: localDeviceID,
+            volume: player.volume
+        ), applyLocally: false)
+    }
+
+    private func sendCurrentSyncState(includeHello: Bool = false) {
+        refreshLocalSharedSessionIfNeeded()
+        if includeHello {
+            broadcastHello()
+        }
+        broadcastPlaybackState(force: true)
     }
 
     private func broadcastHello() {
@@ -1080,6 +1119,10 @@ final class DeviceSyncManager: NSObject, ObservableObject {
                let credentials = NavidromeAPI.shared.exportCredentialsForSync() {
                 _ = sendEnvelope(.init(kind: .credentials, sender: localPeerInfo(), playback: nil, command: nil, credentials: credentials, targetDeviceID: nil))
             }
+            sendCurrentSyncState()
+
+        case .syncRequest:
+            sendCurrentSyncState(includeHello: true)
 
         case .playbackState:
             guard syncModeEnabled, envelope.sender.syncModeEnabled, let playback = envelope.playback else { return }
@@ -1411,8 +1454,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
 extension DeviceSyncManager: WCSessionDelegate {
     nonisolated func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
         Task { @MainActor in
-            DeviceSyncManager.shared.broadcastHello()
-            DeviceSyncManager.shared.broadcastPlaybackState(force: true)
+            DeviceSyncManager.shared.sendCurrentSyncState(includeHello: true)
         }
     }
 
@@ -1450,8 +1492,7 @@ extension DeviceSyncManager: MCSessionDelegate {
                 manager.peerDisplayNames[peerID] = peerID.displayName
                 manager.connectedDeviceNames = Array(Set(manager.peerDisplayNames.values)).sorted()
                 print("✅ Sync peer connected: \(peerID.displayName)")
-                manager.broadcastHello()
-                manager.broadcastPlaybackState(force: true)
+                manager.sendCurrentSyncState(includeHello: true)
                 manager.maybeSendCredentialsToInterestedPeers()
             case .notConnected:
                 print("⚠️ Sync peer disconnected: \(peerID.displayName)")

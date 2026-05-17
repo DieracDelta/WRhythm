@@ -78,6 +78,19 @@ class AudioPlayer: NSObject, ObservableObject {
         addPeriodicTimeObserver()
     }
 
+    var liveCurrentTime: TimeInterval {
+        let playerSeconds = player.currentTime().seconds
+        guard playerSeconds.isFinite else {
+            return currentTime
+        }
+
+        let absoluteTime = max(0, baseTimeOffset + playerSeconds)
+        guard duration.isFinite, duration > 0 else {
+            return absoluteTime
+        }
+        return min(absoluteTime, duration)
+    }
+
     private func prepareAudioSessionForPlayback() {
 #if os(iOS) || os(watchOS)
         do {
