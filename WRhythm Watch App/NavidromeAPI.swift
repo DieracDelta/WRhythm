@@ -524,7 +524,20 @@ class NavidromeAPI: ObservableObject {
         return result.subsonicResponse.randomSongs?.song ?? []
     }
 
-    func getSimilarSongs(id: String, count: Int = 100) async throws -> [Song] {
+    func getSimilarSongsForSong(_ song: Song, count: Int = 100) async throws -> [Song] {
+        if let artistId = song.artistId {
+            let songs = try await getSimilarSongs2(artistId: artistId, count: count)
+            if !songs.isEmpty {
+                return songs
+            }
+        }
+
+        // Legacy fallback for servers or metadata where the source song has no
+        // ID3 artist ID. Prefer getSimilarSongs2 above for normal Navidrome use.
+        return try await getSimilarSongs(id: song.id, count: count)
+    }
+
+    private func getSimilarSongs(id: String, count: Int = 100) async throws -> [Song] {
         guard let url = buildURL(endpoint: "getSimilarSongs", additionalParams: [
             "id": id,
             "count": String(count)
@@ -542,12 +555,7 @@ class NavidromeAPI: ObservableObject {
             throw NavidromeError.unknown
         }
 
-        // Handle both nil similarSongs and nil song array
-        if let similarSongs = result.subsonicResponse.similarSongs,
-           let songs = similarSongs.song {
-            return songs
-        }
-        return []
+        return result.subsonicResponse.songs
     }
 
     func getSimilarSongs2(artistId: String, count: Int = 100) async throws -> [Song] {
@@ -568,12 +576,7 @@ class NavidromeAPI: ObservableObject {
             throw NavidromeError.unknown
         }
 
-        // Handle both nil similarSongs and nil song array
-        if let similarSongs = result.subsonicResponse.similarSongs,
-           let songs = similarSongs.song {
-            return songs
-        }
-        return []
+        return result.subsonicResponse.songs
     }
 
     func getCoverArtURL(id: String, size: Int = 300) -> URL? {
@@ -944,6 +947,11 @@ struct SimilarSongsResponse: Decodable {
     let version: String
     let error: SubsonicError?
     let similarSongs: SimilarSongs?
+    let similarSongs2: SimilarSongs?
+
+    var songs: [Song] {
+        similarSongs2?.song ?? similarSongs?.song ?? []
+    }
 }
 
 struct SimilarSongs: Decodable {

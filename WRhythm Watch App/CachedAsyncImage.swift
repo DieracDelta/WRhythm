@@ -43,7 +43,7 @@ final class ImageCache {
     static let shared = ImageCache()
 
     private let decodedCache = NSCache<NSURL, PlatformImage>()
-    private var inFlightRequests: [URL: [(PlatformImage?) -> Void]] = [:]
+    private var inFlightRequests: [NSURL: [(PlatformImage?) -> Void]] = [:]
 
     private init() {
         // Configure URLCache with larger capacity for image caching
@@ -57,8 +57,22 @@ final class ImageCache {
         decodedCache.countLimit = 1_000
     }
 
+    func cacheKey(for url: URL) -> NSURL {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return url as NSURL
+        }
+
+        let volatileQueryItems: Set<String> = ["u", "t", "s", "c", "v", "f"]
+        components.queryItems = components.queryItems?
+            .filter { !volatileQueryItems.contains($0.name) }
+            .sorted { $0.name == $1.name ? ($0.value ?? "") < ($1.value ?? "") : $0.name < $1.name }
+
+        return (components.url ?? url) as NSURL
+    }
+
     func getImage(for url: URL) -> PlatformImage? {
-        if let image = decodedCache.object(forKey: url as NSURL) {
+        let cacheKey = cacheKey(for: url)
+        if let image = decodedCache.object(forKey: cacheKey) {
             return image
         }
 
@@ -66,7 +80,7 @@ final class ImageCache {
 
         if let cachedResponse = URLCache.shared.cachedResponse(for: request),
            let image = PlatformImage(data: cachedResponse.data) {
-            decodedCache.setObject(image, forKey: url as NSURL)
+            decodedCache.setObject(image, forKey: cacheKey)
             return image
         }
         return nil
@@ -78,12 +92,13 @@ final class ImageCache {
             return
         }
 
-        if inFlightRequests[url] != nil {
-            inFlightRequests[url]?.append(completion)
+        let cacheKey = cacheKey(for: url)
+        if inFlightRequests[cacheKey] != nil {
+            inFlightRequests[cacheKey]?.append(completion)
             return
         }
 
-        inFlightRequests[url] = [completion]
+        inFlightRequests[cacheKey] = [completion]
 
         let request = URLRequest(url: url, cachePolicy: .returnCacheDataElseLoad)
         URLSession.shared.dataTask(with: request) { data, response, _ in
@@ -94,7 +109,7 @@ final class ImageCache {
                     self.cacheImage(loadedImage, data: data, response: response, for: url)
                 }
 
-                let completions = self.inFlightRequests.removeValue(forKey: url) ?? []
+                let completions = self.inFlightRequests.removeValue(forKey: cacheKey) ?? []
                 completions.forEach { $0(loadedImage) }
             }
         }.resume()
@@ -106,7 +121,7 @@ final class ImageCache {
     }
 
     private func cacheImage(_ image: PlatformImage, data: Data, response: URLResponse?, for url: URL) {
-        decodedCache.setObject(image, forKey: url as NSURL)
+        decodedCache.setObject(image, forKey: cacheKey(for: url))
         let request = URLRequest(url: url, cachePolicy: .returnCacheDataElseLoad)
         let cacheResponse = response ?? HTTPURLResponse(
             url: url,
@@ -127,12 +142,13 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
     let placeholder: () -> Placeholder
 
     @State private var image: PlatformImage?
-    @State private var loadedURL: URL?
-    @State private var loadingURL: URL?
+    @State private var loadedCacheKey: NSURL?
+    @State private var loadingCacheKey: NSURL?
 
     var body: some View {
+        let cacheKey = url.map { ImageCache.shared.cacheKey(for: $0) }
         let cachedImage = url.flatMap { ImageCache.shared.getImage(for: $0) }
-        let stateImage = loadedURL == url ? image : nil
+        let stateImage = loadedCacheKey == cacheKey ? image : nil
 
         Group {
             if let image = stateImage ?? cachedImage {
@@ -145,9 +161,12 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
             loadImage()
         }
         .onChange(of: url) { _, _ in
+            guard loadedCacheKey != url.map({ ImageCache.shared.cacheKey(for: $0) }) else {
+                return
+            }
             image = nil
-            loadedURL = nil
-            loadingURL = nil
+            loadedCacheKey = nil
+            loadingCacheKey = nil
             loadImage()
         }
     }
@@ -155,36 +174,38 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
     private func loadImage() {
         guard let url else {
             image = nil
-            loadedURL = nil
-            loadingURL = nil
+            loadedCacheKey = nil
+            loadingCacheKey = nil
             return
         }
+
+        let cacheKey = ImageCache.shared.cacheKey(for: url)
 
         // Check cache first
         if let cachedImage = ImageCache.shared.getImage(for: url) {
             self.image = cachedImage
-            self.loadedURL = url
-            self.loadingURL = nil
+            self.loadedCacheKey = cacheKey
+            self.loadingCacheKey = nil
             return
         }
 
-        guard loadingURL != url else { return }
+        guard loadingCacheKey != cacheKey else { return }
 
         // Load from network
-        loadingURL = url
+        loadingCacheKey = cacheKey
         ImageCache.shared.loadImage(for: url) { loadedImage in
-            guard self.url == url else {
-                if self.loadingURL == url {
-                    self.loadingURL = nil
+            guard self.url.map({ ImageCache.shared.cacheKey(for: $0) }) == cacheKey else {
+                if self.loadingCacheKey == cacheKey {
+                    self.loadingCacheKey = nil
                 }
                 return
             }
 
             if let loadedImage {
                 self.image = loadedImage
-                self.loadedURL = url
+                self.loadedCacheKey = cacheKey
             }
-            self.loadingURL = nil
+            self.loadingCacheKey = nil
         }
     }
 }

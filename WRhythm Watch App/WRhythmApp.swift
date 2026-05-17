@@ -18,5 +18,141 @@ struct WRhythm_Watch_AppApp: App {
                 .environmentObject(libraryDataManager)
                 .environmentObject(deviceSyncManager)
         }
+#if os(macOS)
+        .commands {
+            PlaybackKeyboardCommands()
+        }
+#endif
     }
 }
+
+#if os(macOS)
+struct PlaybackKeyboardCommands: Commands {
+    var body: some Commands {
+        CommandMenu("Playback") {
+            Button("Play/Pause") {
+                PlaybackKeyboardActions.togglePlayback()
+            }
+            .keyboardShortcut("p", modifiers: [])
+            .keyboardShortcut(.space, modifiers: [])
+
+            Button("Favorite Current Song") {
+                PlaybackKeyboardActions.toggleFavoriteCurrentSong()
+            }
+            .keyboardShortcut("f", modifiers: [])
+
+            Divider()
+
+            Button("Previous Track") {
+                PlaybackKeyboardActions.previousTrack()
+            }
+            .keyboardShortcut("h", modifiers: [])
+
+            Button("Volume Down") {
+                PlaybackKeyboardActions.adjustVolume(by: -0.05)
+            }
+            .keyboardShortcut("j", modifiers: [])
+
+            Button("Volume Up") {
+                PlaybackKeyboardActions.adjustVolume(by: 0.05)
+            }
+            .keyboardShortcut("k", modifiers: [])
+
+            Button("Next Track") {
+                PlaybackKeyboardActions.nextTrack()
+            }
+            .keyboardShortcut("l", modifiers: [])
+        }
+    }
+}
+
+enum PlaybackKeyboardActions {
+    @MainActor
+    static func togglePlayback() {
+        DeviceSyncManager.shared.toggleSelectedPlaybackTarget()
+    }
+
+    @MainActor
+    static func toggleFavoriteCurrentSong() {
+        guard let song = activeSongForSelectedTarget() else { return }
+        TrackActions.toggleFavorite(song)
+    }
+
+    @MainActor
+    static func previousTrack() {
+        let manager = DeviceSyncManager.shared
+        if isSelectedTargetLocal {
+            AudioPlayer.shared.previous()
+        } else {
+            manager.sendPrevious(targetDeviceID: manager.validSelectedPlaybackTargetID)
+        }
+    }
+
+    @MainActor
+    static func nextTrack() {
+        let manager = DeviceSyncManager.shared
+        if isSelectedTargetLocal {
+            AudioPlayer.shared.next()
+        } else {
+            manager.sendNext(targetDeviceID: manager.validSelectedPlaybackTargetID)
+        }
+    }
+
+    @MainActor
+    static func adjustVolume(by delta: Double) {
+        let manager = DeviceSyncManager.shared
+        manager.validateSelectedPlaybackTarget()
+        let targetID = manager.validSelectedPlaybackTargetID
+        let volume = min(max(currentVolume(for: targetID) + delta, 0), 1)
+        manager.setVolume(volume, targetDeviceID: targetID)
+    }
+
+    @MainActor
+    private static var isSelectedTargetLocal: Bool {
+        let manager = DeviceSyncManager.shared
+        manager.validateSelectedPlaybackTarget()
+        return manager.availablePlaybackTargets
+            .first(where: { $0.id == manager.validSelectedPlaybackTargetID })?
+            .isLocal ?? true
+    }
+
+    @MainActor
+    private static func currentVolume(for targetID: String) -> Double {
+        let manager = DeviceSyncManager.shared
+        if manager.availablePlaybackTargets.first(where: { $0.id == targetID })?.isLocal ?? true {
+            return AudioPlayer.shared.volume
+        }
+        if let sharedSession = manager.sharedSession,
+           sharedSession.outputDeviceID == targetID,
+           let volume = sharedSession.volume {
+            return volume
+        }
+        if let remotePlayback = manager.remotePlayback,
+           remotePlayback.id == targetID,
+           let volume = remotePlayback.volume {
+            return volume
+        }
+        return AudioPlayer.shared.volume
+    }
+
+    @MainActor
+    private static func activeSongForSelectedTarget() -> Song? {
+        let manager = DeviceSyncManager.shared
+        manager.validateSelectedPlaybackTarget()
+        let targetID = manager.validSelectedPlaybackTargetID
+
+        if manager.availablePlaybackTargets.first(where: { $0.id == targetID })?.isLocal ?? true {
+            return AudioPlayer.shared.currentSong
+        }
+        if let sharedPlayback = manager.activeSharedPlayback,
+           sharedPlayback.id == targetID {
+            return sharedPlayback.song
+        }
+        if let remotePlayback = manager.remotePlayback,
+           remotePlayback.id == targetID {
+            return remotePlayback.song
+        }
+        return AudioPlayer.shared.currentSong ?? manager.activeSharedPlayback?.song ?? manager.remotePlayback?.song
+    }
+}
+#endif

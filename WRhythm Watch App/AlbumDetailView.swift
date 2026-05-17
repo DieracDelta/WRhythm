@@ -106,17 +106,9 @@ struct SongRowView: View {
         Task {
             do {
                 print("🎵 Starting radio for: \(song.title)")
-                var similarSongs = try await NavidromeAPI.shared.getSimilarSongs(id: song.id, count: 100)
-                print("📻 getSimilarSongs returned \(similarSongs.count) songs")
+                var similarSongs = try await NavidromeAPI.shared.getSimilarSongsForSong(song, count: 100)
+                print("📻 ID3 similar songs returned \(similarSongs.count) songs")
 
-                // Fallback 1: Try artist-based radio if no results
-                if similarSongs.isEmpty, let artistId = song.artistId {
-                    print("📻 Falling back to artist radio for artist ID: \(artistId)")
-                    similarSongs = try await NavidromeAPI.shared.getSimilarSongs2(artistId: artistId, count: 100)
-                    print("📻 getSimilarSongs2 returned \(similarSongs.count) songs")
-                }
-
-                // Fallback 2: Try random songs if still empty
                 if similarSongs.isEmpty {
                     print("📻 Falling back to random songs")
                     similarSongs = try await NavidromeAPI.shared.getRandomSongs(size: 100)
@@ -163,17 +155,9 @@ struct SongRowView: View {
                 let count = radioDownloadCount > 0 ? radioDownloadCount : 25
 
                 print("📻 Downloading radio for: \(song.title) (count: \(count))")
-                var similarSongs = try await NavidromeAPI.shared.getSimilarSongs(id: song.id, count: count)
-                print("📻 getSimilarSongs returned \(similarSongs.count) songs")
+                var similarSongs = try await NavidromeAPI.shared.getSimilarSongsForSong(song, count: count)
+                print("📻 ID3 similar songs returned \(similarSongs.count) songs")
 
-                // Fallback 1: Try artist-based radio if no results
-                if similarSongs.isEmpty, let artistId = song.artistId {
-                    print("📻 Falling back to artist radio for artist ID: \(artistId)")
-                    similarSongs = try await NavidromeAPI.shared.getSimilarSongs2(artistId: artistId, count: count)
-                    print("📻 getSimilarSongs2 returned \(similarSongs.count) songs")
-                }
-
-                // Fallback 2: Try random songs if still empty
                 if similarSongs.isEmpty {
                     print("📻 Falling back to random songs")
                     similarSongs = try await NavidromeAPI.shared.getRandomSongs(size: count)
@@ -464,17 +448,9 @@ struct AlbumDetailView: View {
         Task {
             do {
                 print("🎵 Starting radio for: \(song.title)")
-                var similarSongs = try await NavidromeAPI.shared.getSimilarSongs(id: song.id, count: 100)
-                print("📻 getSimilarSongs returned \(similarSongs.count) songs")
+                var similarSongs = try await NavidromeAPI.shared.getSimilarSongsForSong(song, count: 100)
+                print("📻 ID3 similar songs returned \(similarSongs.count) songs")
 
-                // Fallback 1: Try artist-based radio if no results
-                if similarSongs.isEmpty, let artistId = song.artistId {
-                    print("📻 Falling back to artist radio for artist ID: \(artistId)")
-                    similarSongs = try await NavidromeAPI.shared.getSimilarSongs2(artistId: artistId, count: 100)
-                    print("📻 getSimilarSongs2 returned \(similarSongs.count) songs")
-                }
-
-                // Fallback 2: Try random songs if still empty
                 if similarSongs.isEmpty {
                     print("📻 Falling back to random songs")
                     similarSongs = try await NavidromeAPI.shared.getRandomSongs(size: 100)
@@ -526,17 +502,9 @@ struct AlbumDetailView: View {
                 let count = radioDownloadCount > 0 ? radioDownloadCount : 25
 
                 print("📻 Downloading radio for: \(song.title) (count: \(count))")
-                var similarSongs = try await NavidromeAPI.shared.getSimilarSongs(id: song.id, count: count)
-                print("📻 getSimilarSongs returned \(similarSongs.count) songs")
+                var similarSongs = try await NavidromeAPI.shared.getSimilarSongsForSong(song, count: count)
+                print("📻 ID3 similar songs returned \(similarSongs.count) songs")
 
-                // Fallback 1: Try artist-based radio if no results
-                if similarSongs.isEmpty, let artistId = song.artistId {
-                    print("📻 Falling back to artist radio for artist ID: \(artistId)")
-                    similarSongs = try await NavidromeAPI.shared.getSimilarSongs2(artistId: artistId, count: count)
-                    print("📻 getSimilarSongs2 returned \(similarSongs.count) songs")
-                }
-
-                // Fallback 2: Try random songs if still empty
                 if similarSongs.isEmpty {
                     print("📻 Falling back to random songs")
                     similarSongs = try await NavidromeAPI.shared.getRandomSongs(size: count)

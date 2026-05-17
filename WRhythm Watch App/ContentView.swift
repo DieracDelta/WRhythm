@@ -103,11 +103,22 @@ enum MacDestination: String, Hashable, CaseIterable {
 
 struct MacContentLayout: View {
     @Binding var selection: MacDestination?
+
+    var body: some View {
+        NavigationSplitView {
+            MacSidebar(selection: $selection)
+        } detail: {
+            MacDetailContent(selection: $selection)
+        }
+    }
+}
+
+struct MacSidebar: View {
+    @Binding var selection: MacDestination?
     @ObservedObject var player = AudioPlayer.shared
     @ObservedObject var deviceSyncManager = DeviceSyncManager.shared
 
     var body: some View {
-        NavigationSplitView {
             List(selection: $selection) {
                 Section("Library") {
                     ForEach(MacDestination.allCases, id: \.self) { destination in
@@ -198,20 +209,6 @@ struct MacContentLayout: View {
                 }
             }
             .navigationTitle("WRhythm")
-        } detail: {
-            NavigationStack {
-                VStack(spacing: 0) {
-                    destinationView(for: selection ?? .nowPlaying)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                    if selection != .nowPlaying,
-                       player.currentSong != nil || deviceSyncManager.activeSharedPlayback?.song != nil || deviceSyncManager.remotePlayback?.song != nil {
-                        Divider()
-                        MacMiniPlayerBar(selection: $selection)
-                    }
-                }
-            }
-        }
     }
 
     private var activeRemotePlayback: PlaybackSnapshot? {
@@ -261,6 +258,21 @@ struct MacContentLayout: View {
     private var localQueueSectionTitle: String {
         deviceSyncManager.sharedSession != nil || remoteQueueMatchesLocal ? "Shared Queue" : "Mac Queue"
     }
+}
+
+struct MacDetailContent: View {
+    @Binding var selection: MacDestination?
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                destinationView(for: selection ?? .nowPlaying)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                MacMiniPlayerAttachment(selection: $selection)
+            }
+        }
+    }
 
     @ViewBuilder
     private func destinationView(for destination: MacDestination) -> some View {
@@ -289,6 +301,20 @@ struct MacContentLayout: View {
     }
 }
 
+struct MacMiniPlayerAttachment: View {
+    @Binding var selection: MacDestination?
+    @ObservedObject var player = AudioPlayer.shared
+    @ObservedObject var deviceSyncManager = DeviceSyncManager.shared
+
+    var body: some View {
+        if selection != .nowPlaying,
+           player.currentSong != nil || deviceSyncManager.activeSharedPlayback?.song != nil || deviceSyncManager.remotePlayback?.song != nil {
+            Divider()
+            MacMiniPlayerBar(selection: $selection)
+        }
+    }
+}
+
 struct MacMiniPlayerBar: View {
     @Binding var selection: MacDestination?
     @ObservedObject var player = AudioPlayer.shared
@@ -305,6 +331,9 @@ struct MacMiniPlayerBar: View {
                     previous: player.previous,
                     toggle: player.togglePlayPause,
                     next: player.next,
+                    currentTime: { player.currentTime },
+                    duration: player.duration,
+                    seek: { player.seek(to: $0) },
                     previousDisabled: player.currentIndex == 0 && player.currentTime < 3,
                     nextDisabled: player.currentIndex >= player.queue.count - 1
                 )
@@ -325,6 +354,9 @@ struct MacMiniPlayerBar: View {
                     previous: { deviceSyncManager.sendPrevious(targetDeviceID: remote.id) },
                     toggle: { deviceSyncManager.setPlaying(!remote.isPlaying, targetDeviceID: remote.id) },
                     next: { deviceSyncManager.sendNext(targetDeviceID: remote.id) },
+                    currentTime: { remote.estimatedCurrentTime },
+                    duration: remote.duration,
+                    seek: { deviceSyncManager.sendSeek(to: $0, targetDeviceID: remote.id) },
                     previousDisabled: remote.currentIndex == 0 && remote.currentTime < 3,
                     nextDisabled: remote.currentIndex >= remote.queue.count - 1
                 )
@@ -376,55 +408,127 @@ struct MacMiniPlayerBar: View {
         previous: @escaping () -> Void,
         toggle: @escaping () -> Void,
         next: @escaping () -> Void,
+        currentTime: @escaping () -> TimeInterval,
+        duration: TimeInterval,
+        seek: @escaping (TimeInterval) -> Void,
         previousDisabled: Bool,
         nextDisabled: Bool
     ) -> some View {
-        HStack(spacing: 12) {
-            Button(action: {
-                selection = .nowPlaying
-            }) {
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text(title)
-                            .font(.headline)
-                            .lineLimit(1)
-                        Text(queuePosition)
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                    }
-                    if !subtitle.isEmpty {
-                        Text(subtitle)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
+        VStack(spacing: 8) {
+            HStack(spacing: 12) {
+                Button(action: {
+                    selection = .nowPlaying
+                }) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text(title)
+                                .font(.headline)
+                                .lineLimit(1)
+                            Text(queuePosition)
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
+                        if !subtitle.isEmpty {
+                            Text(subtitle)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
                     }
                 }
-            }
-            .buttonStyle(.plain)
+                .buttonStyle(.plain)
 
-            Spacer()
+                Spacer()
 
-            Button(action: previous) {
-                Image(systemName: "backward.end.fill")
-            }
-            .buttonStyle(.plain)
-            .disabled(previousDisabled)
+                Button(action: previous) {
+                    Image(systemName: "backward.end.fill")
+                }
+                .buttonStyle(.plain)
+                .disabled(previousDisabled)
 
-            Button(action: toggle) {
-                Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                    .font(.title2)
-            }
-            .buttonStyle(.plain)
+                Button(action: toggle) {
+                    Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                        .font(.title2)
+                }
+                .buttonStyle(.plain)
 
-            Button(action: next) {
-                Image(systemName: "forward.end.fill")
+                Button(action: next) {
+                    Image(systemName: "forward.end.fill")
+                }
+                .buttonStyle(.plain)
+                .disabled(nextDisabled)
             }
-            .buttonStyle(.plain)
-            .disabled(nextDisabled)
+
+            MiniPlayerProgressControl(
+                currentTime: currentTime,
+                duration: duration,
+                seek: seek
+            )
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
+    }
+}
+
+struct MiniPlayerProgressControl: View {
+    let currentTime: () -> TimeInterval
+    let duration: TimeInterval
+    let seek: (TimeInterval) -> Void
+    @State private var scrubTime: TimeInterval?
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { _ in
+            let liveTime = sanitizedTime(currentTime())
+            let displayedTime = min(max(scrubTime ?? liveTime, 0), safeDuration)
+
+            VStack(spacing: 2) {
+                Slider(
+                    value: Binding(
+                        get: { displayedTime },
+                        set: { scrubTime = min(max($0, 0), safeDuration) }
+                    ),
+                    in: 0...safeDuration,
+                    onEditingChanged: { isEditing in
+                        guard !isEditing, let scrubTime else { return }
+                        seek(scrubTime)
+                        self.scrubTime = nil
+                    }
+                )
+                .tint(.accentColor)
+
+                HStack {
+                    Text(formatTime(displayedTime))
+                        .font(.caption2)
+                        .monospacedDigit()
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Text("-" + formatTime(max(0, safeDuration - displayedTime)))
+                        .font(.caption2)
+                        .monospacedDigit()
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+    }
+
+    private var safeDuration: TimeInterval {
+        let fallback: TimeInterval = 1
+        guard duration.isFinite, duration > 0 else { return fallback }
+        return duration
+    }
+
+    private func sanitizedTime(_ seconds: TimeInterval) -> TimeInterval {
+        seconds.isFinite ? seconds : 0
+    }
+
+    private func formatTime(_ seconds: TimeInterval) -> String {
+        guard seconds.isFinite else {
+            return "0:00"
+        }
+        let minutes = Int(max(0, seconds)) / 60
+        let remainingSeconds = Int(max(0, seconds)) % 60
+        return String(format: "%d:%02d", minutes, remainingSeconds)
     }
 }
 #endif

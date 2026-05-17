@@ -143,10 +143,7 @@ enum TrackActions {
                 let savedCount = UserDefaults.standard.integer(forKey: "radioDownloadCount")
                 let count = savedCount > 0 ? savedCount : 25
 
-                var similarSongs = try await NavidromeAPI.shared.getSimilarSongs(id: song.id, count: count)
-                if similarSongs.isEmpty, let artistId = song.artistId {
-                    similarSongs = try await NavidromeAPI.shared.getSimilarSongs2(artistId: artistId, count: count)
-                }
+                let similarSongs = try await NavidromeAPI.shared.getSimilarSongsForSong(song, count: count)
 
                 let filteredSongs = similarSongs.filter { $0.id != song.id }
                 await MainActor.run {

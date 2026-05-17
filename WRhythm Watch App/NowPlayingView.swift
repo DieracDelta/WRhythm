@@ -299,17 +299,9 @@ struct NowPlayingView: View {
         Task {
             do {
                 print("🎵 Starting radio for: \(song.title)")
-                var similarSongs = try await NavidromeAPI.shared.getSimilarSongs(id: song.id, count: 100)
-                print("📻 getSimilarSongs returned \(similarSongs.count) songs")
+                var similarSongs = try await NavidromeAPI.shared.getSimilarSongsForSong(song, count: 100)
+                print("📻 ID3 similar songs returned \(similarSongs.count) songs")
 
-                // Fallback 1: Try artist-based radio if no results
-                if similarSongs.isEmpty, let artistId = song.artistId {
-                    print("📻 Falling back to artist radio for artist ID: \(artistId)")
-                    similarSongs = try await NavidromeAPI.shared.getSimilarSongs2(artistId: artistId, count: 100)
-                    print("📻 getSimilarSongs2 returned \(similarSongs.count) songs")
-                }
-
-                // Fallback 2: Try random songs if still empty
                 if similarSongs.isEmpty {
                     print("📻 Falling back to random songs")
                     similarSongs = try await NavidromeAPI.shared.getRandomSongs(size: 100)
@@ -369,7 +361,6 @@ private struct NowPlayingArtwork: View, Equatable {
                     .resizable()
                     .aspectRatio(contentMode: .fit)
             }
-            .id(coverURL)
             .frame(maxWidth: maxSize, maxHeight: maxSize)
             .frame(maxWidth: .infinity)
             .cornerRadius(8)
