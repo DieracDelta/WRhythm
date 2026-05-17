@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		26632C3C2EFB21FF003C8ABA /* WRhythm Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 26632C3B2EFB21FF003C8ABA /* WRhythm Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		F10000022F00000000000001 /* AppIconMac.icns in Resources */ = {isa = PBXBuildFile; fileRef = F10000012F00000000000001 /* AppIconMac.icns */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -54,6 +55,7 @@
 		26632C4A2EFB2200003C8ABA /* WRhythm Watch AppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "WRhythm Watch AppTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		26632C542EFB2200003C8ABA /* WRhythm Watch AppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "WRhythm Watch AppUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		F00000012EFC000000000001 /* WRhythm macOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = "WRhythm macOS.app"; path = WRhythm.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F10000012F00000000000001 /* AppIconMac.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = AppIconMac.icns; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -117,6 +119,7 @@
 			isa = PBXGroup;
 			children = (
 				26632C3F2EFB21FF003C8ABA /* WRhythm Watch App */,
+				F10000032F00000000000001 /* MacResources */,
 				26632C4D2EFB2200003C8ABA /* WRhythm Watch AppTests */,
 				26632C572EFB2200003C8ABA /* WRhythm Watch AppUITests */,
 				26632C362EFB21FF003C8ABA /* Products */,
@@ -133,6 +136,14 @@
 				26632C542EFB2200003C8ABA /* WRhythm Watch AppUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		F10000032F00000000000001 /* MacResources */ = {
+			isa = PBXGroup;
+			children = (
+				F10000012F00000000000001 /* AppIconMac.icns */,
+			);
+			path = MacResources;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -337,6 +348,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F10000022F00000000000001 /* AppIconMac.icns in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
