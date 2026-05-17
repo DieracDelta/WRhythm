@@ -41,6 +41,34 @@ struct PlaybackSnapshot: Codable, Identifiable {
     let updatedAt: Date
 }
 
+struct PlaybackSession: Codable, Identifiable {
+    let id: String
+    let revision: Int
+    let queue: [Song]
+    let currentIndex: Int
+    let position: TimeInterval
+    let isPlaying: Bool
+    let outputDeviceID: String
+    let updatedAt: Date
+    let updatedByDeviceID: String
+
+    var currentSong: Song? {
+        guard !queue.isEmpty, queue.indices.contains(currentIndex) else { return nil }
+        return queue[currentIndex]
+    }
+
+    var estimatedPosition: TimeInterval {
+        let basePosition = position.isFinite ? position : 0
+        let advancedPosition = isPlaying ? basePosition + max(0, Date().timeIntervalSince(updatedAt)) : basePosition
+        let clampedPosition = max(0, advancedPosition)
+
+        guard let duration = currentSong?.duration, duration > 0 else {
+            return clampedPosition
+        }
+        return min(clampedPosition, TimeInterval(duration))
+    }
+}
+
 extension PlaybackSnapshot {
     var estimatedCurrentTime: TimeInterval {
         let baseTime = currentTime.isFinite ? currentTime : 0
@@ -98,15 +126,35 @@ private struct PlaybackCommand: Codable {
     }
 
     let action: Action
+    let commandID: String?
     let songs: [Song]?
     let startingIndex: Int?
     let time: TimeInterval?
+
+    init(action: Action, commandID: String? = nil, songs: [Song]?, startingIndex: Int?, time: TimeInterval?) {
+        self.action = action
+        self.commandID = commandID
+        self.songs = songs
+        self.startingIndex = startingIndex
+        self.time = time
+    }
+
+    func withCommandID() -> PlaybackCommand {
+        PlaybackCommand(
+            action: action,
+            commandID: commandID ?? UUID().uuidString,
+            songs: songs,
+            startingIndex: startingIndex,
+            time: time
+        )
+    }
 }
 
 private struct SyncEnvelope: Codable {
     enum Kind: String, Codable {
         case hello
         case playbackState
+        case playbackSession
         case playbackCommand
         case credentials
     }
@@ -114,9 +162,28 @@ private struct SyncEnvelope: Codable {
     let kind: Kind
     let sender: SyncPeerInfo
     let playback: PlaybackSnapshot?
+    let playbackSession: PlaybackSession?
     let command: PlaybackCommand?
     let credentials: SyncedCredentials?
     let targetDeviceID: String?
+
+    init(
+        kind: Kind,
+        sender: SyncPeerInfo,
+        playback: PlaybackSnapshot?,
+        playbackSession: PlaybackSession? = nil,
+        command: PlaybackCommand?,
+        credentials: SyncedCredentials?,
+        targetDeviceID: String?
+    ) {
+        self.kind = kind
+        self.sender = sender
+        self.playback = playback
+        self.playbackSession = playbackSession
+        self.command = command
+        self.credentials = credentials
+        self.targetDeviceID = targetDeviceID
+    }
 }
 
 final class DeviceSyncManager: NSObject, ObservableObject {
@@ -143,6 +210,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
     }
 
     @Published private(set) var remotePlayback: PlaybackSnapshot?
+    @Published private(set) var sharedSession: PlaybackSession?
     @Published private(set) var connectedDeviceNames: [String] = []
     @Published var selectedPlaybackTargetID: String {
         didSet {
@@ -165,6 +233,9 @@ final class DeviceSyncManager: NSObject, ObservableObject {
     private var isApplyingRemoteCommand = false
     private var peerInfos: [String: SyncPeerInfo] = [:]
     private var pendingTargetedCommands: [String: PlaybackCommand] = [:]
+    private var processedCommandIDs = Set<String>()
+    private var processedCommandIDOrder: [String] = []
+    private let sharedSessionID: String
 
 #if os(iOS) || os(watchOS)
     private var watchSession: WCSession?
@@ -187,6 +258,13 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             let newID = UUID().uuidString
             UserDefaults.standard.set(newID, forKey: "deviceSyncDeviceID")
             localDeviceID = newID
+        }
+        if let savedSessionID = UserDefaults.standard.string(forKey: "deviceSyncSessionID") {
+            sharedSessionID = savedSessionID
+        } else {
+            let newSessionID = UUID().uuidString
+            UserDefaults.standard.set(newSessionID, forKey: "deviceSyncSessionID")
+            sharedSessionID = newSessionID
         }
 
 #if os(watchOS)
@@ -241,6 +319,43 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         return remotePlayback.isPlaying || remotePlayback.song != nil
     }
 
+    var isLocalPlaybackOutput: Bool {
+        guard syncModeEnabled, let sharedSession else { return true }
+        return sharedSession.outputDeviceID == localDeviceID
+    }
+
+    var activeSharedPlayback: PlaybackSnapshot? {
+        guard syncModeEnabled,
+              let sharedSession,
+              let song = sharedSession.currentSong,
+              sharedSession.outputDeviceID != localDeviceID else {
+            return nil
+        }
+
+        let outputPeer = peerInfo(for: sharedSession.outputDeviceID)
+        return PlaybackSnapshot(
+            id: sharedSession.outputDeviceID,
+            deviceName: outputPeer?.name ?? remotePlayback?.deviceName ?? "Remote Device",
+            platform: outputPeer?.platform ?? remotePlayback?.platform ?? "Device",
+            song: song,
+            isPlaying: sharedSession.isPlaying,
+            currentTime: sharedSession.position,
+            duration: TimeInterval(song.duration ?? 0),
+            queue: sharedSession.queue,
+            currentIndex: sharedSession.currentIndex,
+            updatedAt: sharedSession.updatedAt
+        )
+    }
+
+    var sharedQueue: [Song] {
+        sharedSession?.queue ?? []
+    }
+
+    var sharedQueueCurrentIndex: Int {
+        guard let sharedSession else { return 0 }
+        return min(max(sharedSession.currentIndex, 0), max(sharedSession.queue.count - 1, 0))
+    }
+
     var availablePlaybackTargets: [PlaybackTargetDevice] {
         var targets = [
             PlaybackTargetDevice(id: localDeviceID, name: localDeviceName, platform: platformName, isLocal: true)
@@ -283,6 +398,13 @@ final class DeviceSyncManager: NSObject, ObservableObject {
 #endif
     }
 
+    private func peerInfo(for deviceID: String) -> SyncPeerInfo? {
+        if deviceID == localDeviceID {
+            return localPeerInfo()
+        }
+        return peerInfos[deviceID]
+    }
+
     var selectedPlaybackTargetName: String {
         availablePlaybackTargets.first(where: { $0.id == validSelectedPlaybackTargetID })?.displayName ?? "This \(platformName)"
     }
@@ -294,6 +416,107 @@ final class DeviceSyncManager: NSObject, ObservableObject {
     func validateSelectedPlaybackTarget() {
         if selectedPlaybackTargetID != validSelectedPlaybackTargetID {
             selectedPlaybackTargetID = localDeviceID
+        }
+    }
+
+    private func nextSessionRevision() -> Int {
+        (sharedSession?.revision ?? 0) + 1
+    }
+
+    private func makeSession(
+        queue: [Song],
+        currentIndex: Int,
+        position: TimeInterval,
+        isPlaying: Bool,
+        outputDeviceID: String,
+        revision: Int? = nil
+    ) -> PlaybackSession {
+        PlaybackSession(
+            id: sharedSession?.id ?? sharedSessionID,
+            revision: revision ?? nextSessionRevision(),
+            queue: queue,
+            currentIndex: min(max(currentIndex, 0), max(queue.count - 1, 0)),
+            position: max(0, position.isFinite ? position : 0),
+            isPlaying: isPlaying,
+            outputDeviceID: outputDeviceID,
+            updatedAt: Date(),
+            updatedByDeviceID: localDeviceID
+        )
+    }
+
+    private func publishSharedSession(_ session: PlaybackSession, applyLocally: Bool = true) {
+        guard syncModeEnabled else { return }
+        applySharedSession(session, applyLocally: applyLocally)
+        _ = sendEnvelope(.init(
+            kind: .playbackSession,
+            sender: localPeerInfo(),
+            playback: nil,
+            playbackSession: session,
+            command: nil,
+            credentials: nil,
+            targetDeviceID: nil
+        ))
+    }
+
+    private func applySharedSession(_ session: PlaybackSession, applyLocally: Bool) {
+        if let existing = sharedSession {
+            if session.revision < existing.revision {
+                return
+            }
+            if session.revision == existing.revision,
+               session.updatedByDeviceID <= existing.updatedByDeviceID {
+                return
+            }
+        }
+
+        sharedSession = session
+        selectedPlaybackTargetID = session.outputDeviceID
+
+        if applyLocally {
+            reconcileLocalPlayback(with: session)
+        }
+    }
+
+    private func reconcileLocalPlayback(with session: PlaybackSession) {
+        guard syncModeEnabled else { return }
+        let player = AudioPlayer.shared
+
+        if session.outputDeviceID == localDeviceID {
+            guard let song = session.currentSong else {
+                if player.currentSong != nil {
+                    player.stop()
+                }
+                return
+            }
+
+            let queueMatches = player.queue.map(\.id) == session.queue.map(\.id)
+            let currentMatches = player.currentSong?.id == song.id && player.currentIndex == session.currentIndex
+
+            if currentMatches {
+                if !queueMatches {
+                    player.queue = session.queue
+                    player.currentIndex = session.currentIndex
+                }
+                let drift = abs(player.currentTime - session.estimatedPosition)
+                if drift > 3 {
+                    player.seek(to: session.estimatedPosition)
+                }
+                if session.isPlaying, !player.isPlaying {
+                    player.play()
+                } else if !session.isPlaying, player.isPlaying {
+                    player.pause()
+                }
+            } else {
+                isApplyingRemoteCommand = true
+                player.playQueue(session.queue, startingAt: session.currentIndex)
+                player.seek(to: session.estimatedPosition)
+                if !session.isPlaying {
+                    player.pause()
+                }
+                isApplyingRemoteCommand = false
+            }
+        } else if player.isPlaying {
+            player.pause()
         }
     }
 
@@ -313,9 +536,13 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             outgoingIndex = 0
         }
 
-        mirrorSharedQueue(songs: outgoingSongs, currentIndex: outgoingIndex, currentTime: 0)
-        broadcastSharedQueue(ownerDeviceID: selectedPlaybackTargetID, songs: outgoingSongs, currentIndex: outgoingIndex, currentTime: 0)
-        _ = sendCommand(.init(action: .playQueue, songs: outgoingSongs, startingIndex: outgoingIndex, time: nil), targetDeviceID: selectedPlaybackTargetID)
+        publishSharedSession(makeSession(
+            queue: outgoingSongs,
+            currentIndex: outgoingIndex,
+            position: 0,
+            isPlaying: true,
+            outputDeviceID: selectedPlaybackTargetID
+        ))
         return true
     }
 
@@ -333,7 +560,10 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         let baseQueue: [Song]
         let currentIndex: Int
 
-        if let remotePlayback, remotePlayback.id == selectedPlaybackTargetID {
+        if let sharedSession, sharedSession.outputDeviceID == selectedPlaybackTargetID {
+            baseQueue = sharedSession.queue
+            currentIndex = min(sharedSession.currentIndex, max(baseQueue.count - 1, 0))
+        } else if let remotePlayback, remotePlayback.id == selectedPlaybackTargetID {
             baseQueue = remotePlayback.queue.isEmpty ? remotePlayback.song.map { [$0] } ?? [] : remotePlayback.queue
             currentIndex = min(remotePlayback.currentIndex, max(baseQueue.count - 1, 0))
         } else {
@@ -342,9 +572,13 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         }
 
         let sharedQueue = baseQueue + songs
-        mirrorSharedQueue(songs: sharedQueue, currentIndex: currentIndex, currentTime: player.currentTime)
-        broadcastSharedQueue(ownerDeviceID: selectedPlaybackTargetID, songs: sharedQueue, currentIndex: currentIndex, currentTime: player.currentTime)
-        _ = sendCommand(.init(action: .enqueue, songs: songs, startingIndex: nil, time: nil), targetDeviceID: selectedPlaybackTargetID)
+        publishSharedSession(makeSession(
+            queue: sharedQueue,
+            currentIndex: currentIndex,
+            position: sharedSession?.outputDeviceID == selectedPlaybackTargetID ? sharedSession?.estimatedPosition ?? 0 : player.currentTime,
+            isPlaying: sharedSession?.outputDeviceID == selectedPlaybackTargetID ? sharedSession?.isPlaying ?? false : player.isPlaying,
+            outputDeviceID: selectedPlaybackTargetID
+        ))
         return true
     }
 
@@ -374,25 +608,39 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         let queue = playback.queue.isEmpty ? playback.song.map { [$0] } ?? [] : playback.queue
         guard !queue.isEmpty else { return }
         let safeIndex = min(max(index, 0), queue.count - 1)
-        _ = sendCommand(
-            .init(action: .playQueue, songs: queue, startingIndex: safeIndex, time: nil),
-            targetDeviceID: playback.id
-        )
-        broadcastSharedQueue(ownerDeviceID: playback.id, songs: queue, currentIndex: safeIndex, currentTime: 0)
+        publishSharedSession(makeSession(
+            queue: queue,
+            currentIndex: safeIndex,
+            position: 0,
+            isPlaying: true,
+            outputDeviceID: playback.id
+        ))
+    }
+
+    func playSharedQueueItem(at index: Int) {
+        guard syncModeEnabled, let sharedSession, !sharedSession.queue.isEmpty else { return }
+        let safeIndex = min(max(index, 0), sharedSession.queue.count - 1)
+        publishSharedSession(makeSession(
+            queue: sharedSession.queue,
+            currentIndex: safeIndex,
+            position: 0,
+            isPlaying: true,
+            outputDeviceID: sharedSession.outputDeviceID
+        ))
+
     }
 
     func takeOverRemotePlayback() {
         guard syncModeEnabled, let remotePlayback, let song = remotePlayback.song else { return }
         selectedPlaybackTargetID = localDeviceID
-        isApplyingRemoteCommand = true
-        if remotePlayback.queue.isEmpty {
-            AudioPlayer.shared.playSong(song)
-        } else {
-            AudioPlayer.shared.playQueue(remotePlayback.queue, startingAt: remotePlayback.currentIndex)
-        }
-        AudioPlayer.shared.seek(to: remotePlayback.currentTime)
-        isApplyingRemoteCommand = false
-        _ = sendCommand(.init(action: .pause, songs: nil, startingIndex: nil, time: nil), targetDeviceID: remotePlayback.id)
+        let queue = remotePlayback.queue.isEmpty ? [song] : remotePlayback.queue
+        publishSharedSession(makeSession(
+            queue: queue,
+            currentIndex: remotePlayback.currentIndex,
+            position: remotePlayback.estimatedCurrentTime,
+            isPlaying: remotePlayback.isPlaying,
+            outputDeviceID: localDeviceID
+        ))
     }
 
     func selectPlaybackTarget(_ targetID: String) {
@@ -404,7 +652,17 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         selectedPlaybackTargetID = targetID
 
         if targetID == localDeviceID {
-            if let remotePlayback, remotePlayback.song != nil, AudioPlayer.shared.currentSong == nil {
+            if let sharedPlayback = activeSharedPlayback, sharedPlayback.song != nil {
+                let queue = sharedPlayback.queue.isEmpty ? sharedPlayback.song.map { [$0] } ?? [] : sharedPlayback.queue
+                guard !queue.isEmpty else { return }
+                publishSharedSession(makeSession(
+                    queue: queue,
+                    currentIndex: sharedPlayback.currentIndex,
+                    position: sharedPlayback.estimatedCurrentTime,
+                    isPlaying: sharedPlayback.isPlaying,
+                    outputDeviceID: localDeviceID
+                ))
+            } else if let remotePlayback, remotePlayback.song != nil, AudioPlayer.shared.currentSong == nil {
                 takeOverRemotePlayback()
             }
             return
@@ -415,25 +673,43 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             return
         }
 
+        if let sharedSession, !sharedSession.queue.isEmpty {
+            publishSharedSession(makeSession(
+                queue: sharedSession.queue,
+                currentIndex: sharedSession.currentIndex,
+                position: sharedSession.estimatedPosition,
+                isPlaying: sharedSession.isPlaying,
+                outputDeviceID: targetID
+            ))
+            return
+        }
+
         let player = AudioPlayer.shared
         guard let currentSong = player.currentSong else { return }
         let queue = player.queue.isEmpty ? [currentSong] : player.queue
         let index = min(player.currentIndex, queue.count - 1)
-        let transferSent = sendCommand(
-            .init(action: .playQueue, songs: queue, startingIndex: index, time: player.currentTime),
-            targetDeviceID: targetID
-        )
-        if transferSent {
-            player.pause()
-        }
+        publishSharedSession(makeSession(
+            queue: queue,
+            currentIndex: index,
+            position: player.currentTime,
+            isPlaying: player.isPlaying,
+            outputDeviceID: targetID
+        ))
     }
 
     func broadcastLocalQueueAsShared() {
         guard syncModeEnabled, !isApplyingRemoteCommand else { return }
+        guard sharedSession?.outputDeviceID == nil || sharedSession?.outputDeviceID == localDeviceID else { return }
         let player = AudioPlayer.shared
         let queue = player.queue.isEmpty ? player.currentSong.map { [$0] } ?? [] : player.queue
         guard !queue.isEmpty else { return }
-        broadcastSharedQueue(ownerDeviceID: localDeviceID, songs: queue, currentIndex: min(player.currentIndex, queue.count - 1), currentTime: player.currentTime)
+        publishSharedSession(makeSession(
+            queue: queue,
+            currentIndex: min(player.currentIndex, queue.count - 1),
+            position: player.currentTime,
+            isPlaying: player.isPlaying,
+            outputDeviceID: localDeviceID
+        ), applyLocally: false)
     }
 
     func credentialsDidChange() {
@@ -519,6 +795,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             peerDisplayNames.removeAll()
             connectedDeviceNames = []
             remotePlayback = nil
+            sharedSession = nil
         }
 #endif
     }
@@ -552,11 +829,23 @@ final class DeviceSyncManager: NSObject, ObservableObject {
 
     private func broadcastHello() {
         _ = sendEnvelope(.init(kind: .hello, sender: localPeerInfo(), playback: nil, command: nil, credentials: nil, targetDeviceID: nil))
+        if let sharedSession {
+            _ = sendEnvelope(.init(
+                kind: .playbackSession,
+                sender: localPeerInfo(),
+                playback: nil,
+                playbackSession: sharedSession,
+                command: nil,
+                credentials: nil,
+                targetDeviceID: nil
+            ))
+        }
     }
 
     private func broadcastPlaybackState(force: Bool = false) {
         guard syncModeEnabled else { return }
         guard !isApplyingRemoteCommand else { return }
+        guard sharedSession?.outputDeviceID == nil || sharedSession?.outputDeviceID == localDeviceID else { return }
         guard force || Date().timeIntervalSince(lastPlaybackBroadcast) > 1.5 else { return }
         lastPlaybackBroadcast = Date()
         _ = sendEnvelope(.init(kind: .playbackState, sender: localPeerInfo(), playback: localPlaybackSnapshot(), command: nil, credentials: nil, targetDeviceID: nil))
@@ -576,9 +865,25 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         return selectedPlaybackTargetID
     }
 
+    private func shouldProcessCommand(_ command: PlaybackCommand) -> Bool {
+        guard let commandID = command.commandID else { return true }
+        guard !processedCommandIDs.contains(commandID) else { return false }
+
+        processedCommandIDs.insert(commandID)
+        processedCommandIDOrder.append(commandID)
+        if processedCommandIDOrder.count > 200 {
+            let expiredCount = processedCommandIDOrder.count - 200
+            let expired = Array(processedCommandIDOrder.prefix(expiredCount))
+            processedCommandIDOrder.removeFirst(expiredCount)
+            expired.forEach { processedCommandIDs.remove($0) }
+        }
+        return true
+    }
+
     @discardableResult
     private func sendCommand(_ command: PlaybackCommand, targetDeviceID: String? = nil) -> Bool {
         guard syncModeEnabled else { return false }
+        let command = command.withCommandID()
         if let targetDeviceID {
             pendingTargetedCommands[targetDeviceID] = command
         }
@@ -647,19 +952,35 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         case .playbackState:
             guard syncModeEnabled, envelope.sender.syncModeEnabled, let playback = envelope.playback else { return }
             remotePlayback = playback
-            if playback.isPlaying, !AudioPlayer.shared.isPlaying {
+            if sharedSession == nil,
+               playback.isPlaying,
+               !AudioPlayer.shared.isPlaying {
                 selectedPlaybackTargetID = playback.id
             }
             if playback.song != nil {
                 pendingTargetedCommands.removeValue(forKey: playback.id)
             }
 
+        case .playbackSession:
+            guard syncModeEnabled,
+                  envelope.sender.syncModeEnabled,
+                  let session = envelope.playbackSession else { return }
+            applySharedSession(session, applyLocally: true)
+
         case .playbackCommand:
             guard syncModeEnabled, envelope.sender.syncModeEnabled, let command = envelope.command else { return }
+            guard shouldProcessCommand(command) else { return }
             if command.action == .syncQueue {
                 guard let ownerDeviceID = envelope.targetDeviceID, ownerDeviceID != localDeviceID else { return }
-                guard !AudioPlayer.shared.isPlaying else { return }
-                apply(command)
+                guard let songs = command.songs, !songs.isEmpty else { return }
+                applySharedSession(makeSession(
+                    queue: songs,
+                    currentIndex: min(command.startingIndex ?? 0, songs.count - 1),
+                    position: command.time ?? 0,
+                    isPlaying: sharedSession?.isPlaying ?? false,
+                    outputDeviceID: ownerDeviceID,
+                    revision: nextSessionRevision()
+                ), applyLocally: true)
                 return
             }
 
@@ -682,6 +1003,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         defer {
             isApplyingRemoteCommand = false
             if command.action != .syncQueue {
+                broadcastLocalQueueAsShared()
                 broadcastPlaybackState(force: true)
             }
         }
@@ -711,11 +1033,14 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             player.enqueue(songs)
         case .syncQueue:
             guard let songs = command.songs, !songs.isEmpty else { return }
-            mirrorSharedQueue(
-                songs: songs,
+            let ownerDeviceID = sharedSession?.outputDeviceID ?? selectedPlaybackTargetID
+            publishSharedSession(makeSession(
+                queue: songs,
                 currentIndex: min(command.startingIndex ?? 0, songs.count - 1),
-                currentTime: command.time ?? 0
-            )
+                position: command.time ?? 0,
+                isPlaying: sharedSession?.isPlaying ?? false,
+                outputDeviceID: ownerDeviceID
+            ))
         case .stop:
             player.stop()
         }
@@ -723,6 +1048,13 @@ final class DeviceSyncManager: NSObject, ObservableObject {
 
     private func broadcastSharedQueue(ownerDeviceID: String, songs: [Song], currentIndex: Int, currentTime: TimeInterval) {
         guard syncModeEnabled, !songs.isEmpty else { return }
+        publishSharedSession(makeSession(
+            queue: songs,
+            currentIndex: currentIndex,
+            position: currentTime,
+            isPlaying: sharedSession?.isPlaying ?? false,
+            outputDeviceID: ownerDeviceID
+        ))
         let command = PlaybackCommand(
             action: .syncQueue,
             songs: songs,

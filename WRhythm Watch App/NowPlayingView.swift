@@ -183,7 +183,7 @@ struct NowPlayingView: View {
 
                     if primaryRemotePlayback == nil,
                        deviceSyncManager.syncModeEnabled,
-                       let remote = deviceSyncManager.remotePlayback,
+                       let remote = deviceSyncManager.activeSharedPlayback ?? deviceSyncManager.remotePlayback,
                        remote.song != nil {
                         Divider()
                         RemotePlaybackControls(playback: remote, compact: true)
@@ -192,7 +192,7 @@ struct NowPlayingView: View {
                 .padding()
                 .id(song.id)
             } else if deviceSyncManager.syncModeEnabled,
-                      let remote = deviceSyncManager.remotePlayback,
+                      let remote = deviceSyncManager.activeSharedPlayback ?? deviceSyncManager.remotePlayback,
                       remote.song != nil {
                 VStack(spacing: 12) {
                     PlaybackTargetPicker()
@@ -242,6 +242,10 @@ struct NowPlayingView: View {
     }
 
     private var primaryRemotePlayback: PlaybackSnapshot? {
+        if let sharedPlayback = deviceSyncManager.activeSharedPlayback {
+            return sharedPlayback
+        }
+
         guard deviceSyncManager.syncModeEnabled,
               let remote = deviceSyncManager.remotePlayback,
               remote.song != nil else {

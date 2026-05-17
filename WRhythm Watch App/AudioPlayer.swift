@@ -540,6 +540,10 @@ class AudioPlayer: NSObject, ObservableObject {
     }
 
     func togglePlayPause() {
+        if !DeviceSyncManager.shared.isLocalPlaybackOutput {
+            DeviceSyncManager.shared.sendPlayPause()
+            return
+        }
         if isPlaying {
             pause()
         } else {
@@ -548,12 +552,20 @@ class AudioPlayer: NSObject, ObservableObject {
     }
 
     func next() {
+        if !DeviceSyncManager.shared.isLocalPlaybackOutput {
+            DeviceSyncManager.shared.sendNext()
+            return
+        }
         guard currentIndex < queue.count - 1 else { return }
         currentIndex += 1
         startPlayback(queue[currentIndex])
     }
 
     func previous() {
+        if !DeviceSyncManager.shared.isLocalPlaybackOutput {
+            DeviceSyncManager.shared.sendPrevious()
+            return
+        }
         if currentTime > 3 {
             seek(to: 0)
         } else if currentIndex > 0 {
@@ -565,6 +577,10 @@ class AudioPlayer: NSObject, ObservableObject {
     }
 
     func seek(to time: TimeInterval) {
+        if !DeviceSyncManager.shared.isLocalPlaybackOutput {
+            DeviceSyncManager.shared.sendSeek(to: time)
+            return
+        }
         // If we are playing a local file, standard seek works
         if let currentSong = currentSong, 
            DownloadManager.shared.getLocalURL(currentSong.id) != nil {

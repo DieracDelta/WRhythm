@@ -119,18 +119,22 @@ struct MacContentLayout: View {
                 }
 
                 Section(localQueueSectionTitle) {
-                    if player.queue.isEmpty {
+                    if displayedQueue.isEmpty {
                         Text("No queued songs")
                             .foregroundColor(.secondary)
                     } else {
-                        ForEach(Array(player.queue.enumerated()), id: \.offset) { index, song in
+                        ForEach(Array(displayedQueue.enumerated()), id: \.offset) { index, song in
                             Button(action: {
                                 selection = .nowPlaying
-                                player.playQueue(player.queue, startingAt: index)
+                                if deviceSyncManager.sharedSession != nil {
+                                    deviceSyncManager.playSharedQueueItem(at: index)
+                                } else {
+                                    player.playQueue(player.queue, startingAt: index)
+                                }
                             }) {
                                 HStack(spacing: 8) {
-                                    if player.currentSong?.id == song.id {
-                                        Image(systemName: player.isPlaying ? "speaker.wave.2.fill" : "speaker")
+                                    if displayedCurrentIndex == index {
+                                        Image(systemName: displayedQueueIsPlaying ? "speaker.wave.2.fill" : "speaker")
                                             .foregroundColor(.accentColor)
                                     }
 
@@ -156,7 +160,7 @@ struct MacContentLayout: View {
 
                 if deviceSyncManager.syncModeEnabled,
                    let remote = activeRemotePlayback,
-                   !remoteQueueMatchesLocal {
+                   !remoteQueueMatchesDisplayed {
                     Section("\(remote.deviceName) Queue") {
                         if remoteQueue.isEmpty {
                             Text("No queued songs")
@@ -202,7 +206,7 @@ struct MacContentLayout: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                     if selection != .nowPlaying,
-                       player.currentSong != nil || deviceSyncManager.remotePlayback?.song != nil {
+                       player.currentSong != nil || deviceSyncManager.activeSharedPlayback?.song != nil || deviceSyncManager.remotePlayback?.song != nil {
                         Divider()
                         MacMiniPlayerBar(selection: $selection)
                     }
@@ -212,8 +216,32 @@ struct MacContentLayout: View {
     }
 
     private var activeRemotePlayback: PlaybackSnapshot? {
+        if let sharedPlayback = deviceSyncManager.activeSharedPlayback {
+            return sharedPlayback
+        }
         guard let remote = deviceSyncManager.remotePlayback, remote.song != nil else { return nil }
         return remote
+    }
+
+    private var displayedQueue: [Song] {
+        if !deviceSyncManager.sharedQueue.isEmpty {
+            return deviceSyncManager.sharedQueue
+        }
+        return player.queue
+    }
+
+    private var displayedCurrentIndex: Int {
+        if deviceSyncManager.sharedSession != nil {
+            return deviceSyncManager.sharedQueueCurrentIndex
+        }
+        return player.currentIndex
+    }
+
+    private var displayedQueueIsPlaying: Bool {
+        if let sharedSession = deviceSyncManager.sharedSession {
+            return sharedSession.isPlaying
+        }
+        return player.isPlaying
     }
 
     private var remoteQueue: [Song] {
@@ -226,8 +254,13 @@ struct MacContentLayout: View {
         return player.queue.map(\.id) == remoteQueue.map(\.id)
     }
 
+    private var remoteQueueMatchesDisplayed: Bool {
+        guard !displayedQueue.isEmpty, !remoteQueue.isEmpty else { return false }
+        return displayedQueue.map(\.id) == remoteQueue.map(\.id)
+    }
+
     private var localQueueSectionTitle: String {
-        remoteQueueMatchesLocal ? "Shared Queue" : "Mac Queue"
+        deviceSyncManager.sharedSession != nil || remoteQueueMatchesLocal ? "Shared Queue" : "Mac Queue"
     }
 
     @ViewBuilder
@@ -279,7 +312,7 @@ struct MacMiniPlayerBar: View {
             }
 
             if deviceSyncManager.syncModeEnabled,
-               let remote = deviceSyncManager.remotePlayback,
+               let remote = deviceSyncManager.activeSharedPlayback ?? deviceSyncManager.remotePlayback,
                let song = remote.song,
                !shouldHideRemoteRow {
                 if player.currentSong != nil, !shouldHideLocalRow {
@@ -297,12 +330,25 @@ struct MacMiniPlayerBar: View {
                     nextDisabled: remote.currentIndex >= remote.queue.count - 1
                 )
             }
+
+            if player.currentSong != nil || deviceSyncManager.activeSharedPlayback?.song != nil || deviceSyncManager.remotePlayback?.song != nil {
+                Divider()
+                HStack(spacing: 8) {
+                    Image(systemName: "speaker.fill")
+                        .foregroundColor(.secondary)
+                    Slider(value: $player.volume, in: 0...1)
+                    Image(systemName: "speaker.wave.3.fill")
+                        .foregroundColor(.secondary)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+            }
         }
         .background(.bar)
     }
 
     private var remoteQueue: [Song] {
-        guard let remote = deviceSyncManager.remotePlayback else { return [] }
+        guard let remote = deviceSyncManager.activeSharedPlayback ?? deviceSyncManager.remotePlayback else { return [] }
         return remote.queue.isEmpty ? remote.song.map { [$0] } ?? [] : remote.queue
     }
 
@@ -312,11 +358,11 @@ struct MacMiniPlayerBar: View {
     }
 
     private var shouldHideLocalRow: Bool {
-        remoteQueueMatchesLocal && !player.isPlaying
+        deviceSyncManager.activeSharedPlayback != nil || (remoteQueueMatchesLocal && !player.isPlaying)
     }
 
     private var shouldHideRemoteRow: Bool {
-        remoteQueueMatchesLocal && player.isPlaying
+        remoteQueueMatchesLocal && player.isPlaying && deviceSyncManager.activeSharedPlayback == nil
     }
 
     private var localLabel: String {
