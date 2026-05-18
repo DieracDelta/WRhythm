@@ -347,6 +347,7 @@ struct MacMiniPlayerBar: View {
                     subtitle: [song.artist, song.album].compactMap { $0 }.joined(separator: " • "),
                     isPlaying: player.isPlaying,
                     isBuffering: player.isBuffering,
+                    prebufferedTrackCount: player.prebufferedTrackCount,
                     queuePosition: player.queue.count > 1 ? "\(localLabel): \(player.currentIndex + 1) of \(player.queue.count)" : localLabel,
                     previous: player.previous,
                     toggle: player.togglePlayPause,
@@ -371,6 +372,7 @@ struct MacMiniPlayerBar: View {
                     subtitle: [song.artist, song.album].compactMap { $0 }.joined(separator: " • "),
                     isPlaying: remote.isPlaying,
                     isBuffering: remote.isBuffering == true,
+                    prebufferedTrackCount: remote.prebufferedTrackCount,
                     queuePosition: remote.queue.count > 1 ? "\(remote.deviceName): \(remote.currentIndex + 1) of \(remote.queue.count)" : remote.deviceName,
                     previous: { deviceSyncManager.sendPrevious(targetDeviceID: remote.id) },
                     toggle: { deviceSyncManager.setPlaying(!remote.isPlaying, targetDeviceID: remote.id) },
@@ -426,6 +428,7 @@ struct MacMiniPlayerBar: View {
         subtitle: String,
         isPlaying: Bool,
         isBuffering: Bool,
+        prebufferedTrackCount: Int?,
         queuePosition: String,
         previous: @escaping () -> Void,
         toggle: @escaping () -> Void,
@@ -446,7 +449,7 @@ struct MacMiniPlayerBar: View {
                             Text(title)
                                 .font(.headline)
                                 .lineLimit(1)
-                            Text(isBuffering ? "\(queuePosition) • Buffering" : queuePosition)
+                            Text(miniStatusText(queuePosition: queuePosition, isBuffering: isBuffering, prebufferedTrackCount: prebufferedTrackCount))
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                                 .lineLimit(1)
@@ -490,6 +493,17 @@ struct MacMiniPlayerBar: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
+    }
+
+    private func miniStatusText(queuePosition: String, isBuffering: Bool, prebufferedTrackCount: Int?) -> String {
+        var parts = [queuePosition]
+        if isBuffering {
+            parts.append("Buffering")
+        }
+        if let prebufferedTrackCount {
+            parts.append("\(prebufferedTrackCount) buffered")
+        }
+        return parts.joined(separator: " • ")
     }
 }
 
@@ -552,5 +566,6 @@ struct MiniPlayerProgressControl: View {
         let remainingSeconds = Int(max(0, seconds)) % 60
         return String(format: "%d:%02d", minutes, remainingSeconds)
     }
+
 }
 #endif

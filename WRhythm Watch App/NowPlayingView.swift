@@ -57,6 +57,12 @@ struct NowPlayingView: View {
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                         }
+
+                        if player.queue.count > player.currentIndex + 1 {
+                            Label(bufferedTrackLabel(player.prebufferedTrackCount), systemImage: "arrow.down.circle")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
                     }
 
                     PlaybackTargetPicker()
@@ -358,6 +364,10 @@ struct NowPlayingView: View {
     }
 }
 
+private func bufferedTrackLabel(_ count: Int) -> String {
+    "\(count) \(count == 1 ? "track" : "tracks") buffered"
+}
+
 private struct NowPlayingArtwork: View, Equatable {
     let coverArtId: String?
     let maxSize: CGFloat
@@ -437,6 +447,13 @@ struct RemotePlaybackControls: View {
                     .foregroundColor(.secondary)
                 if playback.isBuffering == true {
                     Text("Buffering")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                if let bufferedCount = playback.prebufferedTrackCount,
+                   !playback.queue.isEmpty,
+                   playback.currentIndex < playback.queue.count - 1 {
+                    Text("\(bufferedCount) buffered")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }

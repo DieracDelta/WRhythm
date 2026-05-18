@@ -40,6 +40,7 @@ class AudioPlayer: NSObject, ObservableObject {
     @Published var currentTime: TimeInterval = 0
     @Published var duration: TimeInterval = 0
     @Published var isBuffering = false
+    @Published private(set) var prebufferedTrackCount = 0
     @Published var queue: [Song] = []
     @Published var currentIndex: Int = 0
     @Published var playlistGenQueue: [Song] = []
@@ -692,6 +693,10 @@ class AudioPlayer: NSObject, ObservableObject {
         return url
     }
 
+    private func isPrebuffered(_ song: Song) -> Bool {
+        DownloadManager.shared.getLocalURL(song.id) != nil || existingPrebufferURL(for: song) != nil
+    }
+
     private func playbackMimeType(for song: Song, url: URL) -> String? {
         switch url.pathExtension.lowercased() {
         case "mp3":
@@ -713,6 +718,7 @@ class AudioPlayer: NSObject, ObservableObject {
         guard !queue.isEmpty else {
             prebufferTasks.values.forEach { $0.cancel() }
             prebufferTasks.removeAll()
+            updatePrebufferedTrackCount()
             return
         }
 
@@ -720,6 +726,7 @@ class AudioPlayer: NSObject, ObservableObject {
         guard start < queue.count else {
             prebufferTasks.values.forEach { $0.cancel() }
             prebufferTasks.removeAll()
+            updatePrebufferedTrackCount()
             return
         }
 
@@ -735,6 +742,7 @@ class AudioPlayer: NSObject, ObservableObject {
         }
 
         prunePrebufferCache(keeping: desiredKeys.union(currentSongKey.map { [$0] } ?? []))
+        updatePrebufferedTrackCount()
 
         for song in upcomingSongs {
             guard prebufferTasks.count < maxConcurrentPrebuffers else { break }
@@ -762,6 +770,7 @@ class AudioPlayer: NSObject, ObservableObject {
                     guard let player = self else { return }
                     player.prebufferURLs[key] = destinationURL
                     player.prebufferTasks.removeValue(forKey: key)
+                    player.updatePrebufferedTrackCount()
                     print("✅ Prebuffered next queue item: \(song.title)")
                     player.scheduleQueuePrebuffer()
                 }
@@ -769,14 +778,35 @@ class AudioPlayer: NSObject, ObservableObject {
                 await MainActor.run { [weak self] in
                     guard let player = self else { return }
                     player.prebufferTasks.removeValue(forKey: key)
+                    player.updatePrebufferedTrackCount()
                 }
             } catch {
                 await MainActor.run { [weak self] in
                     guard let player = self else { return }
                     player.prebufferTasks.removeValue(forKey: key)
+                    player.updatePrebufferedTrackCount()
                     print("⚠️ Failed to prebuffer \(song.title): \(error)")
                 }
             }
+        }
+    }
+
+    private func updatePrebufferedTrackCount() {
+        guard !queue.isEmpty else {
+            prebufferedTrackCount = 0
+            return
+        }
+
+        let start = currentIndex + 1
+        guard start < queue.count else {
+            prebufferedTrackCount = 0
+            return
+        }
+
+        let end = min(queue.count, start + prebufferAheadCount)
+        let count = queue[start..<end].filter { isPrebuffered($0) }.count
+        if prebufferedTrackCount != count {
+            prebufferedTrackCount = count
         }
     }
 
@@ -798,6 +828,7 @@ class AudioPlayer: NSObject, ObservableObject {
         for url in files where !keepFilenames.contains(url.lastPathComponent) {
             try? FileManager.default.removeItem(at: url)
         }
+        updatePrebufferedTrackCount()
     }
 
     private func startPlayback(_ song: Song, startTime: TimeInterval = 0, autoplay: Bool = true) {
