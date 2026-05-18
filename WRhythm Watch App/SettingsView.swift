@@ -17,6 +17,7 @@ struct SettingsView: View {
     @State private var logoutConfirmationText = ""
     @State private var selectedQuality: AudioQuality = DownloadManager.shared.audioQuality
     @AppStorage("streamingQuality") private var streamingQualityRaw = StreamingQuality.platformDefault.rawValue
+    @AppStorage("darkModeEnabled") private var darkModeEnabled = true
 
     private var streamingQuality: Binding<StreamingQuality> {
         Binding {
@@ -56,6 +57,18 @@ struct SettingsView: View {
                         .foregroundColor(.secondary)
                     Text("\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"))")
                         .font(.caption2)
+                }
+            }
+
+            Section(header: Text("Appearance")) {
+                Toggle(isOn: $darkModeEnabled) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Dark Mode")
+                            .font(.caption)
+                        Text(darkModeEnabled ? "Use dark appearance" : "Use light appearance")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
 

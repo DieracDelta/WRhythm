@@ -11,12 +11,14 @@ import SwiftUI
 struct WRhythm_Watch_AppApp: App {
     @StateObject private var libraryDataManager = LibraryDataManager()
     @StateObject private var deviceSyncManager = DeviceSyncManager.shared
+    @AppStorage("darkModeEnabled") private var darkModeEnabled = true
     
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(libraryDataManager)
                 .environmentObject(deviceSyncManager)
+                .preferredColorScheme(darkModeEnabled ? .dark : .light)
         }
 #if os(macOS)
         .commands {
