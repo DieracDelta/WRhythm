@@ -51,6 +51,12 @@ struct NowPlayingView: View {
                                 .foregroundColor(.secondary)
                                 .lineLimit(1)
                         }
+
+                        if player.isBuffering {
+                            Label("Buffering", systemImage: "hourglass")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
                     }
 
                     PlaybackTargetPicker()
@@ -429,6 +435,11 @@ struct RemotePlaybackControls: View {
                 Text(playback.isPlaying ? "Playing" : "Paused")
                     .font(.caption2)
                     .foregroundColor(.secondary)
+                if playback.isBuffering == true {
+                    Text("Buffering")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
             }
 
             if let song = playback.song {

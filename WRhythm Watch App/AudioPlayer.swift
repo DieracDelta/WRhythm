@@ -39,6 +39,7 @@ class AudioPlayer: NSObject, ObservableObject {
     }
     @Published var currentTime: TimeInterval = 0
     @Published var duration: TimeInterval = 0
+    @Published var isBuffering = false
     @Published var queue: [Song] = []
     @Published var currentIndex: Int = 0
     @Published var playlistGenQueue: [Song] = []
@@ -91,6 +92,10 @@ class AudioPlayer: NSObject, ObservableObject {
     private var isRestoringPlaybackState = false
     private var lastPersistenceWrite = Date.distantPast
     private var pendingPersistenceWorkItem: DispatchWorkItem?
+    private let prebufferAheadCount = 8
+    private let maxConcurrentPrebuffers = 3
+    private var prebufferTasks: [String: Task<Void, Never>] = [:]
+    private var prebufferURLs: [String: URL] = [:]
 #if os(macOS)
     private var mediaKeyMonitors: [Any] = []
     private var mediaKeyEventTap: CFMachPort?
@@ -103,6 +108,7 @@ class AudioPlayer: NSObject, ObservableObject {
 
         setupRemoteCommands()
         addPeriodicTimeObserver()
+        observePlayerBuffering()
         restorePersistedPlaybackState()
         setupPlaybackPersistence()
     }
@@ -129,6 +135,7 @@ class AudioPlayer: NSObject, ObservableObject {
             .dropFirst()
             .sink { [weak self] _, _, _, _ in
                 self?.schedulePlaybackPersistence()
+                self?.scheduleQueuePrebuffer()
             }
             .store(in: &cancellables)
 
@@ -144,6 +151,15 @@ class AudioPlayer: NSObject, ObservableObject {
             .dropFirst()
             .sink { [weak self] _ in
                 self?.schedulePlaybackPersistence()
+            }
+            .store(in: &cancellables)
+    }
+
+    private func observePlayerBuffering() {
+        player.publisher(for: \.timeControlStatus)
+            .sink { [weak self] status in
+                guard let self else { return }
+                self.isBuffering = self.isPlaying && (status == .waitingToPlayAtSpecifiedRate || self.player.currentItem?.isPlaybackBufferEmpty == true)
             }
             .store(in: &cancellables)
     }
@@ -246,6 +262,7 @@ class AudioPlayer: NSObject, ObservableObject {
             } else {
                 isPlaying = false
                 updateNowPlayingInfo()
+                scheduleQueuePrebuffer()
             }
 
             print("✅ Restored playback state: \(song.title) at \(Int(restoredTime))s")
@@ -618,6 +635,171 @@ class AudioPlayer: NSObject, ObservableObject {
         return false
     }
 
+    private var prebufferDirectory: URL {
+#if os(macOS)
+        let baseURL = FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("WRhythm", isDirectory: true)
+#else
+        let baseURL = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+#endif
+        let directory = baseURL.appendingPathComponent("PlaybackPrebuffer", isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
+    }
+
+    private func shouldTranscodeForPlayback(_ song: Song) -> Bool {
+        let streamingQuality = StreamingQuality.current
+        return streamingQuality != .original || !isFormatSupportedNatively(song.contentType, song.suffix)
+    }
+
+    private func streamURLForPlayback(_ song: Song) -> URL? {
+        if shouldTranscodeForPlayback(song) {
+            let bitRate = StreamingQuality.current.maxBitRate ?? StreamingQuality.max.rawValue
+            return NavidromeAPI.shared.getStreamURL(id: song.id, format: "mp3", maxBitRate: bitRate)
+        }
+
+        return NavidromeAPI.shared.getStreamURL(id: song.id)
+    }
+
+    private func prebufferKey(for song: Song) -> String {
+        "\(song.id)|q\(StreamingQuality.current.rawValue)"
+    }
+
+    private func sanitizedPrebufferFilename(for song: Song) -> String {
+        let key = prebufferKey(for: song)
+        let safeKey = key.map { character -> Character in
+            character.isLetter || character.isNumber ? character : "_"
+        }
+        let extensionName = shouldTranscodeForPlayback(song) ? "mp3" : (song.suffix?.isEmpty == false ? song.suffix! : "audio")
+        return "\(String(safeKey)).\(extensionName)"
+    }
+
+    private func prebufferURL(for song: Song) -> URL {
+        prebufferDirectory.appendingPathComponent(sanitizedPrebufferFilename(for: song))
+    }
+
+    private func existingPrebufferURL(for song: Song) -> URL? {
+        let key = prebufferKey(for: song)
+        if let cachedURL = prebufferURLs[key],
+           FileManager.default.fileExists(atPath: cachedURL.path) {
+            return cachedURL
+        }
+
+        let url = prebufferURL(for: song)
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        prebufferURLs[key] = url
+        return url
+    }
+
+    private func playbackMimeType(for song: Song, url: URL) -> String? {
+        switch url.pathExtension.lowercased() {
+        case "mp3":
+            return "audio/mpeg"
+        case "m4a", "mp4":
+            return "audio/mp4"
+        case "flac":
+            return "audio/flac"
+        case "wav":
+            return "audio/wav"
+        case "aiff", "aif":
+            return "audio/aiff"
+        default:
+            return song.contentType
+        }
+    }
+
+    private func scheduleQueuePrebuffer() {
+        guard !queue.isEmpty else {
+            prebufferTasks.values.forEach { $0.cancel() }
+            prebufferTasks.removeAll()
+            return
+        }
+
+        let start = currentIndex + 1
+        guard start < queue.count else {
+            prebufferTasks.values.forEach { $0.cancel() }
+            prebufferTasks.removeAll()
+            return
+        }
+
+        let end = min(queue.count, start + prebufferAheadCount)
+        let upcomingSongs = Array(queue[start..<end])
+        let desiredKeys = Set(upcomingSongs.map(prebufferKey))
+        let currentSongKey = currentSong.map(prebufferKey)
+
+        let staleKeys = prebufferTasks.keys.filter { !desiredKeys.contains($0) }
+        for key in staleKeys {
+            prebufferTasks[key]?.cancel()
+            prebufferTasks.removeValue(forKey: key)
+        }
+
+        prunePrebufferCache(keeping: desiredKeys.union(currentSongKey.map { [$0] } ?? []))
+
+        for song in upcomingSongs {
+            guard prebufferTasks.count < maxConcurrentPrebuffers else { break }
+            guard DownloadManager.shared.getLocalURL(song.id) == nil else { continue }
+            let key = prebufferKey(for: song)
+            guard prebufferTasks[key] == nil,
+                  existingPrebufferURL(for: song) == nil else { continue }
+            startPrebuffering(song, key: key)
+        }
+    }
+
+    private func startPrebuffering(_ song: Song, key: String) {
+        guard let url = streamURLForPlayback(song) else { return }
+        let destinationURL = prebufferURL(for: song)
+
+        prebufferTasks[key] = Task { [weak self] in
+            do {
+                let (temporaryURL, _) = try await URLSession.shared.download(from: url)
+                try Task.checkCancellation()
+
+                try? FileManager.default.removeItem(at: destinationURL)
+                try FileManager.default.moveItem(at: temporaryURL, to: destinationURL)
+
+                await MainActor.run { [weak self] in
+                    guard let player = self else { return }
+                    player.prebufferURLs[key] = destinationURL
+                    player.prebufferTasks.removeValue(forKey: key)
+                    print("✅ Prebuffered next queue item: \(song.title)")
+                    player.scheduleQueuePrebuffer()
+                }
+            } catch is CancellationError {
+                await MainActor.run { [weak self] in
+                    guard let player = self else { return }
+                    player.prebufferTasks.removeValue(forKey: key)
+                }
+            } catch {
+                await MainActor.run { [weak self] in
+                    guard let player = self else { return }
+                    player.prebufferTasks.removeValue(forKey: key)
+                    print("⚠️ Failed to prebuffer \(song.title): \(error)")
+                }
+            }
+        }
+    }
+
+    private func prunePrebufferCache(keeping keepKeys: Set<String>) {
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: prebufferDirectory,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else { return }
+
+        let knownSongs = queue + (currentSong.map { [$0] } ?? [])
+        let keepFilenames = Set(keepKeys.compactMap { key -> String? in
+            if let song = knownSongs.first(where: { prebufferKey(for: $0) == key }) {
+                return sanitizedPrebufferFilename(for: song)
+            }
+            return nil
+        })
+
+        for url in files where !keepFilenames.contains(url.lastPathComponent) {
+            try? FileManager.default.removeItem(at: url)
+        }
+    }
+
     private func startPlayback(_ song: Song, startTime: TimeInterval = 0, autoplay: Bool = true) {
         print("🎵 AudioPlayer: startPlayback called with startTime: \(startTime)")
         print("🎵 Song: \(song.title) by \(song.artist ?? "Unknown")")
@@ -644,19 +826,23 @@ class AudioPlayer: NSObject, ObservableObject {
 
         // Check if song is downloaded first
         let playURL: URL
+        let prebufferKey = prebufferKey(for: song)
+        prebufferTasks[prebufferKey]?.cancel()
+        prebufferTasks.removeValue(forKey: prebufferKey)
+
         if let localURL = DownloadManager.shared.getLocalURL(song.id) {
             playURL = localURL
             print("🎵 Playing from local file: \(localURL.lastPathComponent)")
+        } else if let prebufferURL = existingPrebufferURL(for: song) {
+            playURL = prebufferURL
+            print("🎵 Playing from prebuffered queue file: \(prebufferURL.lastPathComponent)")
         } else {
-            let streamingQuality = StreamingQuality.current
-            let isNativelySupported = isFormatSupportedNatively(song.contentType, song.suffix)
-            let shouldTranscode = streamingQuality != .original || !isNativelySupported
-
-            if shouldTranscode {
-                let bitRate = streamingQuality.maxBitRate ?? StreamingQuality.max.rawValue
-                let reason = isNativelySupported ? streamingQuality.description : "Unsupported format"
+            if shouldTranscodeForPlayback(song) {
+                let bitRate = StreamingQuality.current.maxBitRate ?? StreamingQuality.max.rawValue
+                let isNativelySupported = isFormatSupportedNatively(song.contentType, song.suffix)
+                let reason = isNativelySupported ? StreamingQuality.current.description : "Unsupported format"
                 print("⚠️ \(reason) - requesting MP3 transcode at \(bitRate) kbps")
-                if let streamURL = NavidromeAPI.shared.getStreamURL(id: song.id, format: "mp3", maxBitRate: bitRate) {
+                if let streamURL = streamURLForPlayback(song) {
                     playURL = streamURL
                     print("🎵 Streaming transcoded: \(streamURL.absoluteString)")
                 } else {
@@ -665,7 +851,7 @@ class AudioPlayer: NSObject, ObservableObject {
                 }
             } else {
                 print("✅ Streaming original format '\(song.contentType ?? song.suffix ?? "unknown")'")
-                if let streamURL = NavidromeAPI.shared.getStreamURL(id: song.id) {
+                if let streamURL = streamURLForPlayback(song) {
                     playURL = streamURL
                     print("🎵 Streaming from: \(streamURL.absoluteString)")
                 } else {
@@ -685,6 +871,7 @@ class AudioPlayer: NSObject, ObservableObject {
 
         // Clear per-item subscriptions to prevent duplicate notifications.
         playerItemCancellables.removeAll()
+        isBuffering = true
 
         prepareAudioSessionForPlayback()
 
@@ -693,7 +880,7 @@ class AudioPlayer: NSObject, ObservableObject {
         print("🎵 Creating player item from asset...")
 
         var assetOptions: [String: Any] = [:]
-        if let contentType = song.contentType {
+        if let contentType = playbackMimeType(for: song, url: playURL) {
             // Fix FLAC MIME type (Submariner workaround)
             let fixedContentType = contentType == "audio/x-flac" ? "audio/flac" : contentType
             print("🎵 Setting MIME type: \(fixedContentType)")
@@ -735,11 +922,13 @@ class AudioPlayer: NSObject, ObservableObject {
         }
         player.play()
         isPlaying = true
+        isBuffering = player.timeControlStatus == .waitingToPlayAtSpecifiedRate || player.currentItem?.isPlaybackBufferEmpty == true
         updateNowPlayingInfo()
     }
 
     func pause() {
         player.pause()
+        isBuffering = false
         isPlaying = false
         updateNowPlayingInfo()
     }
@@ -747,6 +936,7 @@ class AudioPlayer: NSObject, ObservableObject {
     func stop() {
         player.pause()
         player.replaceCurrentItem(with: nil)
+        isBuffering = false
         isPlaying = false
         currentSong = nil
         queue = []
@@ -920,6 +1110,24 @@ class AudioPlayer: NSObject, ObservableObject {
                 self?.handlePlaybackEnded()
             }
             .store(in: &playerItemCancellables)
+
+        item.publisher(for: \.isPlaybackBufferEmpty)
+            .sink { [weak self] isEmpty in
+                guard let self, self.player.currentItem === item else { return }
+                if self.isPlaying {
+                    self.isBuffering = isEmpty
+                }
+            }
+            .store(in: &playerItemCancellables)
+
+        item.publisher(for: \.isPlaybackLikelyToKeepUp)
+            .sink { [weak self] likelyToKeepUp in
+                guard let self, self.player.currentItem === item else { return }
+                if likelyToKeepUp {
+                    self.isBuffering = false
+                }
+            }
+            .store(in: &playerItemCancellables)
     }
 
     private func finishStartingPlayback(_ item: AVPlayerItem, requestedStartTime: TimeInterval, autoplay: Bool) {
@@ -928,11 +1136,15 @@ class AudioPlayer: NSObject, ObservableObject {
         let clampedStart = max(0, requestedStartTime)
         guard clampedStart > 0.25 else {
             currentTime = 0
+            isPlaying = autoplay
             if autoplay {
                 player.play()
+                isBuffering = player.timeControlStatus == .waitingToPlayAtSpecifiedRate || item.isPlaybackBufferEmpty
+            } else {
+                isBuffering = false
             }
-            isPlaying = autoplay
             updateNowPlayingInfo()
+            scheduleQueuePrebuffer()
             return
         }
 
@@ -956,10 +1168,15 @@ class AudioPlayer: NSObject, ObservableObject {
                 }
 
                 if autoplay {
+                    self.isPlaying = true
                     self.player.play()
+                    self.isBuffering = self.player.timeControlStatus == .waitingToPlayAtSpecifiedRate || item.isPlaybackBufferEmpty
+                } else {
+                    self.isPlaying = false
+                    self.isBuffering = false
                 }
-                self.isPlaying = autoplay
                 self.updateNowPlayingInfo()
+                self.scheduleQueuePrebuffer()
             }
         }
     }

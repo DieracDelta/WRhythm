@@ -34,6 +34,7 @@ struct PlaybackSnapshot: Codable, Identifiable {
     let platform: String
     let song: Song?
     let isPlaying: Bool
+    let isBuffering: Bool?
     let volume: Double?
     let currentTime: TimeInterval
     let duration: TimeInterval
@@ -367,6 +368,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             platform: outputPeer?.platform ?? remotePlayback?.platform ?? "Device",
             song: song,
             isPlaying: sharedSession.isPlaying,
+            isBuffering: remotePlayback?.id == sharedSession.outputDeviceID ? remotePlayback?.isBuffering : nil,
             volume: sharedSession.volume,
             currentTime: sharedSession.position,
             duration: TimeInterval(song.duration ?? 0),
@@ -699,6 +701,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
                 platform: remotePlayback.platform,
                 song: remotePlayback.song,
                 isPlaying: isPlaying,
+                isBuffering: isPlaying ? remotePlayback.isBuffering : false,
                 volume: remotePlayback.volume,
                 currentTime: remotePlayback.estimatedCurrentTime,
                 duration: remotePlayback.duration,
@@ -896,6 +899,13 @@ final class DeviceSyncManager: NSObject, ObservableObject {
                 self.broadcastPlaybackState(force: true)
             }
             .store(in: &cancellables)
+
+        player.$isBuffering
+            .removeDuplicates()
+            .sink { [weak self] _ in
+                self?.broadcastPlaybackState(force: true)
+            }
+            .store(in: &cancellables)
     }
 
     private func configureTransports() {
@@ -964,6 +974,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             platform: platformName,
             song: player.currentSong,
             isPlaying: player.isPlaying,
+            isBuffering: player.isBuffering,
             volume: player.volume,
             currentTime: player.liveCurrentTime,
             duration: player.duration,
@@ -1028,6 +1039,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         if current.deviceName != playback.deviceName || current.platform != playback.platform { return true }
         if current.song?.id != playback.song?.id { return true }
         if current.isPlaying != playback.isPlaying { return true }
+        if (current.isBuffering ?? false) != (playback.isBuffering ?? false) { return true }
         if abs(current.duration - playback.duration) > 1 { return true }
         if abs((current.volume ?? -1) - (playback.volume ?? -1)) > 0.01 { return true }
         if current.currentIndex != playback.currentIndex { return true }

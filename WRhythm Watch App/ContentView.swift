@@ -346,6 +346,7 @@ struct MacMiniPlayerBar: View {
                     title: song.title,
                     subtitle: [song.artist, song.album].compactMap { $0 }.joined(separator: " • "),
                     isPlaying: player.isPlaying,
+                    isBuffering: player.isBuffering,
                     queuePosition: player.queue.count > 1 ? "\(localLabel): \(player.currentIndex + 1) of \(player.queue.count)" : localLabel,
                     previous: player.previous,
                     toggle: player.togglePlayPause,
@@ -369,6 +370,7 @@ struct MacMiniPlayerBar: View {
                     title: song.title,
                     subtitle: [song.artist, song.album].compactMap { $0 }.joined(separator: " • "),
                     isPlaying: remote.isPlaying,
+                    isBuffering: remote.isBuffering == true,
                     queuePosition: remote.queue.count > 1 ? "\(remote.deviceName): \(remote.currentIndex + 1) of \(remote.queue.count)" : remote.deviceName,
                     previous: { deviceSyncManager.sendPrevious(targetDeviceID: remote.id) },
                     toggle: { deviceSyncManager.setPlaying(!remote.isPlaying, targetDeviceID: remote.id) },
@@ -423,6 +425,7 @@ struct MacMiniPlayerBar: View {
         title: String,
         subtitle: String,
         isPlaying: Bool,
+        isBuffering: Bool,
         queuePosition: String,
         previous: @escaping () -> Void,
         toggle: @escaping () -> Void,
@@ -443,7 +446,7 @@ struct MacMiniPlayerBar: View {
                             Text(title)
                                 .font(.headline)
                                 .lineLimit(1)
-                            Text(queuePosition)
+                            Text(isBuffering ? "\(queuePosition) • Buffering" : queuePosition)
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                                 .lineLimit(1)
