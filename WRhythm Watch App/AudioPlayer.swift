@@ -618,7 +618,7 @@ class AudioPlayer: NSObject, ObservableObject {
         return false
     }
 
-    private func startPlayback(_ song: Song, startTime: TimeInterval = 0) {
+    private func startPlayback(_ song: Song, startTime: TimeInterval = 0, autoplay: Bool = true) {
         print("🎵 AudioPlayer: startPlayback called with startTime: \(startTime)")
         print("🎵 Song: \(song.title) by \(song.artist ?? "Unknown")")
         print("🎵 Song ID: \(song.id)")
@@ -629,8 +629,9 @@ class AudioPlayer: NSObject, ObservableObject {
         self.currentSong = song
         self.currentTime = startTime
 
-        // Store the offset we are requesting so we can add it to the player's reported time
-        self.baseTimeOffset = startTime
+        // AVPlayer is the source of truth for progress. Seek the item after it is ready
+        // instead of assuming the Subsonic timeOffset parameter was honored.
+        self.baseTimeOffset = 0
 
         // Use song metadata duration if available, otherwise will try to get from stream
         if let songDuration = song.duration, songDuration > 0 {
@@ -646,8 +647,6 @@ class AudioPlayer: NSObject, ObservableObject {
         if let localURL = DownloadManager.shared.getLocalURL(song.id) {
             playURL = localURL
             print("🎵 Playing from local file: \(localURL.lastPathComponent)")
-            // Local file seeking is handled by AVPlayer seek, not URL offset
-            self.baseTimeOffset = 0
         } else {
             let streamingQuality = StreamingQuality.current
             let isNativelySupported = isFormatSupportedNatively(song.contentType, song.suffix)
@@ -657,7 +656,7 @@ class AudioPlayer: NSObject, ObservableObject {
                 let bitRate = streamingQuality.maxBitRate ?? StreamingQuality.max.rawValue
                 let reason = isNativelySupported ? streamingQuality.description : "Unsupported format"
                 print("⚠️ \(reason) - requesting MP3 transcode at \(bitRate) kbps")
-                if let streamURL = NavidromeAPI.shared.getStreamURL(id: song.id, format: "mp3", maxBitRate: bitRate, timeOffset: Int(startTime)) {
+                if let streamURL = NavidromeAPI.shared.getStreamURL(id: song.id, format: "mp3", maxBitRate: bitRate) {
                     playURL = streamURL
                     print("🎵 Streaming transcoded: \(streamURL.absoluteString)")
                 } else {
@@ -666,7 +665,7 @@ class AudioPlayer: NSObject, ObservableObject {
                 }
             } else {
                 print("✅ Streaming original format '\(song.contentType ?? song.suffix ?? "unknown")'")
-                if let streamURL = NavidromeAPI.shared.getStreamURL(id: song.id, timeOffset: Int(startTime)) {
+                if let streamURL = NavidromeAPI.shared.getStreamURL(id: song.id) {
                     playURL = streamURL
                     print("🎵 Streaming from: \(streamURL.absoluteString)")
                 } else {
@@ -717,17 +716,7 @@ class AudioPlayer: NSObject, ObservableObject {
         player.replaceCurrentItem(with: playerItem)
         player.volume = Float(volume)
 
-        observePlayerItem(playerItem)
-
-        // If resuming a local file, we need to seek.
-        // For streams, the timeOffset in URL handles it (so we start at 0 relative to the chunk).
-        if startTime > 0 && playURL.isFileURL {
-             let cmTime = CMTime(seconds: startTime, preferredTimescale: 1)
-             player.seek(to: cmTime)
-        }
-
-        player.play()
-        isPlaying = true
+        observePlayerItem(playerItem, requestedStartTime: startTime, autoplay: autoplay)
 
         updateNowPlayingInfo()
     }
@@ -827,7 +816,7 @@ class AudioPlayer: NSObject, ObservableObject {
         // or far forward easily. We should re-request the stream at the new offset.
         if let currentSong = currentSong {
             print("⏩ Seeking stream to \(time)s (reloading stream)")
-            startPlayback(currentSong, startTime: time)
+            startPlayback(currentSong, startTime: time, autoplay: isPlaying)
         }
     }
 
@@ -836,9 +825,8 @@ class AudioPlayer: NSObject, ObservableObject {
         timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
             guard let self = self else { return }
             
-            // Calculate absolute time by adding the base offset (if we resumed stream)
-            // For normal playback, baseTimeOffset is 0.
-            // For resumed stream, player time is relative to chunk, so we add offset.
+            // AVPlayer's item time is the actual playback position. Keep the optional
+            // offset at zero unless a future stream type explicitly requires it.
             self.currentTime = self.baseTimeOffset + time.seconds
 
             // Update duration if it's available and we don't have it yet
@@ -865,7 +853,7 @@ class AudioPlayer: NSObject, ObservableObject {
         }
     }
 
-    private func observePlayerItem(_ item: AVPlayerItem) {
+    private func observePlayerItem(_ item: AVPlayerItem, requestedStartTime: TimeInterval, autoplay: Bool) {
         // Simple status observer (Submariner approach)
         item.publisher(for: \.status)
             .sink { [weak self] status in
@@ -886,6 +874,8 @@ class AudioPlayer: NSObject, ObservableObject {
                             print("ℹ️ Using song metadata duration: \(currentDuration)s")
                         }
                     }
+
+                    self?.finishStartingPlayback(item, requestedStartTime: requestedStartTime, autoplay: autoplay)
                 } else if status == .failed {
                     print("❌ Player item failed!")
                     if let error = item.error {
@@ -930,6 +920,48 @@ class AudioPlayer: NSObject, ObservableObject {
                 self?.handlePlaybackEnded()
             }
             .store(in: &playerItemCancellables)
+    }
+
+    private func finishStartingPlayback(_ item: AVPlayerItem, requestedStartTime: TimeInterval, autoplay: Bool) {
+        guard player.currentItem === item else { return }
+
+        let clampedStart = max(0, requestedStartTime)
+        guard clampedStart > 0.25 else {
+            currentTime = 0
+            if autoplay {
+                player.play()
+            }
+            isPlaying = autoplay
+            updateNowPlayingInfo()
+            return
+        }
+
+        let target = CMTime(seconds: clampedStart, preferredTimescale: 600)
+        print("⏩ Seeking player item to \(clampedStart)s before playback")
+        player.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self, weak item] finished in
+            DispatchQueue.main.async {
+                guard let self,
+                      let item,
+                      self.player.currentItem === item else { return }
+
+                let actualTime = self.player.currentTime().seconds
+                if actualTime.isFinite {
+                    self.currentTime = actualTime
+                } else {
+                    self.currentTime = clampedStart
+                }
+
+                if !finished {
+                    print("⚠️ Initial seek did not finish cleanly; playing from \(self.currentTime)s")
+                }
+
+                if autoplay {
+                    self.player.play()
+                }
+                self.isPlaying = autoplay
+                self.updateNowPlayingInfo()
+            }
+        }
     }
 
     private func handlePlaybackEnded() {

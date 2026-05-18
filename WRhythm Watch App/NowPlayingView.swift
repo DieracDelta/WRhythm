@@ -16,6 +16,7 @@ struct NowPlayingView: View {
     @State private var hasLoadedStarredSongs = false
     @State private var showVolumeControl = false
     @State private var showAudioRouteMenu = false
+    @State private var scrubTime: TimeInterval?
     @AppStorage("offlineMode") private var offlineMode = false
 
     var body: some View {
@@ -55,25 +56,31 @@ struct NowPlayingView: View {
                     PlaybackTargetPicker()
 
                     VStack(spacing: 4) {
+                        let safeDuration = max(1, player.duration.isFinite ? player.duration : 1)
+                        let liveTime = player.currentTime.isFinite ? player.currentTime : 0
+                        let displayedTime = min(max(scrubTime ?? liveTime, 0), safeDuration)
+
                         Slider(
                             value: Binding(
-                                get: {
-                                    let time = player.currentTime
-                                    return time.isNaN || time.isInfinite ? 0 : time
-                                },
-                                set: { player.seek(to: $0) }
+                                get: { displayedTime },
+                                set: { scrubTime = min(max($0, 0), safeDuration) }
                             ),
-                            in: 0...max(1, player.duration.isNaN || player.duration.isInfinite ? 1 : player.duration)
+                            in: 0...safeDuration,
+                            onEditingChanged: { isEditing in
+                                guard !isEditing, let scrubTime else { return }
+                                player.seek(to: scrubTime)
+                                self.scrubTime = nil
+                            }
                         )
                         .tint(.accentColor)
 
                         HStack {
-                            Text(formatTime(player.currentTime))
+                            Text(formatTime(displayedTime))
                                 .font(.caption2)
                                 .monospacedDigit()
                                 .foregroundColor(.secondary)
                             Spacer()
-                            Text("-" + formatTime(player.duration - player.currentTime))
+                            Text("-" + formatTime(max(0, safeDuration - displayedTime)))
                                 .font(.caption2)
                                 .monospacedDigit()
                                 .foregroundColor(.secondary)
@@ -408,6 +415,7 @@ struct RemotePlaybackControls: View {
     @ObservedObject var deviceSyncManager = DeviceSyncManager.shared
     @ObservedObject var player = AudioPlayer.shared
     @State private var pendingVolume: Double?
+    @State private var scrubTime: TimeInterval?
 
     var body: some View {
         VStack(spacing: compact ? 8 : 12) {
@@ -445,14 +453,21 @@ struct RemotePlaybackControls: View {
 
                 if !compact {
                     TimelineView(.periodic(from: .now, by: 1)) { _ in
-                        let currentTime = playback.estimatedCurrentTime
+                        let safeDuration = max(1, playback.duration.isFinite ? playback.duration : 1)
+                        let liveTime = playback.estimatedCurrentTime
+                        let currentTime = min(max(scrubTime ?? liveTime, 0), safeDuration)
                         VStack(spacing: 4) {
                             Slider(
                                 value: Binding(
                                     get: { currentTime },
-                                    set: { deviceSyncManager.sendSeek(to: $0, targetDeviceID: playback.id) }
+                                    set: { scrubTime = min(max($0, 0), safeDuration) }
                                 ),
-                                in: 0...max(1, playback.duration.isFinite ? playback.duration : 1)
+                                in: 0...safeDuration,
+                                onEditingChanged: { isEditing in
+                                    guard !isEditing, let scrubTime else { return }
+                                    deviceSyncManager.sendSeek(to: scrubTime, targetDeviceID: playback.id)
+                                    self.scrubTime = nil
+                                }
                             )
                             .tint(.accentColor)
 
@@ -462,7 +477,7 @@ struct RemotePlaybackControls: View {
                                     .monospacedDigit()
                                     .foregroundColor(.secondary)
                                 Spacer()
-                                Text("-" + formatTime(max(0, playback.duration - currentTime)))
+                                Text("-" + formatTime(max(0, safeDuration - currentTime)))
                                     .font(.caption2)
                                     .monospacedDigit()
                                     .foregroundColor(.secondary)
