@@ -41,6 +41,7 @@ struct AlbumsView: View {
             content
 
                 .navigationTitle("Albums")
+                .wrhythmPageBackground()
 
                 .toolbar {
 
@@ -210,25 +211,7 @@ struct AlbumsView: View {
 
                             HStack {
 
-                                if let coverArtId = album.coverArt,
-
-                                   let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 100) {
-
-                                    CachedAsyncImage(url: coverURL) { image in
-
-                                        image
-
-                                            .resizable()
-
-                                            .aspectRatio(contentMode: .fill)
-
-                                    }
-
-                                    .frame(width: 40, height: 40)
-
-                                    .cornerRadius(4)
-
-                                }
+                                WRhythmArtworkThumbnail(coverArtId: album.coverArt, fallbackSystemImage: "square.stack", size: 42)
 
     
 
@@ -278,6 +261,7 @@ struct AlbumsView: View {
                 }
 
                 .searchable(text: $searchText, prompt: "Search albums")
+                .wrhythmListSurface()
 
             }
 
@@ -351,25 +335,7 @@ struct AlbumsView: View {
 
                             HStack {
 
-                                if let coverArtId = album.coverArt,
-
-                                   let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 100) {
-
-                                    CachedAsyncImage(url: coverURL) { image in
-
-                                        image
-
-                                            .resizable()
-
-                                            .aspectRatio(contentMode: .fill)
-
-                                    }
-
-                                    .frame(width: 40, height: 40)
-
-                                    .cornerRadius(4)
-
-                                }
+                                WRhythmArtworkThumbnail(coverArtId: album.coverArt, fallbackSystemImage: "square.stack", size: 42)
 
     
 
@@ -431,6 +397,7 @@ struct AlbumsView: View {
                     }
 
                 }
+                .wrhythmListSurface()
 
             }
 

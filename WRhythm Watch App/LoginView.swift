@@ -21,10 +21,15 @@ struct LoginView: View {
     var body: some View {
         NavigationView {
             ScrollView {
-                VStack(spacing: 12) {
-                    HStack {
+                VStack(spacing: 16) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "waveform.circle.fill")
+                            .font(.title)
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundColor(.accentColor)
+
                         Text("WRhythm")
-                            .font(.headline)
+                            .font(.title2.weight(.semibold))
 
                         Button(action: {
                             showingHelpSheet = true
@@ -37,16 +42,19 @@ struct LoginView: View {
                     }
                     .padding(.bottom, 8)
 
-                    TextField("Server URL", text: $serverURL)
-                        .textContentType(.URL)
-                        .platformAutocapitalizationNever()
+                    VStack(spacing: 12) {
+                        TextField("Server URL", text: $serverURL)
+                            .textContentType(.URL)
+                            .platformAutocapitalizationNever()
 
-                    TextField("Username", text: $username)
-                        .textContentType(.username)
-                        .platformAutocapitalizationNever()
+                        TextField("Username", text: $username)
+                            .textContentType(.username)
+                            .platformAutocapitalizationNever()
 
-                    SecureField("Password", text: $password)
-                        .textContentType(.password)
+                        SecureField("Password", text: $password)
+                            .textContentType(.password)
+                    }
+                    .platformSearchTextFieldStyle()
 
                     Button(action: login) {
                         if isLoading {
@@ -74,10 +82,17 @@ struct LoginView: View {
                             .font(.caption)
                             .foregroundColor(.red)
                             .multilineTextAlignment(.center)
+                            .padding(10)
+                            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous))
                     }
                 }
+                .padding(20)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.cornerRadius, style: .continuous))
                 .padding()
+                .frame(maxWidth: 460)
+                .frame(maxWidth: .infinity)
             }
+            .wrhythmPageBackground()
         }
         .sheet(isPresented: $showingHelpSheet) {
             NavigationView {

@@ -259,6 +259,7 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Settings")
+        .wrhythmListSurface()
         .onChange(of: offlineMode) { _, newValue in
             if newValue {
                 deviceSyncManager.syncModeEnabled = false

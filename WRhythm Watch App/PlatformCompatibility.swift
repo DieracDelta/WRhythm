@@ -109,6 +109,7 @@ struct PlatformSearchSheet<Content: View>: View {
 enum WRhythmVisual {
     static let cornerRadius: CGFloat = 18
     static let compactCornerRadius: CGFloat = 12
+    static let thumbnailCornerRadius: CGFloat = 9
 
     static var pageBackground: LinearGradient {
         LinearGradient(
@@ -120,6 +121,20 @@ enum WRhythmVisual {
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
+    }
+}
+
+extension View {
+    @ViewBuilder
+    func wrhythmPageBackground(coverArtId: String? = nil) -> some View {
+        self.background(WRhythmArtworkBackdrop(coverArtId: coverArtId).ignoresSafeArea())
+    }
+
+    @ViewBuilder
+    func wrhythmListSurface(coverArtId: String? = nil) -> some View {
+        self
+            .scrollContentBackground(.hidden)
+            .wrhythmPageBackground(coverArtId: coverArtId)
     }
 }
 
@@ -188,5 +203,99 @@ struct WRhythmTransportButton: View {
                 .shadow(color: Color.black.opacity(prominent ? 0.22 : 0.08), radius: prominent ? 16 : 8, y: prominent ? 8 : 4)
         }
         .buttonStyle(.plain)
+    }
+}
+
+struct WRhythmArtworkThumbnail: View {
+    let coverArtId: String?
+    var fallbackSystemImage = "music.note"
+    var size: CGFloat = 46
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: WRhythmVisual.thumbnailCornerRadius, style: .continuous)
+                .fill(.thinMaterial)
+
+            if let coverArtId,
+               let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: Int(size * 3)) {
+                CachedAsyncImage(url: coverURL) { image in
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                }
+            } else {
+                Image(systemName: fallbackSystemImage)
+                    .font(.system(size: max(16, size * 0.38), weight: .semibold))
+                    .foregroundColor(.secondary)
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: WRhythmVisual.thumbnailCornerRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: WRhythmVisual.thumbnailCornerRadius, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+        }
+    }
+}
+
+struct WRhythmEmptyState: View {
+    let systemImage: String
+    let title: String
+    let message: String?
+    var actionTitle: String?
+    var action: (() -> Void)?
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Image(systemName: systemImage)
+                .font(.system(size: 38, weight: .semibold))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundColor(.secondary)
+                .frame(width: 72, height: 72)
+                .background(.regularMaterial, in: Circle())
+
+            VStack(spacing: 5) {
+                Text(title)
+                    .font(.headline)
+                    .multilineTextAlignment(.center)
+
+                if let message {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            if let actionTitle, let action {
+                Button(actionTitle, action: action)
+                    .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(24)
+        .frame(maxWidth: 360)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.cornerRadius, style: .continuous))
+        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+struct WRhythmActionBar<Content: View>: View {
+    private let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            content
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.regularMaterial, in: Capsule())
+        .padding(.horizontal)
+        .padding(.vertical, 8)
     }
 }

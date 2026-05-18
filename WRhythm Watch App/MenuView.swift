@@ -11,43 +11,40 @@ struct MenuView: View {
     var body: some View {
         NavigationView {
             List {
-                NavigationLink(destination: ArtistsView()) {
-                    Label("Artists", systemImage: "person.2")
+                Section {
+                    menuLink("Artists", systemImage: "person.2", tint: .indigo, destination: ArtistsView())
+                    menuLink("Albums", systemImage: "square.stack", tint: .teal, destination: AlbumsView())
+                    menuLink("Playlists", systemImage: "music.note.list", tint: .purple, destination: PlaylistsView())
+                    menuLink("Tracks", systemImage: "magnifyingglass", tint: .blue, destination: TracksView())
                 }
 
-                NavigationLink(destination: PlaylistsView()) {
-                    Label("Playlists", systemImage: "music.note.list")
-                }
-
-                NavigationLink(destination: FavouritesView()) {
-                    Label("Favorites", systemImage: "star.fill")
-                }
-
-                NavigationLink(destination: RadioPlaylistsView()) {
-                    Label("Playlist Gen", systemImage: "music.note.list")
-                }
-
-                NavigationLink(destination: TracksView()) {
-                    Label("Tracks", systemImage: "magnifyingglass")
-                }
-
-                NavigationLink(destination: SpontaneousMusicView()) {
-                    Label("Spontaneous", systemImage: "shuffle")
-                }
-
-                NavigationLink(destination: AlbumsView()) {
-                    Label("Albums", systemImage: "square.stack")
-                }
-
-                NavigationLink(destination: DownloadsView()) {
-                    Label("Downloads", systemImage: "arrow.down.circle")
-                }
-
-                NavigationLink(destination: SettingsView()) {
-                    Label("Settings", systemImage: "gear")
+                Section {
+                    menuLink("Favorites", systemImage: "star.fill", tint: .yellow, destination: FavouritesView())
+                    menuLink("Playlist Gen", systemImage: "radio", tint: .pink, destination: RadioPlaylistsView())
+                    menuLink("Spontaneous", systemImage: "shuffle", tint: .orange, destination: SpontaneousMusicView())
+                    menuLink("Downloads", systemImage: "arrow.down.circle", tint: .green, destination: DownloadsView())
+                    menuLink("Settings", systemImage: "gear", tint: .secondary, destination: SettingsView())
                 }
             }
             .navigationTitle("WRhythm")
+            .wrhythmListSurface()
+        }
+    }
+
+    private func menuLink<Destination: View>(_ title: String, systemImage: String, tint: Color, destination: Destination) -> some View {
+        NavigationLink(destination: destination) {
+            HStack(spacing: 12) {
+                Image(systemName: systemImage)
+                    .font(.headline)
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundColor(tint)
+                    .frame(width: 34, height: 34)
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+
+                Text(title)
+                    .font(.headline)
+            }
+            .padding(.vertical, 4)
         }
     }
 }

@@ -37,7 +37,7 @@ struct PlaylistsView: View {
         VStack(spacing: 0) {
             // Action buttons at top when online
             if !offlineMode {
-                HStack(spacing: 16) {
+                WRhythmActionBar {
                     Button(action: {
                         syncAllPlaylists()
                     }) {
@@ -71,13 +71,12 @@ struct PlaylistsView: View {
                         .buttonStyle(.plain)
                     }
                 }
-                .padding(.horizontal)
-                .padding(.vertical, 8)
             }
 
             content
         }
         .navigationTitle("Playlists")
+        .wrhythmPageBackground()
         .platformNavigationBarTitleDisplayModeInline()
         .sheet(isPresented: $showingSearchSheet) {
             PlatformSearchSheet("Search Playlists", onCancel: {
@@ -134,24 +133,7 @@ struct PlaylistsView: View {
             List(filteredCachedPlaylists, id: \.id) { playlist in
                 NavigationLink(destination: PlaylistDetailView(playlistId: playlist.id, playlistName: playlist.name)) {
                     HStack {
-                        if let coverArtId = playlist.coverArt,
-                           let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 100) {
-                            CachedAsyncImage(url: coverURL) { image in
-                                image
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fill)
-                            }
-                            .frame(width: 40, height: 40)
-                            .cornerRadius(4)
-                        } else {
-                            ZStack {
-                                Color.gray
-                                Image(systemName: "music.note.list")
-                                    .foregroundColor(.white)
-                            }
-                            .frame(width: 40, height: 40)
-                            .cornerRadius(4)
-                        }
+                        WRhythmArtworkThumbnail(coverArtId: playlist.coverArt, fallbackSystemImage: "music.note.list", size: 42)
 
                         VStack(alignment: .leading) {
                             Text(playlist.name)
@@ -168,6 +150,7 @@ struct PlaylistsView: View {
                 }
             }
             .searchable(text: $searchText, prompt: "Search playlists")
+            .wrhythmListSurface()
         }
     }
 
@@ -198,24 +181,7 @@ struct PlaylistsView: View {
             List(filteredPlaylists) { playlist in
                 NavigationLink(destination: PlaylistDetailView(playlistId: playlist.id, playlistName: playlist.name)) {
                     HStack {
-                        if let coverArtId = playlist.coverArt,
-                           let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 100) {
-                            CachedAsyncImage(url: coverURL) { image in
-                                image
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fill)
-                            }
-                            .frame(width: 40, height: 40)
-                            .cornerRadius(4)
-                        } else {
-                            ZStack {
-                                Color.gray
-                                Image(systemName: "music.note.list")
-                                    .foregroundColor(.white)
-                            }
-                            .frame(width: 40, height: 40)
-                            .cornerRadius(4)
-                        }
+                        WRhythmArtworkThumbnail(coverArtId: playlist.coverArt, fallbackSystemImage: "music.note.list", size: 42)
 
                         VStack(alignment: .leading) {
                             Text(playlist.name)
@@ -231,6 +197,7 @@ struct PlaylistsView: View {
                     PlaylistContextMenuItems(playlistId: playlist.id, playlistName: playlist.name)
                 }
             }
+            .wrhythmListSurface()
         }
     }
 

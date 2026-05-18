@@ -153,16 +153,7 @@ struct TracksView: View {
                                 ForEach(offlinePlaylistResults, id: \.id) { playlist in
                                 NavigationLink(destination: PlaylistDetailView(playlistId: playlist.id, playlistName: playlist.name)) {
                                         HStack {
-                                            if let coverArtId = playlist.coverArt,
-                                               let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 100) {
-                                                CachedAsyncImage(url: coverURL) { image in
-                                                    image
-                                                        .resizable()
-                                                        .aspectRatio(contentMode: .fill)
-                                                }
-                                                .frame(width: 40, height: 40)
-                                                .cornerRadius(4)
-                                            }
+                                            WRhythmArtworkThumbnail(coverArtId: playlist.coverArt, fallbackSystemImage: "music.note.list", size: 42)
 
                                             VStack(alignment: .leading) {
                                                 Text(playlist.name)
@@ -189,16 +180,7 @@ struct TracksView: View {
                                         searchText = artist.name
                                     }) {
                                         HStack {
-                                            if let coverArtId = artist.coverArt,
-                                               let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 100) {
-                                                CachedAsyncImage(url: coverURL) { image in
-                                                    image
-                                                        .resizable()
-                                                        .aspectRatio(contentMode: .fill)
-                                                }
-                                                .frame(width: 40, height: 40)
-                                                .cornerRadius(4)
-                                            }
+                                            WRhythmArtworkThumbnail(coverArtId: artist.coverArt, fallbackSystemImage: "person.fill", size: 42)
 
                                             Text(artist.name)
                                                 .font(.headline)
@@ -220,16 +202,7 @@ struct TracksView: View {
                                         searchText = album.name
                                     }) {
                                         HStack {
-                                            if let coverArtId = album.coverArt,
-                                               let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 100) {
-                                                CachedAsyncImage(url: coverURL) { image in
-                                                    image
-                                                        .resizable()
-                                                        .aspectRatio(contentMode: .fill)
-                                                }
-                                                .frame(width: 40, height: 40)
-                                                .cornerRadius(4)
-                                            }
+                                            WRhythmArtworkThumbnail(coverArtId: album.coverArt, fallbackSystemImage: "square.stack", size: 42)
 
                                             VStack(alignment: .leading) {
                                                 Text(album.name)
@@ -259,6 +232,7 @@ struct TracksView: View {
                             }
                         }
                     }
+                    .wrhythmListSurface()
                 }
             } else if isSearching {
                 ProgressView("Searching...")
@@ -306,16 +280,7 @@ struct TracksView: View {
                             ForEach(artistResults) { artist in
                                 NavigationLink(destination: ArtistDetailView(artistId: artist.id, artistName: artist.name)) {
                                     HStack {
-                                        if let coverArtId = artist.coverArt,
-                                           let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 100) {
-                                            CachedAsyncImage(url: coverURL) { image in
-                                                image
-                                                    .resizable()
-                                                    .aspectRatio(contentMode: .fill)
-                                            }
-                                            .frame(width: 40, height: 40)
-                                            .cornerRadius(4)
-                                        }
+                                        WRhythmArtworkThumbnail(coverArtId: artist.coverArt, fallbackSystemImage: "person.fill", size: 42)
 
                                         VStack(alignment: .leading) {
                                             Text(artist.name)
@@ -341,16 +306,7 @@ struct TracksView: View {
                             ForEach(albumResults) { album in
                                 NavigationLink(destination: AlbumDetailView(albumId: album.id)) {
                                     HStack {
-                                        if let coverArtId = album.coverArt,
-                                           let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 100) {
-                                            CachedAsyncImage(url: coverURL) { image in
-                                                image
-                                                    .resizable()
-                                                    .aspectRatio(contentMode: .fill)
-                                            }
-                                            .frame(width: 40, height: 40)
-                                            .cornerRadius(4)
-                                        }
+                                        WRhythmArtworkThumbnail(coverArtId: album.coverArt, fallbackSystemImage: "square.stack", size: 42)
 
                                         VStack(alignment: .leading) {
                                             Text(album.name)
@@ -380,9 +336,11 @@ struct TracksView: View {
                         }
                     }
                 }
+                .wrhythmListSurface()
             }
         }
         .navigationTitle(offlineMode ? "Offline Search" : "Search")
+        .wrhythmPageBackground()
         .toolbar {
             ToolbarItem(placement: .platformTopBarTrailing) {
                 if !searchText.isEmpty {

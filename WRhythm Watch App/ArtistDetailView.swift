@@ -267,6 +267,7 @@ struct ArtistDetailView: View {
             }
         }
         .navigationTitle(artistName)
+        .wrhythmPageBackground()
         .onAppear {
             if !offlineMode {
                 loadArtist()

@@ -16,7 +16,7 @@ struct SongRowView: View {
 
     var body: some View {
         Button(action: onTap) {
-            HStack {
+            HStack(spacing: 10) {
                 if let track = song.track {
                     Text("\(track)")
                         .font(.caption)
@@ -24,9 +24,11 @@ struct SongRowView: View {
                         .frame(width: 20, alignment: .leading)
                 }
 
+                WRhythmArtworkThumbnail(coverArtId: song.coverArt, size: 38)
+
                 VStack(alignment: .leading) {
                     Text(song.title)
-                        .font(.caption)
+                        .font(.subheadline.weight(.medium))
                         .lineLimit(1)
                     if let duration = song.duration {
                         Text(formatDuration(duration))
@@ -71,6 +73,8 @@ struct SongRowView: View {
                 }
                 .buttonStyle(.plain)
             }
+            .padding(8)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous))
         }
         .buttonStyle(.plain)
         .contextMenu {
@@ -396,6 +400,7 @@ struct AlbumDetailView: View {
             }
         }
         .navigationTitle("Album")
+        .wrhythmPageBackground(coverArtId: album?.coverArt)
         .onAppear {
             if !offlineMode {
                 loadAlbum()

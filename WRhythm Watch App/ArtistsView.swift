@@ -44,6 +44,7 @@ struct ArtistsView: View {
     var body: some View {
         content
             .navigationTitle(offlineMode ? "Artists (\(downloadManager.getDownloadedArtists().count))" : "Artists (\(filteredDisplayedArtists.count))")
+            .wrhythmPageBackground()
             .toolbar {
                 if !offlineMode {
                     ToolbarItem(placement: .platformTopBarTrailing) {
@@ -145,16 +146,7 @@ struct ArtistsView: View {
                 ForEach(Array(filteredArtists.enumerated()), id: \.element.name) { index, artist in
                     NavigationLink(destination: ArtistDetailView(artistId: "offline-\(artist.name)", artistName: artist.name)) {
                         HStack {
-                            if let coverArtId = artist.coverArt,
-                               let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 100) {
-                                CachedAsyncImage(url: coverURL) { image in
-                                    image
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fill)
-                                }
-                                .frame(width: 40, height: 40)
-                                .cornerRadius(4)
-                            }
+                            WRhythmArtworkThumbnail(coverArtId: artist.coverArt, fallbackSystemImage: "person.fill", size: 42)
 
                             VStack(alignment: .leading) {
                                 Text(artist.name)
@@ -181,6 +173,7 @@ struct ArtistsView: View {
                 }
             }
             .searchable(text: $searchText, prompt: "Search artists")
+            .wrhythmListSurface()
         }
     }
 
@@ -221,16 +214,7 @@ struct ArtistsView: View {
                 ForEach(filteredDisplayedArtists) { artist in
                     NavigationLink(destination: ArtistDetailView(artistId: artist.id, artistName: artist.name)) {
                         HStack {
-                            if let coverArtId = artist.coverArt,
-                               let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 100) {
-                                CachedAsyncImage(url: coverURL) { image in
-                                    image
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fill)
-                                }
-                                .frame(width: 40, height: 40)
-                                .cornerRadius(4)
-                            }
+                            WRhythmArtworkThumbnail(coverArtId: artist.coverArt, fallbackSystemImage: "person.fill", size: 42)
 
                             VStack(alignment: .leading) {
                                 Text(artist.name)
@@ -265,6 +249,7 @@ struct ArtistsView: View {
                     }
                 }
             }
+            .wrhythmListSurface()
         }
     }
 

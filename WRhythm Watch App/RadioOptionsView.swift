@@ -30,7 +30,10 @@ struct RadioOptionsView: View {
                 VStack(spacing: 4) {
                     Image(systemName: "music.note.list")
                         .font(.largeTitle)
-                        .foregroundColor(.blue)
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundColor(.accentColor)
+                        .frame(width: 76, height: 76)
+                        .background(.regularMaterial, in: Circle())
                     Text("Playlist Gen Options")
                         .font(.headline)
                     Text(sourceTitle)
@@ -70,6 +73,8 @@ struct RadioOptionsView: View {
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
+                .padding()
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous))
 
                 Divider()
 
@@ -108,6 +113,7 @@ struct RadioOptionsView: View {
             .padding()
         }
         .navigationTitle("Playlist Gen")
+        .wrhythmPageBackground(coverArtId: sourceSong.coverArt)
         .platformNavigationBarTitleDisplayModeInline()
         .onAppear {
             selectedCount = radioDownloadCount

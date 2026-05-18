@@ -50,6 +50,7 @@ struct RadioPlaylistsView: View {
             }
         }
         .navigationTitle("Playlist Gen")
+        .wrhythmListSurface()
     }
 }
 
@@ -122,16 +123,7 @@ struct RadioPlaylistRow: View {
     var body: some View {
         NavigationLink(destination: RadioPlaylistDetailView(radio: radio)) {
             HStack {
-                if let coverArtId = radio.coverArt,
-                   let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 100) {
-                    CachedAsyncImage(url: coverURL) { image in
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                    }
-                    .frame(width: 40, height: 40)
-                    .cornerRadius(4)
-                }
+                WRhythmArtworkThumbnail(coverArtId: radio.coverArt, fallbackSystemImage: "radio", size: 42)
 
                 VStack(alignment: .leading) {
                     Text(radio.sourceSongTitle)
@@ -260,6 +252,7 @@ struct RadioPlaylistDetailView: View {
             .padding()
         }
         .navigationTitle("Playlist Gen")
+        .wrhythmPageBackground(coverArtId: radio.coverArt)
     }
 
     private var downloadedSongs: [String] {

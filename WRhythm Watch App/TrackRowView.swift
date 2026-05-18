@@ -16,10 +16,12 @@ struct TrackRowView: View {
 
     var body: some View {
         Button(action: onTap) {
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
+                WRhythmArtworkThumbnail(coverArtId: song.coverArt, size: 42)
+
                 VStack(alignment: .leading, spacing: 2) {
                     Text(song.title)
-                        .font(.caption)
+                        .font(.subheadline.weight(.medium))
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                     if let artist = song.artist {
@@ -96,6 +98,7 @@ struct TrackRowView: View {
                     }
                 }
             }
+            .padding(.vertical, 4)
         }
         .buttonStyle(.plain)
         .contextMenu {

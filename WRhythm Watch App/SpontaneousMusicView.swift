@@ -21,8 +21,11 @@ struct SpontaneousMusicView: View {
                 // Header
                 VStack(spacing: 8) {
                     Image(systemName: "shuffle")
-                        .font(.system(size: 60))
+                        .font(.system(size: 56, weight: .semibold))
+                        .symbolRenderingMode(.hierarchical)
                         .foregroundColor(.accentColor)
+                        .frame(width: 96, height: 96)
+                        .background(.regularMaterial, in: Circle())
 
                     Text("Spontaneous Music")
                         .font(.headline)
@@ -94,14 +97,14 @@ struct SpontaneousMusicView: View {
                     }
                 }
                 .padding()
-                .background(Color.blue.opacity(0.1))
-                .cornerRadius(8)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous))
 
                 Spacer()
             }
             .padding()
         }
         .navigationTitle("Spontaneous")
+        .wrhythmPageBackground()
     }
 
     private func shuffleAll() {

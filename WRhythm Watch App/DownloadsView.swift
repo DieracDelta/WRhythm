@@ -195,8 +195,7 @@ struct DownloadsView: View {
                         .buttonStyle(.plain)
                     }
                     .padding(8)
-                    .background(Color.blue.opacity(0.1))
-                    .cornerRadius(8)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous))
 
                     Divider()
                 }
@@ -344,6 +343,8 @@ struct DownloadsView: View {
                                 }
                             }
                             .buttonStyle(.plain)
+                            .padding(10)
+                            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous))
                             .onAppear {
                                 // Load more songs when we reach the last visible song
                                 if downloadedSong.songId == songsToDisplay.last?.songId && displayedSongCount < sortedSongs.count {
@@ -376,6 +377,7 @@ struct DownloadsView: View {
             .padding()
         }
         .navigationTitle("Downloads")
+        .wrhythmPageBackground()
     }
 
     private func formatBytes(_ bytes: Int64) -> String {

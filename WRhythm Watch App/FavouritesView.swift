@@ -51,6 +51,7 @@ struct FavouritesView: View {
     var body: some View {
         content
             .navigationTitle("Favourites")
+            .wrhythmPageBackground()
             .onAppear {
                 print("📱 FavouritesView appeared - offlineMode=\(offlineMode), starred=\(libraryDataManager.starred != nil ? "loaded" : "nil"), isLoading=\(libraryDataManager.isLoadingStarred)")
                 if !offlineMode && libraryDataManager.starred == nil && !libraryDataManager.isLoadingStarred {

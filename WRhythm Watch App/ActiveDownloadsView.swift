@@ -90,6 +90,8 @@ struct ActiveDownloadsView: View {
                                     .progressViewStyle(.linear)
                             }
                             .padding(.horizontal)
+                            .padding(.vertical, 8)
+                            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous))
                         }
 
                         // Queued downloads
@@ -134,6 +136,8 @@ struct ActiveDownloadsView: View {
                                         }
                                     }
                                     .padding(.horizontal)
+                                    .padding(.vertical, 8)
+                                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous))
                                     .opacity(0.6)
                                 }
 
@@ -151,6 +155,7 @@ struct ActiveDownloadsView: View {
             .padding()
         }
         .navigationTitle("Active Downloads")
+        .wrhythmPageBackground()
     }
 
     private func findSongInfo(_ songId: String) -> Song? {

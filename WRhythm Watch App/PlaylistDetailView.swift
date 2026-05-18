@@ -275,6 +275,7 @@ struct PlaylistDetailView: View {
             }
         }
         .navigationTitle("Playlist")
+        .wrhythmPageBackground(coverArtId: playlist?.coverArt)
         .toolbar {
             if !offlineMode && playlist != nil {
                 ToolbarItem(placement: .platformTopBarTrailing) {

@@ -42,6 +42,7 @@ struct ContentView: View {
                 LoginView()
             }
         }
+        .wrhythmPageBackground()
         .onChange(of: scenePhase) { _, newPhase in
             switch newPhase {
             case .active:
@@ -217,6 +218,7 @@ struct MacSidebar: View {
                 }
             }
             .navigationTitle("WRhythm")
+            .wrhythmListSurface()
     }
 
     private var activeRemotePlayback: PlaybackSnapshot? {
