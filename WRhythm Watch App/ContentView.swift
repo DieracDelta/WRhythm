@@ -228,10 +228,21 @@ struct MacSidebar: View {
     }
 
     private var displayedCurrentIndex: Int {
+        if deviceSyncManager.isLocalPlaybackOutput,
+           displayedQueue.map(\.id) == player.queue.map(\.id),
+           let currentSong = player.currentSong,
+           let index = displayedQueue.firstIndex(where: { $0.id == currentSong.id }) {
+            return index
+        }
+
         if deviceSyncManager.sharedSession != nil {
             return deviceSyncManager.sharedQueueCurrentIndex
         }
-        return player.currentIndex
+        if let currentSong = player.currentSong,
+           let index = displayedQueue.firstIndex(where: { $0.id == currentSong.id }) {
+            return index
+        }
+        return min(max(player.currentIndex, 0), max(displayedQueue.count - 1, 0))
     }
 
     private var displayedQueueIsPlaying: Bool {

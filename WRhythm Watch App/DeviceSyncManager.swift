@@ -875,7 +875,9 @@ final class DeviceSyncManager: NSObject, ObservableObject {
 
         Publishers.CombineLatest4(player.$currentSong, player.$isPlaying, player.$queue, player.$currentIndex)
             .sink { [weak self] _, _, _, _ in
-                self?.broadcastPlaybackState()
+                guard let self else { return }
+                self.broadcastLocalQueueAsShared()
+                self.broadcastPlaybackState()
             }
             .store(in: &cancellables)
 
