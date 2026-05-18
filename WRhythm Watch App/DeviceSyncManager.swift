@@ -69,6 +69,12 @@ struct PlaybackSession: Codable, Identifiable {
         }
         return min(clampedPosition, TimeInterval(duration))
     }
+
+    var isFinishedAtQueueEnd: Bool {
+        guard !isPlaying, !queue.isEmpty, currentIndex >= queue.count - 1 else { return false }
+        guard let duration = currentSong?.duration, duration > 0 else { return false }
+        return position >= TimeInterval(duration) * 0.95
+    }
 }
 
 extension PlaybackSnapshot {
@@ -81,6 +87,13 @@ extension PlaybackSnapshot {
             return clampedTime
         }
         return min(clampedTime, duration)
+    }
+
+    var isFinishedAtQueueEnd: Bool {
+        guard !isPlaying else { return false }
+        let queueIsAtEnd = queue.isEmpty || currentIndex >= queue.count - 1
+        guard queueIsAtEnd, duration.isFinite, duration > 0 else { return false }
+        return currentTime >= duration * 0.95
     }
 }
 
@@ -446,6 +459,10 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         sendCurrentSyncState(includeHello: true)
     }
 
+    func publishLocalPlaybackStateNow() {
+        sendCurrentSyncState()
+    }
+
     private func makeSession(
         queue: [Song],
         currentIndex: Int,
@@ -611,12 +628,18 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             currentIndex = min(player.currentIndex, max(baseQueue.count - 1, 0))
         }
 
+        let sharedTargetFinished = sharedSession?.outputDeviceID == selectedPlaybackTargetID
+            && sharedSession?.isFinishedAtQueueEnd == true
+        let remoteTargetFinished = remotePlayback?.id == selectedPlaybackTargetID
+            && remotePlayback?.isFinishedAtQueueEnd == true
+        let shouldStartAppendedSongs = sharedTargetFinished || remoteTargetFinished
         let sharedQueue = baseQueue + songs
+        let appendedStartIndex = baseQueue.count
         publishSharedSession(makeSession(
             queue: sharedQueue,
-            currentIndex: currentIndex,
-            position: sharedSession?.outputDeviceID == selectedPlaybackTargetID ? sharedSession?.estimatedPosition ?? 0 : player.liveCurrentTime,
-            isPlaying: sharedSession?.outputDeviceID == selectedPlaybackTargetID ? sharedSession?.isPlaying ?? false : player.isPlaying,
+            currentIndex: shouldStartAppendedSongs ? appendedStartIndex : currentIndex,
+            position: shouldStartAppendedSongs ? 0 : (sharedSession?.outputDeviceID == selectedPlaybackTargetID ? sharedSession?.estimatedPosition ?? 0 : player.liveCurrentTime),
+            isPlaying: shouldStartAppendedSongs ? true : (sharedSession?.outputDeviceID == selectedPlaybackTargetID ? sharedSession?.isPlaying ?? false : player.isPlaying),
             outputDeviceID: selectedPlaybackTargetID
         ))
         return true

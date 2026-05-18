@@ -64,6 +64,7 @@ class AudioPlayer: NSObject, ObservableObject {
     private var originalQueue: [Song] = []
     private var originalIndex: Int = 0
     private var baseTimeOffset: TimeInterval = 0
+    private var queueFinished = false
 #if os(macOS)
     private var mediaKeyMonitors: [Any] = []
     private var mediaKeyEventTap: CFMachPort?
@@ -406,10 +407,12 @@ class AudioPlayer: NSObject, ObservableObject {
             return
         }
 
+        let appendedStartIndex = queue.count
+        let shouldStartAppendedSongs = queueFinished || currentSong == nil
         queue.append(contentsOf: songs)
-        if currentSong == nil, let firstSong = queue.first {
-            currentIndex = 0
-            startPlayback(firstSong)
+        if shouldStartAppendedSongs, queue.indices.contains(appendedStartIndex) {
+            currentIndex = appendedStartIndex
+            startPlayback(queue[appendedStartIndex])
         }
         DeviceSyncManager.shared.broadcastLocalQueueAsShared()
     }
@@ -424,6 +427,7 @@ class AudioPlayer: NSObject, ObservableObject {
         currentSong = songs[safeIndex]
         self.currentTime = currentTime
         duration = TimeInterval(songs[safeIndex].duration ?? 0)
+        queueFinished = false
         isPlaying = false
     }
 
@@ -458,6 +462,7 @@ class AudioPlayer: NSObject, ObservableObject {
         print("🎵 Content type: \(song.contentType ?? "unknown")")
         print("🎵 Suffix: \(song.suffix ?? "unknown")")
 
+        queueFinished = false
         self.currentSong = song
         self.currentTime = startTime
 
@@ -566,6 +571,11 @@ class AudioPlayer: NSObject, ObservableObject {
 
     func play() {
         prepareAudioSessionForPlayback()
+        if queueFinished, queue.indices.contains(currentIndex) {
+            startPlayback(queue[currentIndex])
+            DeviceSyncManager.shared.broadcastLocalQueueAsShared()
+            return
+        }
         player.play()
         isPlaying = true
         updateNowPlayingInfo()
@@ -586,6 +596,7 @@ class AudioPlayer: NSObject, ObservableObject {
         currentIndex = 0
         currentTime = 0
         duration = 0
+        queueFinished = false
         clearPlaylistGen()
         updateNowPlayingInfo()
         print("⏹️ Playback stopped and queue cleared")
@@ -789,8 +800,14 @@ class AudioPlayer: NSObject, ObservableObject {
             } else {
                 // Stop playback completely
                 player.pause()
+                player.replaceCurrentItem(with: nil)
+                let finishedTime = duration > 0 ? duration : currentTime
+                queueFinished = true
                 isPlaying = false
-                currentTime = 0
+                currentTime = finishedTime
+                updateNowPlayingInfo()
+                DeviceSyncManager.shared.broadcastLocalQueueAsShared()
+                DeviceSyncManager.shared.publishLocalPlaybackStateNow()
                 print("⏸️ Queue finished - stopped playback")
             }
         }
