@@ -37,18 +37,25 @@ struct ContentView: View {
                     }
                     .tag(1)
                 }
-                .onChange(of: scenePhase) { _, newPhase in
-                    if newPhase == .active {
-                        DeviceSyncManager.shared.requestPlaybackSyncRefresh()
-                        // When app becomes active, go to Now Playing if music is playing
-                        if AudioPlayer.shared.isPlaying {
-                            selectedTab = 1
-                        }
-                    }
-                }
 #endif
             } else {
                 LoginView()
+            }
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            switch newPhase {
+            case .active:
+                DeviceSyncManager.shared.requestPlaybackSyncRefresh()
+#if !os(macOS)
+                // When app becomes active, go to Now Playing if music is playing
+                if AudioPlayer.shared.isPlaying {
+                    selectedTab = 1
+                }
+#endif
+            case .inactive, .background:
+                AudioPlayer.shared.persistPlaybackStateNow()
+            @unknown default:
+                AudioPlayer.shared.persistPlaybackStateNow()
             }
         }
     }

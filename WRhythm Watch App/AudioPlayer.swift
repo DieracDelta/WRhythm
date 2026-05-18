@@ -52,19 +52,45 @@ class AudioPlayer: NSObject, ObservableObject {
         }
     }
 
-    enum RepeatMode {
+    enum RepeatMode: String, Codable {
         case off
         case all
         case one
     }
 
+    private struct PersistedPlaybackState: Codable {
+        let version: Int
+        let queue: [Song]
+        let currentIndex: Int
+        let currentTime: TimeInterval
+        let duration: TimeInterval
+        let wasPlaying: Bool
+        let volume: Double
+        let isShuffled: Bool
+        let repeatMode: RepeatMode
+        let originalQueue: [Song]
+        let originalIndex: Int
+        let playlistGenQueue: [Song]
+        let playlistGenSourceTitle: String?
+        let playlistGenSourceArtist: String?
+        let queueFinished: Bool
+        let updatedAt: Date
+    }
+
+    private static let persistedPlaybackStateKey = "audioPlayerPersistedPlaybackState.v1"
+    private static let persistedPlaybackVersion = 1
+
     private let player: AVPlayer
     private var timeObserver: Any?
     private var cancellables = Set<AnyCancellable>()
+    private var playerItemCancellables = Set<AnyCancellable>()
     private var originalQueue: [Song] = []
     private var originalIndex: Int = 0
     private var baseTimeOffset: TimeInterval = 0
     private var queueFinished = false
+    private var isRestoringPlaybackState = false
+    private var lastPersistenceWrite = Date.distantPast
+    private var pendingPersistenceWorkItem: DispatchWorkItem?
 #if os(macOS)
     private var mediaKeyMonitors: [Any] = []
     private var mediaKeyEventTap: CFMachPort?
@@ -77,6 +103,8 @@ class AudioPlayer: NSObject, ObservableObject {
 
         setupRemoteCommands()
         addPeriodicTimeObserver()
+        restorePersistedPlaybackState()
+        setupPlaybackPersistence()
     }
 
     var liveCurrentTime: TimeInterval {
@@ -90,6 +118,141 @@ class AudioPlayer: NSObject, ObservableObject {
             return absoluteTime
         }
         return min(absoluteTime, duration)
+    }
+
+    func persistPlaybackStateNow() {
+        persistPlaybackState()
+    }
+
+    private func setupPlaybackPersistence() {
+        Publishers.CombineLatest4($currentSong, $isPlaying, $queue, $currentIndex)
+            .dropFirst()
+            .sink { [weak self] _, _, _, _ in
+                self?.schedulePlaybackPersistence()
+            }
+            .store(in: &cancellables)
+
+        Publishers.CombineLatest4($volume, $isShuffled, $repeatMode, $playlistGenQueue)
+            .dropFirst()
+            .sink { [weak self] _, _, _, _ in
+                self?.schedulePlaybackPersistence()
+            }
+            .store(in: &cancellables)
+
+        $currentTime
+            .removeDuplicates { abs($0 - $1) < 5 }
+            .dropFirst()
+            .sink { [weak self] _ in
+                self?.schedulePlaybackPersistence()
+            }
+            .store(in: &cancellables)
+    }
+
+    private func schedulePlaybackPersistence() {
+        guard !isRestoringPlaybackState else { return }
+        let elapsed = Date().timeIntervalSince(lastPersistenceWrite)
+        if elapsed >= 5 {
+            persistPlaybackState()
+            return
+        }
+
+        pendingPersistenceWorkItem?.cancel()
+        let delay = max(0.5, 5 - elapsed)
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.persistPlaybackState()
+        }
+        pendingPersistenceWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+    }
+
+    private func persistPlaybackState() {
+        guard !isRestoringPlaybackState else { return }
+        pendingPersistenceWorkItem?.cancel()
+        pendingPersistenceWorkItem = nil
+        lastPersistenceWrite = Date()
+
+        let songs = queue.isEmpty ? currentSong.map { [$0] } ?? [] : queue
+        guard !songs.isEmpty else {
+            UserDefaults.standard.removeObject(forKey: Self.persistedPlaybackStateKey)
+            return
+        }
+
+        let safeIndex = min(max(currentIndex, 0), songs.count - 1)
+        let position = max(0, liveCurrentTime.isFinite ? liveCurrentTime : currentTime)
+        let state = PersistedPlaybackState(
+            version: Self.persistedPlaybackVersion,
+            queue: songs,
+            currentIndex: safeIndex,
+            currentTime: position,
+            duration: duration.isFinite ? duration : 0,
+            wasPlaying: isPlaying,
+            volume: min(max(volume.isFinite ? volume : 1, 0), 1),
+            isShuffled: isShuffled,
+            repeatMode: repeatMode,
+            originalQueue: originalQueue,
+            originalIndex: originalIndex,
+            playlistGenQueue: playlistGenQueue,
+            playlistGenSourceTitle: playlistGenSourceTitle,
+            playlistGenSourceArtist: playlistGenSourceArtist,
+            queueFinished: queueFinished,
+            updatedAt: Date()
+        )
+
+        do {
+            let data = try JSONEncoder().encode(state)
+            UserDefaults.standard.set(data, forKey: Self.persistedPlaybackStateKey)
+        } catch {
+            print("⚠️ Failed to persist playback state: \(error)")
+        }
+    }
+
+    private func restorePersistedPlaybackState() {
+        guard let data = UserDefaults.standard.data(forKey: Self.persistedPlaybackStateKey) else { return }
+
+        do {
+            let state = try JSONDecoder().decode(PersistedPlaybackState.self, from: data)
+            guard state.version == Self.persistedPlaybackVersion,
+                  !state.queue.isEmpty else {
+                UserDefaults.standard.removeObject(forKey: Self.persistedPlaybackStateKey)
+                return
+            }
+
+            isRestoringPlaybackState = true
+            defer { isRestoringPlaybackState = false }
+
+            let safeIndex = min(max(state.currentIndex, 0), state.queue.count - 1)
+            let song = state.queue[safeIndex]
+            let songDuration = TimeInterval(song.duration ?? 0)
+            let restoredDuration = state.duration > 0 ? state.duration : songDuration
+            let restoredTime = min(max(state.currentTime, 0), restoredDuration > 0 ? restoredDuration : state.currentTime)
+
+            queue = state.queue
+            currentIndex = safeIndex
+            currentSong = song
+            currentTime = restoredTime
+            duration = restoredDuration
+            volume = min(max(state.volume.isFinite ? state.volume : 1, 0), 1)
+            isShuffled = state.isShuffled
+            repeatMode = state.repeatMode
+            originalQueue = state.originalQueue
+            originalIndex = state.originalIndex
+            playlistGenQueue = state.playlistGenQueue
+            playlistGenSourceTitle = state.playlistGenSourceTitle
+            playlistGenSourceArtist = state.playlistGenSourceArtist
+            queueFinished = state.queueFinished
+
+            if state.wasPlaying, !state.queueFinished {
+                startPlayback(song, startTime: restoredTime)
+            } else {
+                isPlaying = false
+                updateNowPlayingInfo()
+            }
+
+            print("✅ Restored playback state: \(song.title) at \(Int(restoredTime))s")
+        } catch {
+            print("⚠️ Failed to restore playback state: \(error)")
+            UserDefaults.standard.removeObject(forKey: Self.persistedPlaybackStateKey)
+        }
     }
 
     private func prepareAudioSessionForPlayback() {
@@ -521,8 +684,8 @@ class AudioPlayer: NSObject, ObservableObject {
         //    timeObserver = nil
         // }
 
-        // Clear all old subscriptions to prevent duplicate notifications
-        cancellables.removeAll()
+        // Clear per-item subscriptions to prevent duplicate notifications.
+        playerItemCancellables.removeAll()
 
         prepareAudioSessionForPlayback()
 
@@ -576,6 +739,11 @@ class AudioPlayer: NSObject, ObservableObject {
             DeviceSyncManager.shared.broadcastLocalQueueAsShared()
             return
         }
+        if player.currentItem == nil, let currentSong {
+            startPlayback(currentSong, startTime: currentTime)
+            DeviceSyncManager.shared.broadcastLocalQueueAsShared()
+            return
+        }
         player.play()
         isPlaying = true
         updateNowPlayingInfo()
@@ -598,6 +766,7 @@ class AudioPlayer: NSObject, ObservableObject {
         duration = 0
         queueFinished = false
         clearPlaylistGen()
+        persistPlaybackState()
         updateNowPlayingInfo()
         print("⏹️ Playback stopped and queue cleared")
     }
@@ -649,6 +818,8 @@ class AudioPlayer: NSObject, ObservableObject {
            DownloadManager.shared.getLocalURL(currentSong.id) != nil {
              let cmTime = CMTime(seconds: time, preferredTimescale: 1)
              player.seek(to: cmTime)
+             currentTime = time
+             persistPlaybackState()
              return
         }
         
@@ -752,13 +923,13 @@ class AudioPlayer: NSObject, ObservableObject {
                     }
                 }
             }
-            .store(in: &cancellables)
+            .store(in: &playerItemCancellables)
 
         NotificationCenter.default.publisher(for: .AVPlayerItemDidPlayToEndTime, object: item)
             .sink { [weak self] _ in
                 self?.handlePlaybackEnded()
             }
-            .store(in: &cancellables)
+            .store(in: &playerItemCancellables)
     }
 
     private func handlePlaybackEnded() {
