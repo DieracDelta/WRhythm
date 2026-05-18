@@ -26,21 +26,22 @@ struct NowPlayingView: View {
                     PlaybackTargetPicker()
                     RemotePlaybackControls(playback: remote, compact: false)
                 }
-                    .padding()
+                .padding()
             } else if let song = player.currentSong {
-                VStack(spacing: 12) {
+                VStack(spacing: 18) {
                     NowPlayingArtwork(coverArtId: song.coverArt, maxSize: 360)
                         .equatable()
 
-                    VStack(spacing: 4) {
+                    VStack(spacing: 8) {
                         Text(song.title)
-                            .font(.headline)
+                            .font(.title2.weight(.semibold))
                             .lineLimit(2)
                             .multilineTextAlignment(.center)
+                            .contentTransition(.opacity)
 
                         if let artist = song.artist {
                             Text(artist)
-                                .font(.caption)
+                                .font(.subheadline)
                                 .foregroundColor(.secondary)
                                 .lineLimit(1)
                         }
@@ -52,22 +53,28 @@ struct NowPlayingView: View {
                                 .lineLimit(1)
                         }
 
-                        if player.isBuffering {
-                            Label("Buffering", systemImage: "hourglass")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-
-                        if player.queue.count > player.currentIndex + 1 {
-                            Label(bufferedTrackLabel(player.prebufferedTrackCount), systemImage: "arrow.down.circle")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
+                        HStack(spacing: 8) {
+                            WRhythmStatusPill(
+                                text: player.isPlaying ? "Playing" : "Paused",
+                                systemImage: player.isPlaying ? "waveform" : "pause.fill",
+                                tint: player.isPlaying ? .accentColor : .secondary
+                            )
+                            if player.isBuffering {
+                                WRhythmStatusPill(text: "Buffering", systemImage: "hourglass", tint: .orange)
+                            }
+                            if player.queue.count > player.currentIndex + 1 {
+                                WRhythmStatusPill(
+                                    text: bufferedTrackLabel(player.prebufferedTrackCount),
+                                    systemImage: "arrow.down.circle",
+                                    tint: .secondary
+                                )
+                            }
                         }
                     }
 
                     PlaybackTargetPicker()
 
-                    VStack(spacing: 4) {
+                    VStack(spacing: 6) {
                         let safeDuration = max(1, player.duration.isFinite ? player.duration : 1)
                         let liveTime = player.currentTime.isFinite ? player.currentTime : 0
                         let displayedTime = min(max(scrubTime ?? liveTime, 0), safeDuration)
@@ -98,26 +105,21 @@ struct NowPlayingView: View {
                                 .foregroundColor(.secondary)
                         }
                     }
+                    .padding(14)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous))
 
-                    HStack(spacing: 25) {
-                        Button(action: player.previous) {
-                            Image(systemName: "backward.end.fill")
-                                .font(.title2)
-                        }
-                        .buttonStyle(.plain)
+                    HStack(spacing: 22) {
+                        WRhythmTransportButton(systemImage: "backward.end.fill", action: player.previous)
                         .disabled(player.currentIndex == 0 && player.currentTime < 3)
 
-                        Button(action: player.togglePlayPause) {
-                            Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                                .font(.largeTitle)
-                        }
-                        .buttonStyle(.plain)
+                        WRhythmTransportButton(
+                            systemImage: player.isPlaying ? "pause.fill" : "play.fill",
+                            size: .title,
+                            prominent: true,
+                            action: player.togglePlayPause
+                        )
 
-                        Button(action: player.next) {
-                            Image(systemName: "forward.end.fill")
-                                .font(.title2)
-                        }
-                        .buttonStyle(.plain)
+                        WRhythmTransportButton(systemImage: "forward.end.fill", action: player.next)
                         .disabled(player.currentIndex >= player.queue.count - 1)
                     }
 
@@ -194,6 +196,7 @@ struct NowPlayingView: View {
                         }
                         .buttonStyle(.plain)
                     }
+                    .padding(.top, 2)
 
                     if primaryRemotePlayback == nil,
                        deviceSyncManager.syncModeEnabled,
@@ -204,6 +207,8 @@ struct NowPlayingView: View {
                     }
                 }
                 .padding()
+                .frame(maxWidth: 520)
+                .frame(maxWidth: .infinity)
                 .id(song.id)
             } else if deviceSyncManager.syncModeEnabled,
                       let remote = deviceSyncManager.activeSharedPlayback ?? deviceSyncManager.remotePlayback,
@@ -212,7 +217,7 @@ struct NowPlayingView: View {
                     PlaybackTargetPicker()
                     RemotePlaybackControls(playback: remote, compact: false)
                 }
-                    .padding()
+                .padding()
             } else {
                 VStack(spacing: 8) {
                     PlaybackTargetPicker()
@@ -227,6 +232,7 @@ struct NowPlayingView: View {
                 .padding()
             }
         }
+        .background(WRhythmArtworkBackdrop(coverArtId: primaryArtworkCoverArtId).ignoresSafeArea())
         .navigationTitle("Now Playing")
         .sheet(isPresented: $showVolumeControl) {
             VolumeControlView()
@@ -239,6 +245,13 @@ struct NowPlayingView: View {
                 loadStarredSongs()
             }
         }
+    }
+
+    private var primaryArtworkCoverArtId: String? {
+        if let remote = primaryRemotePlayback {
+            return remote.song?.coverArt
+        }
+        return player.currentSong?.coverArt
     }
 
     private var primaryRemotePlayback: PlaybackSnapshot? {
@@ -377,17 +390,33 @@ private struct NowPlayingArtwork: View, Equatable {
     }
 
     var body: some View {
-        if let coverArtId,
-           let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 300) {
-            CachedAsyncImage(url: coverURL) { image in
-                image
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
+        ZStack {
+            RoundedRectangle(cornerRadius: WRhythmVisual.cornerRadius, style: .continuous)
+                .fill(.regularMaterial)
+
+            if let coverArtId,
+               let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 420) {
+                CachedAsyncImage(url: coverURL) { image in
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                }
+                .padding(1)
+            } else {
+                Image(systemName: "music.note")
+                    .font(.system(size: 64, weight: .semibold))
+                    .foregroundColor(.secondary)
             }
-            .frame(maxWidth: maxSize, maxHeight: maxSize)
-            .frame(maxWidth: .infinity)
-            .cornerRadius(8)
         }
+        .frame(maxWidth: maxSize, maxHeight: maxSize)
+        .aspectRatio(1, contentMode: .fit)
+        .clipShape(RoundedRectangle(cornerRadius: WRhythmVisual.cornerRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: WRhythmVisual.cornerRadius, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+        }
+        .shadow(color: Color.black.opacity(0.22), radius: 28, y: 16)
+        .frame(maxWidth: .infinity)
     }
 }
 
@@ -442,20 +471,18 @@ struct RemotePlaybackControls: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
                 Spacer()
-                Text(playback.isPlaying ? "Playing" : "Paused")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
+                WRhythmStatusPill(
+                    text: playback.isPlaying ? "Playing" : "Paused",
+                    systemImage: playback.isPlaying ? "waveform" : "pause.fill",
+                    tint: playback.isPlaying ? .accentColor : .secondary
+                )
                 if playback.isBuffering == true {
-                    Text("Buffering")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
+                    WRhythmStatusPill(text: "Buffering", systemImage: "hourglass", tint: .orange)
                 }
                 if let bufferedCount = playback.prebufferedTrackCount,
                    !playback.queue.isEmpty,
                    playback.currentIndex < playback.queue.count - 1 {
-                    Text("\(bufferedCount) buffered")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
+                    WRhythmStatusPill(text: "\(bufferedCount) buffered", systemImage: "arrow.down.circle")
                 }
             }
 
@@ -514,30 +541,31 @@ struct RemotePlaybackControls: View {
                     }
                 }
 
-                HStack(spacing: compact ? 18 : 25) {
-                    Button(action: { deviceSyncManager.sendPrevious(targetDeviceID: playback.id) }) {
-                        Image(systemName: "backward.end.fill")
-                            .font(compact ? .caption : .title2)
-                    }
-                    .buttonStyle(.plain)
+                HStack(spacing: compact ? 14 : 22) {
+                    WRhythmTransportButton(
+                        systemImage: "backward.end.fill",
+                        size: compact ? .caption : .title2,
+                        action: { deviceSyncManager.sendPrevious(targetDeviceID: playback.id) }
+                    )
 
-                    Button(action: { deviceSyncManager.setPlaying(!playback.isPlaying, targetDeviceID: playback.id) }) {
-                        Image(systemName: playback.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                            .font(compact ? .title3 : .largeTitle)
-                    }
-                    .buttonStyle(.plain)
+                    WRhythmTransportButton(
+                        systemImage: playback.isPlaying ? "pause.fill" : "play.fill",
+                        size: compact ? .title3 : .title,
+                        prominent: !compact,
+                        action: { deviceSyncManager.setPlaying(!playback.isPlaying, targetDeviceID: playback.id) }
+                    )
 
-                    Button(action: { deviceSyncManager.sendNext(targetDeviceID: playback.id) }) {
-                        Image(systemName: "forward.end.fill")
-                            .font(compact ? .caption : .title2)
-                    }
-                    .buttonStyle(.plain)
+                    WRhythmTransportButton(
+                        systemImage: "forward.end.fill",
+                        size: compact ? .caption : .title2,
+                        action: { deviceSyncManager.sendNext(targetDeviceID: playback.id) }
+                    )
 
-                    Button(action: deviceSyncManager.takeOverRemotePlayback) {
-                        Image(systemName: "speaker.wave.2.circle.fill")
-                            .font(compact ? .title3 : .title2)
-                    }
-                    .buttonStyle(.plain)
+                    WRhythmTransportButton(
+                        systemImage: "speaker.wave.2.fill",
+                        size: compact ? .title3 : .title2,
+                        action: deviceSyncManager.takeOverRemotePlayback
+                    )
                 }
 
                 InlineVolumeSlider(volume: Binding(
@@ -549,6 +577,8 @@ struct RemotePlaybackControls: View {
                 ))
             }
         }
+        .padding(compact ? 10 : 16)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: compact ? WRhythmVisual.compactCornerRadius : WRhythmVisual.cornerRadius, style: .continuous))
         .onChange(of: playback.volume ?? -1) { _, _ in
             pendingVolume = nil
         }
@@ -581,6 +611,10 @@ struct InlineVolumeSlider: View {
             Image(systemName: "speaker.wave.3.fill")
                 .foregroundColor(.secondary)
         }
+        .font(.caption)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.thinMaterial, in: Capsule())
     }
 }
 

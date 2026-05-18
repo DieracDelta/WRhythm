@@ -343,6 +343,7 @@ struct MacMiniPlayerBar: View {
         VStack(spacing: 0) {
             if let song = player.currentSong, !shouldHideLocalRow {
                 miniRow(
+                    coverArtId: song.coverArt,
                     title: song.title,
                     subtitle: [song.artist, song.album].compactMap { $0 }.joined(separator: " • "),
                     isPlaying: player.isPlaying,
@@ -368,6 +369,7 @@ struct MacMiniPlayerBar: View {
                     Divider()
                 }
                 miniRow(
+                    coverArtId: song.coverArt,
                     title: song.title,
                     subtitle: [song.artist, song.album].compactMap { $0 }.joined(separator: " • "),
                     isPlaying: remote.isPlaying,
@@ -424,6 +426,7 @@ struct MacMiniPlayerBar: View {
     }
 
     private func miniRow(
+        coverArtId: String?,
         title: String,
         subtitle: String,
         isPlaying: Bool,
@@ -441,6 +444,8 @@ struct MacMiniPlayerBar: View {
     ) -> some View {
         VStack(spacing: 8) {
             HStack(spacing: 12) {
+                MiniPlayerArtwork(coverArtId: coverArtId)
+
                 Button(action: {
                     selection = .nowPlaying
                 }) {
@@ -466,22 +471,18 @@ struct MacMiniPlayerBar: View {
 
                 Spacer()
 
-                Button(action: previous) {
-                    Image(systemName: "backward.end.fill")
-                }
-                .buttonStyle(.plain)
+                WRhythmTransportButton(systemImage: "backward.end.fill", size: .caption, diameter: 32, action: previous)
                 .disabled(previousDisabled)
 
-                Button(action: toggle) {
-                    Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                        .font(.title2)
-                }
-                .buttonStyle(.plain)
+                WRhythmTransportButton(
+                    systemImage: isPlaying ? "pause.fill" : "play.fill",
+                    size: .headline,
+                    prominent: true,
+                    diameter: 40,
+                    action: toggle
+                )
 
-                Button(action: next) {
-                    Image(systemName: "forward.end.fill")
-                }
-                .buttonStyle(.plain)
+                WRhythmTransportButton(systemImage: "forward.end.fill", size: .caption, diameter: 32, action: next)
                 .disabled(nextDisabled)
             }
 
@@ -493,6 +494,9 @@ struct MacMiniPlayerBar: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
     }
 
     private func miniStatusText(queuePosition: String, isBuffering: Bool, prebufferedTrackCount: Int?) -> String {
@@ -504,6 +508,35 @@ struct MacMiniPlayerBar: View {
             parts.append("\(prebufferedTrackCount) buffered")
         }
         return parts.joined(separator: " • ")
+    }
+}
+
+private struct MiniPlayerArtwork: View {
+    let coverArtId: String?
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(.thinMaterial)
+
+            if let coverArtId,
+               let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 96) {
+                CachedAsyncImage(url: coverURL) { image in
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                }
+            } else {
+                Image(systemName: "music.note")
+                    .foregroundColor(.secondary)
+            }
+        }
+        .frame(width: 54, height: 54)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+        }
     }
 }
 

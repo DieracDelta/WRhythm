@@ -105,3 +105,88 @@ struct PlatformSearchSheet<Content: View>: View {
 #endif
     }
 }
+
+enum WRhythmVisual {
+    static let cornerRadius: CGFloat = 18
+    static let compactCornerRadius: CGFloat = 12
+
+    static var pageBackground: LinearGradient {
+        LinearGradient(
+            colors: [
+                Color.accentColor.opacity(0.22),
+                Color.black.opacity(0.16),
+                Color.clear
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+}
+
+struct WRhythmArtworkBackdrop: View {
+    let coverArtId: String?
+
+    var body: some View {
+        ZStack {
+            WRhythmVisual.pageBackground
+
+            if let coverArtId,
+               let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 120) {
+                CachedAsyncImage(url: coverURL) { image in
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                }
+                .blur(radius: 32)
+                .saturation(1.15)
+                .opacity(0.28)
+                .ignoresSafeArea()
+            }
+        }
+    }
+}
+
+struct WRhythmStatusPill: View {
+    let text: String
+    let systemImage: String?
+    var tint: Color = .secondary
+
+    var body: some View {
+        HStack(spacing: 5) {
+            if let systemImage {
+                Image(systemName: systemImage)
+                    .imageScale(.small)
+            }
+            Text(text)
+                .lineLimit(1)
+        }
+        .font(.caption2)
+        .fontWeight(.medium)
+        .foregroundColor(tint)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(.thinMaterial, in: Capsule())
+    }
+}
+
+struct WRhythmTransportButton: View {
+    let systemImage: String
+    var size: Font = .title2
+    var prominent = false
+    var diameter: CGFloat?
+    let action: () -> Void
+
+    var body: some View {
+        let resolvedDiameter = diameter ?? (prominent ? 64 : 44)
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(size)
+                .symbolRenderingMode(.hierarchical)
+                .frame(width: resolvedDiameter, height: resolvedDiameter)
+                .background(prominent ? AnyShapeStyle(Color.accentColor.gradient) : AnyShapeStyle(.regularMaterial), in: Circle())
+                .foregroundStyle(prominent ? AnyShapeStyle(Color.white) : AnyShapeStyle(Color.primary))
+                .shadow(color: Color.black.opacity(prominent ? 0.22 : 0.08), radius: prominent ? 16 : 8, y: prominent ? 8 : 4)
+        }
+        .buttonStyle(.plain)
+    }
+}
