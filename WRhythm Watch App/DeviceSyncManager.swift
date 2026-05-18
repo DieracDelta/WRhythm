@@ -279,6 +279,10 @@ final class DeviceSyncManager: NSObject, ObservableObject {
     private var discoveredMultipeerPeers: [String: MCPeerID] = [:]
     private var inviteAttemptsByPeerDisplayName: [String: Int] = [:]
     private var inviteRetryTasksByPeerDisplayName: [String: Task<Void, Never>] = [:]
+    private let multipeerInviteTimeout: TimeInterval = 10
+    private let maxMultipeerInviteAttempts = 5
+    private let maxMultipeerInviteBackoff: TimeInterval = 60
+    private let maxMultipeerDiscoveryBackoff: TimeInterval = 120
 #endif
 
     private override init() {
@@ -1422,18 +1426,22 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         guard syncModeEnabled || credentialSyncEnabled else { return }
         guard multipeerRestartTask == nil else { return }
 
-        let delay = min(pow(2.0, Double(multipeerRestartAttempt)), 60)
+        let delay = min(pow(2.0, Double(multipeerRestartAttempt)), maxMultipeerDiscoveryBackoff)
         multipeerRestartAttempt += 1
-        print("⏳ Restarting sync discovery in \(Int(delay))s after \(reason)")
+        print("⏳ Pausing sync discovery for \(Int(delay))s after \(reason)")
+
+        advertiser?.stopAdvertisingPeer()
+        browser?.stopBrowsingForPeers()
+        advertiser = nil
+        browser = nil
+        inviteRetryTasksByPeerDisplayName.values.forEach { $0.cancel() }
+        inviteRetryTasksByPeerDisplayName.removeAll()
+        discoveredMultipeerPeers.removeAll()
 
         multipeerRestartTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             guard !Task.isCancelled else { return }
             self.multipeerRestartTask = nil
-            self.advertiser?.stopAdvertisingPeer()
-            self.browser?.stopBrowsingForPeers()
-            self.advertiser = nil
-            self.browser = nil
             self.startMultipeerDiscovery()
         }
     }
@@ -1453,7 +1461,13 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         guard inviteRetryTasksByPeerDisplayName[key] == nil else { return }
 
         let attempt = inviteAttemptsByPeerDisplayName[key, default: 0]
-        let delay = attempt == 0 ? 0 : min(pow(2.0, Double(attempt)), 30)
+        guard attempt < maxMultipeerInviteAttempts else {
+            inviteAttemptsByPeerDisplayName[key] = 0
+            scheduleMultipeerDiscoveryRestart(reason: "repeated failed invites to \(key)")
+            return
+        }
+
+        let delay = attempt == 0 ? 0 : multipeerInviteTimeout + min(pow(2.0, Double(attempt)), maxMultipeerInviteBackoff)
 
         inviteRetryTasksByPeerDisplayName[key] = Task { @MainActor in
             if delay > 0 {
@@ -1471,7 +1485,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             }
 
             print("📨 Sync peer found, inviting: \(key) (attempt \(attempt + 1))")
-            browser.invitePeer(peerID, to: session, withContext: nil, timeout: 10)
+            browser.invitePeer(peerID, to: session, withContext: nil, timeout: self.multipeerInviteTimeout)
             self.inviteAttemptsByPeerDisplayName[key] = attempt + 1
             self.scheduleInvite(to: peerID)
         }

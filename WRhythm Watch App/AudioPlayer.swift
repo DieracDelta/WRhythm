@@ -97,6 +97,10 @@ class AudioPlayer: NSObject, ObservableObject {
     private let maxConcurrentPrebuffers = 3
     private var prebufferTasks: [String: Task<Void, Never>] = [:]
     private var prebufferURLs: [String: URL] = [:]
+    private var playbackRetryTask: Task<Void, Never>?
+    private var playbackRetryAttemptsBySongID: [String: Int] = [:]
+    private let maxPlaybackRetryAttempts = 4
+    private let maxPlaybackRetryBackoff: TimeInterval = 30
 #if os(macOS)
     private var mediaKeyMonitors: [Any] = []
     private var mediaKeyEventTap: CFMachPort?
@@ -838,6 +842,12 @@ class AudioPlayer: NSObject, ObservableObject {
         print("🎵 Content type: \(song.contentType ?? "unknown")")
         print("🎵 Suffix: \(song.suffix ?? "unknown")")
 
+        if currentSong?.id != song.id {
+            playbackRetryTask?.cancel()
+            playbackRetryTask = nil
+            playbackRetryAttemptsBySongID.removeAll()
+        }
+
         queueFinished = false
         self.currentSong = song
         self.currentTime = startTime
@@ -1132,6 +1142,7 @@ class AudioPlayer: NSObject, ObservableObject {
                     } else {
                         print("❌ Player failed but no error object available")
                     }
+                    self?.schedulePlaybackRetry(reason: "player item failure")
                 }
             }
             .store(in: &playerItemCancellables)
@@ -1220,10 +1231,7 @@ class AudioPlayer: NSObject, ObservableObject {
         // If we are less than 95% through and song is longer than 10s, it's likely an error
         if duration > 10, currentTime > 0, currentTime < (duration * 0.95) {
              print("⚠️ Premature end detected (Time: \(currentTime)/\(duration)). Attempting to resume playback from \(currentTime)...")
-             if let song = currentSong {
-                 // Restart playback but ask server for offset
-                 startPlayback(song, startTime: currentTime)
-             }
+             schedulePlaybackRetry(reason: "premature stream end")
              return
         }
 
@@ -1261,6 +1269,37 @@ class AudioPlayer: NSObject, ObservableObject {
                 DeviceSyncManager.shared.publishLocalPlaybackStateNow()
                 print("⏸️ Queue finished - stopped playback")
             }
+        }
+    }
+
+    private func schedulePlaybackRetry(reason: String) {
+        guard playbackRetryTask == nil else { return }
+        guard let song = currentSong else { return }
+
+        let attempt = playbackRetryAttemptsBySongID[song.id, default: 0]
+        guard attempt < maxPlaybackRetryAttempts else {
+            print("🛑 Giving up playback retry for \(song.title) after \(attempt) attempts (\(reason))")
+            player.pause()
+            isBuffering = false
+            isPlaying = false
+            updateNowPlayingInfo()
+            DeviceSyncManager.shared.publishLocalPlaybackStateNow()
+            return
+        }
+
+        let delay = min(pow(2.0, Double(attempt)), maxPlaybackRetryBackoff)
+        let retryStartTime = currentTime
+        let shouldAutoplay = isPlaying
+        playbackRetryAttemptsBySongID[song.id] = attempt + 1
+        isBuffering = shouldAutoplay
+        print("⏳ Retrying playback for \(song.title) in \(Int(delay))s after \(reason) (attempt \(attempt + 1))")
+
+        playbackRetryTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            self.playbackRetryTask = nil
+            guard self.currentSong?.id == song.id else { return }
+            self.startPlayback(song, startTime: retryStartTime, autoplay: shouldAutoplay)
         }
     }
 
