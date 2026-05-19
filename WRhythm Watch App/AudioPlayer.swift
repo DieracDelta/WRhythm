@@ -79,6 +79,11 @@ class AudioPlayer: NSObject, ObservableObject {
         let updatedAt: Date
     }
 
+    private struct PreparedPrebuffer {
+        let url: URL
+        let asset: AVURLAsset
+    }
+
     private static let persistedPlaybackStateKey = "audioPlayerPersistedPlaybackState.v1"
     private static let persistedPlaybackVersion = 1
 
@@ -97,6 +102,9 @@ class AudioPlayer: NSObject, ObservableObject {
     private let maxConcurrentPrebuffers = 3
     private var prebufferTasks: [String: Task<Void, Never>] = [:]
     private var prebufferURLs: [String: URL] = [:]
+    private var preparedPrebuffers: [String: PreparedPrebuffer] = [:]
+    private var currentPlaybackURL: URL?
+    private var currentPlaybackIsLocalFile = false
     private var playbackRetryTask: Task<Void, Never>?
     private var playbackRetryAttemptsBySongID: [String: Int] = [:]
     private let maxPlaybackRetryAttempts = 4
@@ -697,8 +705,18 @@ class AudioPlayer: NSObject, ObservableObject {
         return url
     }
 
+    private func preparedPrebuffer(for song: Song) -> PreparedPrebuffer? {
+        let key = prebufferKey(for: song)
+        guard let prebuffer = preparedPrebuffers[key],
+              FileManager.default.fileExists(atPath: prebuffer.url.path) else {
+            preparedPrebuffers.removeValue(forKey: key)
+            return nil
+        }
+        return prebuffer
+    }
+
     private func isPrebuffered(_ song: Song) -> Bool {
-        DownloadManager.shared.getLocalURL(song.id) != nil || existingPrebufferURL(for: song) != nil
+        preparedPrebuffer(for: song) != nil
     }
 
     private func playbackMimeType(for song: Song, url: URL) -> String? {
@@ -718,10 +736,28 @@ class AudioPlayer: NSObject, ObservableObject {
         }
     }
 
+    private func playbackAssetOptions(for song: Song, url: URL) -> [String: Any] {
+        var assetOptions: [String: Any] = [:]
+        if let contentType = playbackMimeType(for: song, url: url) {
+            let fixedContentType = contentType == "audio/x-flac" ? "audio/flac" : contentType
+            assetOptions["AVURLAssetOutOfBandMIMETypeKey"] = fixedContentType
+
+            if fixedContentType.contains("flac") {
+                assetOptions[AVURLAssetPreferPreciseDurationAndTimingKey] = true
+            }
+        }
+        return assetOptions
+    }
+
+    private func makePlaybackAsset(for song: Song, url: URL) -> AVURLAsset {
+        AVURLAsset(url: url, options: playbackAssetOptions(for: song, url: url))
+    }
+
     private func scheduleQueuePrebuffer() {
         guard !queue.isEmpty else {
             prebufferTasks.values.forEach { $0.cancel() }
             prebufferTasks.removeAll()
+            preparedPrebuffers.removeAll()
             updatePrebufferedTrackCount()
             return
         }
@@ -730,6 +766,7 @@ class AudioPlayer: NSObject, ObservableObject {
         guard start < queue.count else {
             prebufferTasks.values.forEach { $0.cancel() }
             prebufferTasks.removeAll()
+            preparedPrebuffers.removeAll()
             updatePrebufferedTrackCount()
             return
         }
@@ -745,15 +782,26 @@ class AudioPlayer: NSObject, ObservableObject {
             prebufferTasks.removeValue(forKey: key)
         }
 
+        for key in Array(preparedPrebuffers.keys) where !desiredKeys.contains(key) {
+            preparedPrebuffers.removeValue(forKey: key)
+        }
+
         prunePrebufferCache(keeping: desiredKeys.union(currentSongKey.map { [$0] } ?? []))
         updatePrebufferedTrackCount()
 
         for song in upcomingSongs {
             guard prebufferTasks.count < maxConcurrentPrebuffers else { break }
-            guard DownloadManager.shared.getLocalURL(song.id) == nil else { continue }
             let key = prebufferKey(for: song)
             guard prebufferTasks[key] == nil,
-                  existingPrebufferURL(for: song) == nil else { continue }
+                  preparedPrebuffer(for: song) == nil else { continue }
+            if let downloadedURL = DownloadManager.shared.getLocalURL(song.id) {
+                preparePrebufferedFile(song, key: key, url: downloadedURL)
+                continue
+            }
+            if let existingURL = existingPrebufferURL(for: song) {
+                preparePrebufferedFile(song, key: key, url: existingURL)
+                continue
+            }
             startPrebuffering(song, key: key)
         }
     }
@@ -770,14 +818,7 @@ class AudioPlayer: NSObject, ObservableObject {
                 try? FileManager.default.removeItem(at: destinationURL)
                 try FileManager.default.moveItem(at: temporaryURL, to: destinationURL)
 
-                await MainActor.run { [weak self] in
-                    guard let player = self else { return }
-                    player.prebufferURLs[key] = destinationURL
-                    player.prebufferTasks.removeValue(forKey: key)
-                    player.updatePrebufferedTrackCount()
-                    print("✅ Prebuffered next queue item: \(song.title)")
-                    player.scheduleQueuePrebuffer()
-                }
+                await self?.prepareDownloadedPrebuffer(song, key: key, url: destinationURL)
             } catch is CancellationError {
                 await MainActor.run { [weak self] in
                     guard let player = self else { return }
@@ -791,6 +832,55 @@ class AudioPlayer: NSObject, ObservableObject {
                     player.updatePrebufferedTrackCount()
                     print("⚠️ Failed to prebuffer \(song.title): \(error)")
                 }
+            }
+        }
+    }
+
+    private func preparePrebufferedFile(_ song: Song, key: String, url: URL) {
+        prebufferTasks[key] = Task { [weak self] in
+            await self?.prepareDownloadedPrebuffer(song, key: key, url: url)
+        }
+    }
+
+    private func prepareDownloadedPrebuffer(_ song: Song, key: String, url: URL) async {
+        do {
+            let asset = makePlaybackAsset(for: song, url: url)
+            let isPlayable = try await asset.load(.isPlayable)
+            _ = try? await asset.load(.duration)
+            try Task.checkCancellation()
+
+            await MainActor.run { [weak self] in
+                guard let player = self else { return }
+                guard isPlayable else {
+                    player.prebufferTasks.removeValue(forKey: key)
+                    player.prebufferURLs.removeValue(forKey: key)
+                    try? FileManager.default.removeItem(at: url)
+                    player.updatePrebufferedTrackCount()
+                    print("⚠️ Prebuffered file is not playable: \(song.title)")
+                    return
+                }
+                player.prebufferURLs[key] = url
+                player.preparedPrebuffers[key] = PreparedPrebuffer(url: url, asset: asset)
+                player.prebufferTasks.removeValue(forKey: key)
+                player.updatePrebufferedTrackCount()
+                print("✅ Prebuffered and prepared next queue item: \(song.title)")
+                player.scheduleQueuePrebuffer()
+            }
+        } catch is CancellationError {
+            await MainActor.run { [weak self] in
+                guard let player = self else { return }
+                player.prebufferTasks.removeValue(forKey: key)
+                player.updatePrebufferedTrackCount()
+            }
+        } catch {
+            await MainActor.run { [weak self] in
+                guard let player = self else { return }
+                player.prebufferTasks.removeValue(forKey: key)
+                player.preparedPrebuffers.removeValue(forKey: key)
+                player.prebufferURLs.removeValue(forKey: key)
+                try? FileManager.default.removeItem(at: url)
+                player.updatePrebufferedTrackCount()
+                print("⚠️ Failed to prepare prebuffered file for \(song.title): \(error)")
             }
         }
     }
@@ -828,6 +918,11 @@ class AudioPlayer: NSObject, ObservableObject {
             }
             return nil
         })
+
+        for key in Array(preparedPrebuffers.keys) where !keepKeys.contains(key) {
+            preparedPrebuffers.removeValue(forKey: key)
+            prebufferURLs.removeValue(forKey: key)
+        }
 
         for url in files where !keepFilenames.contains(url.lastPathComponent) {
             try? FileManager.default.removeItem(at: url)
@@ -867,16 +962,23 @@ class AudioPlayer: NSObject, ObservableObject {
 
         // Check if song is downloaded first
         let playURL: URL
+        let preparedAsset: AVURLAsset?
         let prebufferKey = prebufferKey(for: song)
         prebufferTasks[prebufferKey]?.cancel()
         prebufferTasks.removeValue(forKey: prebufferKey)
 
-        if let localURL = DownloadManager.shared.getLocalURL(song.id) {
+        if let prebuffer = preparedPrebuffer(for: song) {
+            playURL = prebuffer.url
+            preparedAsset = prebuffer.asset
+            print("🎵 Playing from prepared local queue file: \(prebuffer.url.lastPathComponent)")
+        } else if let localURL = DownloadManager.shared.getLocalURL(song.id) {
             playURL = localURL
-            print("🎵 Playing from local file: \(localURL.lastPathComponent)")
+            preparedAsset = nil
+            print("🎵 Playing from local file before preparation completed: \(localURL.lastPathComponent)")
         } else if let prebufferURL = existingPrebufferURL(for: song) {
             playURL = prebufferURL
-            print("🎵 Playing from prebuffered queue file: \(prebufferURL.lastPathComponent)")
+            preparedAsset = nil
+            print("🎵 Playing from cached queue file before preparation completed: \(prebufferURL.lastPathComponent)")
         } else {
             if shouldTranscodeForPlayback(song) {
                 let bitRate = StreamingQuality.current.maxBitRate ?? StreamingQuality.max.rawValue
@@ -885,6 +987,7 @@ class AudioPlayer: NSObject, ObservableObject {
                 print("⚠️ \(reason) - requesting MP3 transcode at \(bitRate) kbps")
                 if let streamURL = streamURLForPlayback(song) {
                     playURL = streamURL
+                    preparedAsset = nil
                     print("🎵 Streaming transcoded: \(streamURL.absoluteString)")
                 } else {
                     print("❌ Failed to get transcoded stream URL")
@@ -894,6 +997,7 @@ class AudioPlayer: NSObject, ObservableObject {
                 print("✅ Streaming original format '\(song.contentType ?? song.suffix ?? "unknown")'")
                 if let streamURL = streamURLForPlayback(song) {
                     playURL = streamURL
+                    preparedAsset = nil
                     print("🎵 Streaming from: \(streamURL.absoluteString)")
                 } else {
                     print("❌ Failed to get stream URL")
@@ -903,6 +1007,8 @@ class AudioPlayer: NSObject, ObservableObject {
         }
 
         print("🎵 Playback URL: \(playURL.absoluteString)")
+        currentPlaybackURL = playURL
+        currentPlaybackIsLocalFile = playURL.isFileURL
 
         // Remove old time observer if exists
         // if let observer = timeObserver {
@@ -920,20 +1026,13 @@ class AudioPlayer: NSObject, ObservableObject {
         // This works reliably on both macOS and watchOS
         print("🎵 Creating player item from asset...")
 
-        var assetOptions: [String: Any] = [:]
         if let contentType = playbackMimeType(for: song, url: playURL) {
             // Fix FLAC MIME type (Submariner workaround)
             let fixedContentType = contentType == "audio/x-flac" ? "audio/flac" : contentType
             print("🎵 Setting MIME type: \(fixedContentType)")
-            assetOptions["AVURLAssetOutOfBandMIMETypeKey"] = fixedContentType
-
-            // Seeking is inaccurate with FLACs otherwise (Submariner approach)
-            if fixedContentType.contains("flac") {
-                assetOptions[AVURLAssetPreferPreciseDurationAndTimingKey] = true
-            }
         }
 
-        let asset = AVURLAsset(url: playURL, options: assetOptions)
+        let asset = preparedAsset ?? makePlaybackAsset(for: song, url: playURL)
         let playerItem = AVPlayerItem(asset: asset)
 
         // Configure player item for better streaming
@@ -980,6 +1079,8 @@ class AudioPlayer: NSObject, ObservableObject {
         isBuffering = false
         isPlaying = false
         currentSong = nil
+        currentPlaybackURL = nil
+        currentPlaybackIsLocalFile = false
         queue = []
         currentIndex = 0
         currentTime = 0
@@ -1035,12 +1136,19 @@ class AudioPlayer: NSObject, ObservableObject {
         }
         // If we are playing a local file, standard seek works
         if let currentSong = currentSong, 
-           DownloadManager.shared.getLocalURL(currentSong.id) != nil {
-             let cmTime = CMTime(seconds: time, preferredTimescale: 1)
-             player.seek(to: cmTime)
-             currentTime = time
-             persistPlaybackState()
-             return
+           (DownloadManager.shared.getLocalURL(currentSong.id) != nil || currentPlaybackIsLocalFile) {
+            let cmTime = CMTime(seconds: time, preferredTimescale: 600)
+            player.seek(to: cmTime, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    let actualTime = self.player.currentTime().seconds
+                    self.currentTime = actualTime.isFinite ? actualTime : time
+                    self.persistPlaybackState()
+                    self.updateNowPlayingInfo()
+                }
+            }
+            currentTime = time
+            return
         }
         
         // If streaming, we likely have a chunked stream which cannot be seeked backward 
