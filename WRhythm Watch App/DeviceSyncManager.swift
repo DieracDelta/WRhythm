@@ -30,7 +30,24 @@ private struct SyncInvitationHandler: @unchecked Sendable {
         handler(shouldAccept, session)
     }
 }
+
+private struct SyncPeerHandle: @unchecked Sendable {
+    let peerID: MCPeerID
+}
 #endif
+
+private actor SyncDelegateEventQueue {
+    private var previousTask: Task<Void, Never>?
+
+    func enqueue(_ operation: @escaping @MainActor @Sendable () -> Void) {
+        let previousTask = previousTask
+        let task = Task {
+            await previousTask?.value
+            await MainActor.run(body: operation)
+        }
+        self.previousTask = task
+    }
+}
 
 struct SyncedCredentials: Codable, Sendable {
     let baseURL: String
@@ -123,13 +140,19 @@ extension PlaybackSnapshot {
 
 struct PlaybackSyncPolicy: Sendable {
     static let defaultMaxRemotePlaybackSnapshotAge: TimeInterval = 30
+    static let defaultAllowedFutureClockSkew: TimeInterval = 10
 
     static func isStalePlaybackSnapshot(
         _ playback: PlaybackSnapshot,
         current: PlaybackSnapshot?,
         now: Date = Date(),
-        maxAge: TimeInterval = defaultMaxRemotePlaybackSnapshotAge
+        maxAge: TimeInterval = defaultMaxRemotePlaybackSnapshotAge,
+        allowedFutureClockSkew: TimeInterval = defaultAllowedFutureClockSkew
     ) -> Bool {
+        if playback.updatedAt.timeIntervalSince(now) > allowedFutureClockSkew {
+            return true
+        }
+
         if now.timeIntervalSince(playback.updatedAt) > maxAge {
             return true
         }
@@ -240,6 +263,65 @@ struct PlaybackCommandSyncPolicy: Sendable {
 
     static func retryDelay(forAttempt attempt: Int) -> TimeInterval {
         min(pow(2.0, Double(max(0, attempt))), maxRetryDelay)
+    }
+}
+
+struct PendingPlaybackCommandPolicy: Sendable {
+    static let acknowledgmentDeadline: TimeInterval = 20
+    static let opportunisticDeadline: TimeInterval = 6
+
+    static func deadlineInterval(needsAcknowledgment: Bool) -> TimeInterval {
+        needsAcknowledgment ? acknowledgmentDeadline : opportunisticDeadline
+    }
+
+    static func shouldReplacePendingCommand(
+        existingAction: PlaybackSyncCommandAction?,
+        incomingAction: PlaybackSyncCommandAction
+    ) -> Bool {
+        true
+    }
+}
+
+struct PlaybackDisplayVisibility: Sendable {
+    let showsLocal: Bool
+    let showsRemote: Bool
+}
+
+struct PlaybackDisplaySourcePolicy: Sendable {
+    static func visibility(
+        hasLocalSong: Bool,
+        localIsPlaying: Bool,
+        hasRemotePlayback: Bool,
+        hasActiveSharedPlayback: Bool,
+        remoteQueueMatchesLocal: Bool
+    ) -> PlaybackDisplayVisibility {
+        let showsLocal = hasLocalSong && !shouldHideLocal(
+            localIsPlaying: localIsPlaying,
+            hasActiveSharedPlayback: hasActiveSharedPlayback,
+            remoteQueueMatchesLocal: remoteQueueMatchesLocal
+        )
+        let showsRemote = hasRemotePlayback && !shouldHideRemote(
+            localIsPlaying: localIsPlaying,
+            hasActiveSharedPlayback: hasActiveSharedPlayback,
+            remoteQueueMatchesLocal: remoteQueueMatchesLocal
+        )
+        return PlaybackDisplayVisibility(showsLocal: showsLocal, showsRemote: showsRemote)
+    }
+
+    private static func shouldHideLocal(
+        localIsPlaying: Bool,
+        hasActiveSharedPlayback: Bool,
+        remoteQueueMatchesLocal: Bool
+    ) -> Bool {
+        hasActiveSharedPlayback || (remoteQueueMatchesLocal && !localIsPlaying)
+    }
+
+    private static func shouldHideRemote(
+        localIsPlaying: Bool,
+        hasActiveSharedPlayback: Bool,
+        remoteQueueMatchesLocal: Bool
+    ) -> Bool {
+        remoteQueueMatchesLocal && localIsPlaying && !hasActiveSharedPlayback
     }
 }
 
@@ -504,6 +586,7 @@ private extension SyncEnvelope.Kind {
 @MainActor
 final class DeviceSyncManager: NSObject, ObservableObject {
     static let shared = DeviceSyncManager()
+    private nonisolated static let delegateEventQueue = SyncDelegateEventQueue()
 
     @Published var syncModeEnabled: Bool {
         didSet {
@@ -640,6 +723,12 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         decoder.dateDecodingStrategy = .iso8601
         observePlayback()
         configureTransports()
+    }
+
+    nonisolated private static func enqueueDelegateEvent(_ operation: @escaping @MainActor @Sendable () -> Void) {
+        Task {
+            await delegateEventQueue.enqueue(operation)
+        }
     }
 
     var hasActiveRemotePlayback: Bool {
@@ -1402,8 +1491,17 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         let needsAcknowledgment = commandNeedsPlaybackAcknowledgment(command)
 
         if let targetDeviceID {
+            if PendingPlaybackCommandPolicy.shouldReplacePendingCommand(
+                existingAction: pendingTargetedCommands[targetDeviceID]?.action,
+                incomingAction: command.action
+            ) {
+                pendingTargetedCommandRetryTasks.removeValue(forKey: targetDeviceID)?.cancel()
+                pendingTargetedCommandRetryAttempts[targetDeviceID] = 0
+            }
             pendingTargetedCommands[targetDeviceID] = command
-            pendingTargetedCommandDeadlines[targetDeviceID] = Date().addingTimeInterval(needsAcknowledgment ? 20 : 6)
+            pendingTargetedCommandDeadlines[targetDeviceID] = Date().addingTimeInterval(
+                PendingPlaybackCommandPolicy.deadlineInterval(needsAcknowledgment: needsAcknowledgment)
+            )
         }
 
         let sent = sendEnvelope(.init(kind: .playbackCommand, sender: localPeerInfo(), playback: nil, command: command, credentials: nil, targetDeviceID: targetDeviceID))
@@ -1833,20 +1931,20 @@ final class DeviceSyncManager: NSObject, ObservableObject {
 #if os(iOS) || os(watchOS)
 extension DeviceSyncManager: WCSessionDelegate {
     nonisolated func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
-        Task { @MainActor in
+        Self.enqueueDelegateEvent {
             DeviceSyncManager.shared.sendCurrentSyncState(includeHello: true)
         }
     }
 
     nonisolated func session(_ session: WCSession, didReceiveMessageData messageData: Data) {
-        Task { @MainActor in
+        Self.enqueueDelegateEvent {
             DeviceSyncManager.shared.handleEnvelopeData(messageData)
         }
     }
 
     nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
         guard let data = userInfo["payload"] as? Data else { return }
-        Task { @MainActor in
+        Self.enqueueDelegateEvent {
             DeviceSyncManager.shared.handleEnvelopeData(data)
         }
     }
@@ -1864,8 +1962,10 @@ extension DeviceSyncManager: WCSessionDelegate {
 #if os(iOS) || os(macOS)
 extension DeviceSyncManager: MCSessionDelegate {
     nonisolated func session(_ session: MCSession, peer peerID: MCPeerID, didChange state: MCSessionState) {
-        Task { @MainActor in
+        let peer = SyncPeerHandle(peerID: peerID)
+        Self.enqueueDelegateEvent {
             let manager = DeviceSyncManager.shared
+            let peerID = peer.peerID
             switch state {
             case .connected:
                 manager.resetMultipeerBackoff(for: peerID)
@@ -1891,8 +1991,9 @@ extension DeviceSyncManager: MCSessionDelegate {
     }
 
     nonisolated func session(_ session: MCSession, didReceive data: Data, fromPeer peerID: MCPeerID) {
-        Task { @MainActor in
-            DeviceSyncManager.shared.handleEnvelopeData(data, fromPeerDisplayName: peerID.displayName)
+        let peerDisplayName = peerID.displayName
+        Self.enqueueDelegateEvent {
+            DeviceSyncManager.shared.handleEnvelopeData(data, fromPeerDisplayName: peerDisplayName)
         }
     }
 
@@ -1904,17 +2005,19 @@ extension DeviceSyncManager: MCSessionDelegate {
 extension DeviceSyncManager: MCNearbyServiceAdvertiserDelegate {
     nonisolated func advertiser(_ advertiser: MCNearbyServiceAdvertiser, didReceiveInvitationFromPeer peerID: MCPeerID, withContext context: Data?, invitationHandler: @escaping (Bool, MCSession?) -> Void) {
         let handler = SyncInvitationHandler(handler: invitationHandler)
-        Task { @MainActor in
+        let peerDisplayName = peerID.displayName
+        Self.enqueueDelegateEvent {
             let manager = DeviceSyncManager.shared
             let shouldAccept = (manager.syncModeEnabled || manager.credentialSyncEnabled) && manager.session != nil
-            print("\(shouldAccept ? "📨" : "🚫") Sync invitation from \(peerID.displayName)")
+            print("\(shouldAccept ? "📨" : "🚫") Sync invitation from \(peerDisplayName)")
             handler(shouldAccept, manager.session)
         }
     }
 
     nonisolated func advertiser(_ advertiser: MCNearbyServiceAdvertiser, didNotStartAdvertisingPeer error: Error) {
-        Task { @MainActor in
-            print("❌ Sync advertiser failed: \(error)")
+        let errorDescription = String(describing: error)
+        Self.enqueueDelegateEvent {
+            print("❌ Sync advertiser failed: \(errorDescription)")
             DeviceSyncManager.shared.scheduleMultipeerDiscoveryRestart(reason: "advertiser failure")
         }
     }
@@ -1922,8 +2025,10 @@ extension DeviceSyncManager: MCNearbyServiceAdvertiserDelegate {
 
 extension DeviceSyncManager: MCNearbyServiceBrowserDelegate {
     nonisolated func browser(_ browser: MCNearbyServiceBrowser, foundPeer peerID: MCPeerID, withDiscoveryInfo info: [String: String]?) {
-        Task { @MainActor in
+        let peer = SyncPeerHandle(peerID: peerID)
+        Self.enqueueDelegateEvent {
             let manager = DeviceSyncManager.shared
+            let peerID = peer.peerID
             guard manager.syncModeEnabled || manager.credentialSyncEnabled else { return }
             guard manager.session != nil else { return }
 
@@ -1938,8 +2043,10 @@ extension DeviceSyncManager: MCNearbyServiceBrowserDelegate {
     }
 
     nonisolated func browser(_ browser: MCNearbyServiceBrowser, lostPeer peerID: MCPeerID) {
-        Task { @MainActor in
+        let peer = SyncPeerHandle(peerID: peerID)
+        Self.enqueueDelegateEvent {
             let manager = DeviceSyncManager.shared
+            let peerID = peer.peerID
             print("⚠️ Sync peer lost: \(peerID.displayName)")
             manager.discoveredMultipeerPeers.removeValue(forKey: peerID.displayName)
             manager.inviteRetryTasksByPeerDisplayName.removeValue(forKey: peerID.displayName)?.cancel()
@@ -1948,8 +2055,9 @@ extension DeviceSyncManager: MCNearbyServiceBrowserDelegate {
     }
 
     nonisolated func browser(_ browser: MCNearbyServiceBrowser, didNotStartBrowsingForPeers error: Error) {
-        Task { @MainActor in
-            print("❌ Sync browser failed: \(error)")
+        let errorDescription = String(describing: error)
+        Self.enqueueDelegateEvent {
+            print("❌ Sync browser failed: \(errorDescription)")
             DeviceSyncManager.shared.scheduleMultipeerDiscoveryRestart(reason: "browser failure")
         }
     }

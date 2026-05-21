@@ -378,7 +378,7 @@ struct MacMiniPlayerBar: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if let song = player.currentSong, !shouldHideLocalRow {
+            if let song = player.currentSong, displayVisibility.showsLocal {
                 miniRow(
                     coverArtId: song.coverArt,
                     title: song.title,
@@ -401,8 +401,8 @@ struct MacMiniPlayerBar: View {
             if deviceSyncManager.syncModeEnabled,
                let remote = deviceSyncManager.activeSharedPlayback ?? deviceSyncManager.remotePlayback,
                let song = remote.song,
-               !shouldHideRemoteRow {
-                if player.currentSong != nil, !shouldHideLocalRow {
+               displayVisibility.showsRemote {
+                if player.currentSong != nil, displayVisibility.showsLocal {
                     Divider()
                 }
                 miniRow(
@@ -450,12 +450,15 @@ struct MacMiniPlayerBar: View {
         return player.queue.map(\.id) == remoteQueue.map(\.id)
     }
 
-    private var shouldHideLocalRow: Bool {
-        deviceSyncManager.activeSharedPlayback != nil || (remoteQueueMatchesLocal && !player.isPlaying)
-    }
-
-    private var shouldHideRemoteRow: Bool {
-        remoteQueueMatchesLocal && player.isPlaying && deviceSyncManager.activeSharedPlayback == nil
+    private var displayVisibility: PlaybackDisplayVisibility {
+        let remotePlayback = deviceSyncManager.activeSharedPlayback ?? deviceSyncManager.remotePlayback
+        return PlaybackDisplaySourcePolicy.visibility(
+            hasLocalSong: player.currentSong != nil,
+            localIsPlaying: player.isPlaying,
+            hasRemotePlayback: remotePlayback?.song != nil,
+            hasActiveSharedPlayback: deviceSyncManager.activeSharedPlayback != nil,
+            remoteQueueMatchesLocal: remoteQueueMatchesLocal
+        )
     }
 
     private var localLabel: String {

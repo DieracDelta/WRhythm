@@ -15,6 +15,20 @@ struct PlaybackSyncPolicyTests {
         #expect(PlaybackSyncPolicy.isStalePlaybackSnapshot(snapshot, current: nil, now: now) == true)
     }
 
+    @Test func snapshotTooFarInFutureIsRejectedAsClockSkewed() {
+        let now = Date()
+        let snapshot = makeSnapshot(updatedAt: now.addingTimeInterval(11))
+
+        #expect(PlaybackSyncPolicy.isStalePlaybackSnapshot(snapshot, current: nil, now: now) == true)
+    }
+
+    @Test func smallFutureClockSkewIsAccepted() {
+        let now = Date()
+        let snapshot = makeSnapshot(updatedAt: now.addingTimeInterval(5))
+
+        #expect(PlaybackSyncPolicy.isStalePlaybackSnapshot(snapshot, current: nil, now: now) == false)
+    }
+
     @Test func olderSnapshotFromSameDeviceIsRejectedEvenInsideFreshnessWindow() {
         let now = Date()
         let current = makeSnapshot(currentTime: 20, updatedAt: now.addingTimeInterval(-5))
@@ -203,6 +217,27 @@ struct PlaybackSyncPolicyTests {
         )
 
         #expect(PlaybackSessionSyncPolicy.shouldApply(delayedIPhoneSession, over: currentMacSession) == false)
+    }
+
+    @Test func reconnectBootstrapKeepsNewestDifferentSession() {
+        let now = Date()
+        let staleSession = makeSession(
+            id: "iphone-session",
+            outputDeviceID: "iphone",
+            revision: 42,
+            updatedAt: now.addingTimeInterval(-10),
+            updatedByDeviceID: "iphone"
+        )
+        let freshSession = makeSession(
+            id: "mac-session",
+            outputDeviceID: "mac",
+            revision: 1,
+            updatedAt: now,
+            updatedByDeviceID: "mac"
+        )
+
+        #expect(PlaybackSessionSyncPolicy.shouldApply(freshSession, over: staleSession) == true)
+        #expect(PlaybackSessionSyncPolicy.shouldApply(staleSession, over: freshSession) == false)
     }
 
     @Test func sameRevisionSessionUsesTimestampThenDeviceIDTieBreaker() {
@@ -410,6 +445,61 @@ struct PlaybackSyncPolicyTests {
     ])
     func commandRetryBackoffCapsAtEightSeconds(attempt: Int, expectedDelay: TimeInterval) {
         #expect(PlaybackCommandSyncPolicy.retryDelay(forAttempt: attempt) == expectedDelay)
+    }
+
+    @Test func newerTargetedCommandReplacesExistingPendingCommand() {
+        #expect(PendingPlaybackCommandPolicy.shouldReplacePendingCommand(
+            existingAction: .pause,
+            incomingAction: .play
+        ) == true)
+        #expect(PendingPlaybackCommandPolicy.shouldReplacePendingCommand(
+            existingAction: .seek,
+            incomingAction: .seek
+        ) == true)
+    }
+
+    @Test func pendingCommandDeadlineDependsOnAcknowledgmentNeed() {
+        #expect(PendingPlaybackCommandPolicy.deadlineInterval(needsAcknowledgment: true) == 20)
+        #expect(PendingPlaybackCommandPolicy.deadlineInterval(needsAcknowledgment: false) == 6)
+    }
+
+    @Test func displayPolicyShowsRemoteSharedPlaybackInsteadOfStaleLocalMirror() {
+        let visibility = PlaybackDisplaySourcePolicy.visibility(
+            hasLocalSong: true,
+            localIsPlaying: false,
+            hasRemotePlayback: true,
+            hasActiveSharedPlayback: true,
+            remoteQueueMatchesLocal: true
+        )
+
+        #expect(visibility.showsLocal == false)
+        #expect(visibility.showsRemote == true)
+    }
+
+    @Test func displayPolicyShowsLocalPlaybackWhenLocalDeviceIsActivelyPlayingMirroredQueue() {
+        let visibility = PlaybackDisplaySourcePolicy.visibility(
+            hasLocalSong: true,
+            localIsPlaying: true,
+            hasRemotePlayback: true,
+            hasActiveSharedPlayback: false,
+            remoteQueueMatchesLocal: true
+        )
+
+        #expect(visibility.showsLocal == true)
+        #expect(visibility.showsRemote == false)
+    }
+
+    @Test func displayPolicyCanShowIndependentLocalAndRemotePlaybackRows() {
+        let visibility = PlaybackDisplaySourcePolicy.visibility(
+            hasLocalSong: true,
+            localIsPlaying: true,
+            hasRemotePlayback: true,
+            hasActiveSharedPlayback: false,
+            remoteQueueMatchesLocal: false
+        )
+
+        #expect(visibility.showsLocal == true)
+        #expect(visibility.showsRemote == true)
     }
 
     @Test func credentialImportRejectsPayloadIssuedBeforeLocalLogout() {
