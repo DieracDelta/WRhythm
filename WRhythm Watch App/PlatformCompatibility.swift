@@ -112,6 +112,7 @@ enum WRhythmVisual {
     static let thumbnailCornerRadius: CGFloat = 9
     static let sectionSpacing: CGFloat = 14
     static let cardPadding: CGFloat = 14
+    static let contentMaxWidth: CGFloat = 760
 
     static var pageBackground: LinearGradient {
         LinearGradient(
@@ -123,6 +124,35 @@ enum WRhythmVisual {
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
+    }
+}
+
+struct WRhythmScreen<Content: View>: View {
+    var coverArtId: String?
+    var horizontalPadding: CGFloat = 16
+    private let content: Content
+
+    init(
+        coverArtId: String? = nil,
+        horizontalPadding: CGFloat = 16,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.coverArtId = coverArtId
+        self.horizontalPadding = horizontalPadding
+        self.content = content()
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: WRhythmVisual.sectionSpacing) {
+                content
+            }
+            .frame(maxWidth: WRhythmVisual.contentMaxWidth)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, horizontalPadding)
+            .padding(.vertical, 16)
+        }
+        .wrhythmPageBackground(coverArtId: coverArtId)
     }
 }
 
@@ -144,6 +174,147 @@ struct WRhythmCard<Content: View>: View {
                 RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous)
                     .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
             }
+    }
+}
+
+struct WRhythmHeroHeader<Actions: View>: View {
+    let title: String
+    let subtitle: String?
+    let detail: String?
+    let systemImage: String
+    var tint: Color = .accentColor
+    var coverArtId: String?
+    private let actions: Actions
+
+    init(
+        title: String,
+        subtitle: String? = nil,
+        detail: String? = nil,
+        systemImage: String,
+        tint: Color = .accentColor,
+        coverArtId: String? = nil,
+        @ViewBuilder actions: () -> Actions
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.detail = detail
+        self.systemImage = systemImage
+        self.tint = tint
+        self.coverArtId = coverArtId
+        self.actions = actions()
+    }
+
+    var body: some View {
+        VStack(spacing: 14) {
+            heroArt
+
+            VStack(spacing: 5) {
+                Text(title)
+                    .font(.title3.weight(.semibold))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                }
+
+                if let detail, !detail.isEmpty {
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                }
+            }
+
+            actions
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 4)
+    }
+
+    private var heroArt: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: WRhythmVisual.cornerRadius, style: .continuous)
+                .fill(.regularMaterial)
+
+            if let coverArtId,
+               let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 420) {
+                CachedAsyncImage(url: coverURL) { image in
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                }
+            } else {
+                LinearGradient(
+                    colors: [tint.opacity(0.46), Color.primary.opacity(0.10)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                Image(systemName: systemImage)
+                    .font(.system(size: 58, weight: .semibold))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundColor(tint)
+            }
+        }
+        .aspectRatio(1, contentMode: .fit)
+        .frame(maxWidth: 300)
+        .clipShape(RoundedRectangle(cornerRadius: WRhythmVisual.cornerRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: WRhythmVisual.cornerRadius, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.13), lineWidth: 1)
+        }
+        .shadow(color: tint.opacity(0.20), radius: 22, y: 12)
+    }
+}
+
+struct WRhythmActionStrip<Content: View>: View {
+    private let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            content
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.regular)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(.regularMaterial, in: Capsule())
+        .overlay {
+            Capsule()
+                .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
+        }
+    }
+}
+
+extension WRhythmHeroHeader where Actions == EmptyView {
+    init(
+        title: String,
+        subtitle: String? = nil,
+        detail: String? = nil,
+        systemImage: String,
+        tint: Color = .accentColor,
+        coverArtId: String? = nil
+    ) {
+        self.init(
+            title: title,
+            subtitle: subtitle,
+            detail: detail,
+            systemImage: systemImage,
+            tint: tint,
+            coverArtId: coverArtId
+        ) {
+            EmptyView()
+        }
     }
 }
 
@@ -204,6 +375,45 @@ struct WRhythmFeatureHeader: View {
     }
 }
 
+struct WRhythmSectionHeader<Actions: View>: View {
+    let title: String
+    var subtitle: String?
+    private let actions: Actions
+
+    init(title: String, subtitle: String? = nil, @ViewBuilder actions: () -> Actions) {
+        self.title = title
+        self.subtitle = subtitle
+        self.actions = actions()
+    }
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.headline)
+                if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            actions
+        }
+        .padding(.horizontal, 2)
+    }
+}
+
+extension WRhythmSectionHeader where Actions == EmptyView {
+    init(title: String, subtitle: String? = nil) {
+        self.init(title: title, subtitle: subtitle) {
+            EmptyView()
+        }
+    }
+}
+
 struct WRhythmIconBadge: View {
     let systemImage: String
     var tint: Color = .accentColor
@@ -220,6 +430,169 @@ struct WRhythmIconBadge: View {
                 RoundedRectangle(cornerRadius: min(10, size * 0.28), style: .continuous)
                     .strokeBorder(tint.opacity(0.18), lineWidth: 1)
             }
+    }
+}
+
+struct WRhythmMediaRow<Trailing: View>: View {
+    let title: String
+    var subtitle: String?
+    var detail: String?
+    var coverArtId: String?
+    var fallbackSystemImage = "music.note"
+    var artworkSize: CGFloat = 46
+    var isCurrent = false
+    var isPlaying = false
+    private let trailing: Trailing
+
+    init(
+        title: String,
+        subtitle: String? = nil,
+        detail: String? = nil,
+        coverArtId: String? = nil,
+        fallbackSystemImage: String = "music.note",
+        artworkSize: CGFloat = 46,
+        isCurrent: Bool = false,
+        isPlaying: Bool = false,
+        @ViewBuilder trailing: () -> Trailing
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.detail = detail
+        self.coverArtId = coverArtId
+        self.fallbackSystemImage = fallbackSystemImage
+        self.artworkSize = artworkSize
+        self.isCurrent = isCurrent
+        self.isPlaying = isPlaying
+        self.trailing = trailing()
+    }
+
+    var body: some View {
+        HStack(spacing: 11) {
+            WRhythmArtworkThumbnail(coverArtId: coverArtId, fallbackSystemImage: fallbackSystemImage, size: artworkSize)
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 5) {
+                    if isCurrent {
+                        Image(systemName: isPlaying ? "speaker.wave.2.fill" : "speaker")
+                            .font(.caption2)
+                            .foregroundColor(.accentColor)
+                    }
+                    Text(title)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+
+                if let detail, !detail.isEmpty {
+                    Text(detail)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer(minLength: 6)
+
+            trailing
+        }
+        .padding(.vertical, 6)
+        .contentShape(Rectangle())
+    }
+}
+
+extension WRhythmMediaRow where Trailing == EmptyView {
+    init(
+        title: String,
+        subtitle: String? = nil,
+        detail: String? = nil,
+        coverArtId: String? = nil,
+        fallbackSystemImage: String = "music.note",
+        artworkSize: CGFloat = 46,
+        isCurrent: Bool = false,
+        isPlaying: Bool = false
+    ) {
+        self.init(
+            title: title,
+            subtitle: subtitle,
+            detail: detail,
+            coverArtId: coverArtId,
+            fallbackSystemImage: fallbackSystemImage,
+            artworkSize: artworkSize,
+            isCurrent: isCurrent,
+            isPlaying: isPlaying
+        ) {
+            EmptyView()
+        }
+    }
+}
+
+struct WRhythmCollectionRow<Trailing: View>: View {
+    let title: String
+    var subtitle: String?
+    var detail: String?
+    var coverArtId: String?
+    var fallbackSystemImage: String
+    var tint: Color = .accentColor
+    private let trailing: Trailing
+
+    init(
+        title: String,
+        subtitle: String? = nil,
+        detail: String? = nil,
+        coverArtId: String? = nil,
+        fallbackSystemImage: String,
+        tint: Color = .accentColor,
+        @ViewBuilder trailing: () -> Trailing
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.detail = detail
+        self.coverArtId = coverArtId
+        self.fallbackSystemImage = fallbackSystemImage
+        self.tint = tint
+        self.trailing = trailing()
+    }
+
+    var body: some View {
+        WRhythmMediaRow(
+            title: title,
+            subtitle: subtitle,
+            detail: detail,
+            coverArtId: coverArtId,
+            fallbackSystemImage: fallbackSystemImage,
+            artworkSize: 48
+        ) {
+            trailing
+        }
+    }
+}
+
+extension WRhythmCollectionRow where Trailing == EmptyView {
+    init(
+        title: String,
+        subtitle: String? = nil,
+        detail: String? = nil,
+        coverArtId: String? = nil,
+        fallbackSystemImage: String,
+        tint: Color = .accentColor
+    ) {
+        self.init(
+            title: title,
+            subtitle: subtitle,
+            detail: detail,
+            coverArtId: coverArtId,
+            fallbackSystemImage: fallbackSystemImage,
+            tint: tint
+        ) {
+            EmptyView()
+        }
     }
 }
 
