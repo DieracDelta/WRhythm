@@ -9,14 +9,22 @@ import Foundation
 import CryptoKit
 import Combine
 
+typealias DownloadProgressHandler = @MainActor @Sendable (Double, Int64, Int64) -> Void
+
 final class DownloadProgressDelegate: NSObject, URLSessionDataDelegate, @unchecked Sendable {
-    private let progressHandler: (Double, Int64, Int64) -> Void
+    private let progressHandler: DownloadProgressHandler
+    private let delegateQueue: OperationQueue = {
+        let queue = OperationQueue()
+        queue.name = "WRhythm.DownloadProgressDelegate"
+        queue.maxConcurrentOperationCount = 1
+        return queue
+    }()
     private var expectedBytes: Int64 = 0
     private var receivedBytes: Int64 = 0
     private var receivedData = Data()
     private var urlResponse: URLResponse?
 
-    init(progressHandler: @escaping (Double, Int64, Int64) -> Void) {
+    init(progressHandler: @escaping DownloadProgressHandler) {
         self.progressHandler = progressHandler
     }
 
@@ -24,7 +32,8 @@ final class DownloadProgressDelegate: NSObject, URLSessionDataDelegate, @uncheck
         urlResponse = response
         expectedBytes = response.expectedContentLength
         print("📊 Expected bytes: \(expectedBytes)")
-        Task { @MainActor in
+        let expectedBytes = expectedBytes
+        Task { @MainActor [progressHandler] in
             progressHandler(0, 0, expectedBytes)
         }
         completionHandler(.allow)
@@ -35,14 +44,16 @@ final class DownloadProgressDelegate: NSObject, URLSessionDataDelegate, @uncheck
         receivedBytes += Int64(data.count)
         let progress = expectedBytes > 0 ? Double(receivedBytes) / Double(expectedBytes) : 0
         print("📊 Progress: \(receivedBytes)/\(expectedBytes) = \(Int(progress * 100))%")
-        Task { @MainActor in
+        let receivedBytes = receivedBytes
+        let expectedBytes = expectedBytes
+        Task { @MainActor [progressHandler] in
             progressHandler(progress, receivedBytes, expectedBytes)
         }
     }
 
     func download(with request: URLRequest) async throws -> (Data, URLResponse) {
         return try await withCheckedThrowingContinuation { continuation in
-            let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
+            let session = URLSession(configuration: .default, delegate: self, delegateQueue: delegateQueue)
             let task = session.dataTask(with: request) { data, response, error in
                 print("📊 Download completed - data: \(data?.count ?? 0) bytes, response: \(response != nil), error: \(error?.localizedDescription ?? "none")")
 
@@ -74,9 +85,13 @@ final class NavidromeAPI: ObservableObject {
     private var baseURL: String
     private var username: String
     private var password: String
+    private var credentialIssuedAt: Date
+    private var credentialClearedAt: Date
 
     private let clientName = "WRhythm"
     private let apiVersion = "1.16.1"
+    private static let credentialIssuedAtKey = "navidrome_credentials_issued_at"
+    private static let credentialClearedAtKey = "navidrome_credentials_cleared_at"
 
     var hasCredentials: Bool {
         !baseURL.isEmpty && !username.isEmpty && !password.isEmpty
@@ -88,7 +103,17 @@ final class NavidromeAPI: ObservableObject {
         self.username = UserDefaults.standard.string(forKey: "navidrome_username") ?? ""
         self.password = UserDefaults.standard.string(forKey: "navidrome_password") ?? ""
 
-        self.isAuthenticated = !baseURL.isEmpty && !username.isEmpty && !password.isEmpty
+        let hasSavedCredentials = !baseURL.isEmpty && !username.isEmpty && !password.isEmpty
+        self.isAuthenticated = hasSavedCredentials
+        self.credentialClearedAt = UserDefaults.standard.object(forKey: Self.credentialClearedAtKey) as? Date ?? .distantPast
+        if let issuedAt = UserDefaults.standard.object(forKey: Self.credentialIssuedAtKey) as? Date {
+            self.credentialIssuedAt = issuedAt
+        } else {
+            self.credentialIssuedAt = hasSavedCredentials ? Date() : .distantPast
+            if hasSavedCredentials {
+                UserDefaults.standard.set(self.credentialIssuedAt, forKey: Self.credentialIssuedAtKey)
+            }
+        }
 
         // Load cached transcoding support status
         if UserDefaults.standard.object(forKey: "server_supports_transcoding") != nil {
@@ -96,42 +121,54 @@ final class NavidromeAPI: ObservableObject {
         }
     }
 
-    func configure(baseURL: String, username: String, password: String) {
-        self.baseURL = baseURL.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        self.username = username
-        self.password = password
+    private func normalizedBaseURL(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    }
+
+    private func applyCredentials(_ credentials: SyncedCredentials, notifySync: Bool = true) {
+        self.baseURL = normalizedBaseURL(credentials.baseURL)
+        self.username = credentials.username
+        self.password = credentials.password
 
         UserDefaults.standard.set(self.baseURL, forKey: "navidrome_url")
         UserDefaults.standard.set(self.username, forKey: "navidrome_username")
         UserDefaults.standard.set(self.password, forKey: "navidrome_password")
 
+        let issuedAt = credentials.issuedAt ?? Date()
+        self.credentialIssuedAt = issuedAt
+        UserDefaults.standard.set(issuedAt, forKey: Self.credentialIssuedAtKey)
+
         self.isAuthenticated = true
-        DeviceSyncManager.shared.credentialsDidChange()
+        if notifySync {
+            DeviceSyncManager.shared.credentialsDidChange()
+        }
+    }
+
+    func configure(baseURL: String, username: String, password: String) {
+        applyCredentials(SyncedCredentials(
+            baseURL: baseURL,
+            username: username,
+            password: password,
+            issuedAt: Date()
+        ))
     }
 
     func validateAndConfigure(baseURL: String, username: String, password: String) async throws -> Bool {
-        // Save original credentials in case validation fails
-        let originalBaseURL = self.baseURL
-        let originalUsername = self.username
-        let originalPassword = self.password
-        let originalAuth = self.isAuthenticated
-
-        // Temporarily set credentials WITHOUT saving to UserDefaults
-        self.baseURL = baseURL.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        self.username = username
-        self.password = password
+        let candidate = SyncedCredentials(
+            baseURL: normalizedBaseURL(baseURL),
+            username: username,
+            password: password,
+            issuedAt: Date()
+        )
 
         do {
-            // Validate with server first
-            let success = try await ping()
+            // Validate with server first, without publishing candidate credentials
+            // through shared state while the network request is suspended.
+            let success = try await ping(using: candidate)
 
             if success {
                 // Validation succeeded - NOW save to UserDefaults
-                UserDefaults.standard.set(self.baseURL, forKey: "navidrome_url")
-                UserDefaults.standard.set(self.username, forKey: "navidrome_username")
-                UserDefaults.standard.set(self.password, forKey: "navidrome_password")
-                self.isAuthenticated = true
-                DeviceSyncManager.shared.credentialsDidChange()
+                applyCredentials(candidate)
 
                 // Check transcoding support after successful login
                 Task { @MainActor in
@@ -140,19 +177,9 @@ final class NavidromeAPI: ObservableObject {
 
                 return true
             } else {
-                // Validation failed - restore original credentials
-                self.baseURL = originalBaseURL
-                self.username = originalUsername
-                self.password = originalPassword
-                self.isAuthenticated = originalAuth
                 return false
             }
         } catch {
-            // Error occurred - restore original credentials
-            self.baseURL = originalBaseURL
-            self.username = originalUsername
-            self.password = originalPassword
-            self.isAuthenticated = originalAuth
             throw error
         }
     }
@@ -177,12 +204,17 @@ final class NavidromeAPI: ObservableObject {
         UserDefaults.standard.removeObject(forKey: "navidrome_url")
         UserDefaults.standard.removeObject(forKey: "navidrome_username")
         UserDefaults.standard.removeObject(forKey: "navidrome_password")
+        UserDefaults.standard.removeObject(forKey: Self.credentialIssuedAtKey)
+        let clearedAt = Date()
+        UserDefaults.standard.set(clearedAt, forKey: Self.credentialClearedAtKey)
         print("🔓 Cleared credentials")
 
         // 5. Clear API state
         self.baseURL = ""
         self.username = ""
         self.password = ""
+        self.credentialIssuedAt = .distantPast
+        self.credentialClearedAt = clearedAt
         self.isAuthenticated = false
         DeviceSyncManager.shared.credentialsDidChange()
 
@@ -193,7 +225,7 @@ final class NavidromeAPI: ObservableObject {
 
     func exportCredentialsForSync() -> SyncedCredentials? {
         guard hasCredentials else { return nil }
-        return SyncedCredentials(baseURL: baseURL, username: username, password: password)
+        return SyncedCredentials(baseURL: baseURL, username: username, password: password, issuedAt: credentialIssuedAt)
     }
 
     @discardableResult
@@ -203,11 +235,22 @@ final class NavidromeAPI: ObservableObject {
             return false
         }
 
-        configure(
+        if let issuedAt = credentials.issuedAt {
+            guard issuedAt > credentialClearedAt else {
+                print("🔐 Skipped stale credential import from before local logout")
+                return false
+            }
+        } else if credentialClearedAt > .distantPast {
+            print("🔐 Skipped legacy credential import after local logout")
+            return false
+        }
+
+        applyCredentials(SyncedCredentials(
             baseURL: credentials.baseURL,
             username: credentials.username,
-            password: credentials.password
-        )
+            password: credentials.password,
+            issuedAt: credentials.issuedAt ?? Date()
+        ))
         print("🔐 Imported credentials from a trusted nearby WRhythm device")
         return true
     }
@@ -304,7 +347,9 @@ final class NavidromeAPI: ObservableObject {
         print("💾 Cached transcoding support: \(supported)")
     }
 
-    private func generateAuthParams() -> [String: String] {
+    private func generateAuthParams(username: String? = nil, password: String? = nil) -> [String: String] {
+        let username = username ?? self.username
+        let password = password ?? self.password
         let salt = UUID().uuidString.replacingOccurrences(of: "-", with: "")
         let token = Insecure.MD5.hash(data: Data((password + salt).utf8))
             .map { String(format: "%02x", $0) }
@@ -320,16 +365,23 @@ final class NavidromeAPI: ObservableObject {
         ]
     }
 
-    private func buildURL(endpoint: String, additionalParams: [String: String] = [:]) -> URL? {
-        var components = URLComponents(string: "\(baseURL)/rest/\(endpoint)")
-        var params = generateAuthParams()
+    private func buildURL(endpoint: String, additionalParams: [String: String] = [:], credentials: SyncedCredentials? = nil) -> URL? {
+        let requestBaseURL = credentials?.baseURL ?? baseURL
+        let requestUsername = credentials?.username ?? username
+        let requestPassword = credentials?.password ?? password
+        var components = URLComponents(string: "\(requestBaseURL)/rest/\(endpoint)")
+        var params = generateAuthParams(username: requestUsername, password: requestPassword)
         params.merge(additionalParams) { _, new in new }
         components?.queryItems = params.map { URLQueryItem(name: $0.key, value: $0.value) }
         return components?.url
     }
 
     func ping() async throws -> Bool {
-        guard let url = buildURL(endpoint: "ping") else {
+        try await ping(using: nil)
+    }
+
+    private func ping(using credentials: SyncedCredentials?) async throws -> Bool {
+        guard let url = buildURL(endpoint: "ping", credentials: credentials) else {
             print("❌ Invalid URL for ping")
             throw NavidromeError.invalidURL
         }
@@ -362,7 +414,7 @@ final class NavidromeAPI: ObservableObject {
         return false
     }
 
-    func getArtists(progressHandler: ((Double, Int64, Int64) -> Void)? = nil) async throws -> [Artist] {
+    func getArtists(progressHandler: DownloadProgressHandler? = nil) async throws -> [Artist] {
         guard let url = buildURL(endpoint: "getArtists") else {
             print("❌ Invalid URL for getArtists")
             throw NavidromeError.invalidURL
@@ -430,7 +482,7 @@ final class NavidromeAPI: ObservableObject {
         return artist
     }
 
-    func getAlbumList(type: String = "newest", size: Int = 20, offset: Int = 0, progressHandler: ((Double, Int64, Int64) -> Void)? = nil) async throws -> [AlbumSummary] {
+    func getAlbumList(type: String = "newest", size: Int = 20, offset: Int = 0, progressHandler: DownloadProgressHandler? = nil) async throws -> [AlbumSummary] {
         guard let url = buildURL(endpoint: "getAlbumList2", additionalParams: [
             "type": type,
             "size": String(size),

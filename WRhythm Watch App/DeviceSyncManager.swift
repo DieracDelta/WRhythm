@@ -36,6 +36,14 @@ struct SyncedCredentials: Codable, Sendable {
     let baseURL: String
     let username: String
     let password: String
+    let issuedAt: Date?
+
+    init(baseURL: String, username: String, password: String, issuedAt: Date? = nil) {
+        self.baseURL = baseURL
+        self.username = username
+        self.password = password
+        self.issuedAt = issuedAt
+    }
 }
 
 struct PlaybackSnapshot: Codable, Identifiable, Sendable {
@@ -272,6 +280,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
     private var processedCommandIDs = Set<String>()
     private var processedCommandIDOrder: [String] = []
     private let sharedSessionID: String
+    private let maxRemotePlaybackSnapshotAge: TimeInterval = 30
 
 #if os(iOS) || os(watchOS)
     private var watchSession: WCSession?
@@ -1062,6 +1071,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
 
     private func shouldPublishRemotePlayback(_ playback: PlaybackSnapshot) -> Bool {
         guard let current = remotePlayback, current.id == playback.id else { return true }
+        guard playback.updatedAt >= current.updatedAt else { return false }
         if current.deviceName != playback.deviceName || current.platform != playback.platform { return true }
         if current.song?.id != playback.song?.id { return true }
         if current.isPlaying != playback.isPlaying { return true }
@@ -1075,6 +1085,17 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         // The progress bar can estimate time locally between snapshots. Publishing
         // every remote clock tick forces Now Playing to rebuild and visibly flicker.
         return abs(current.estimatedCurrentTime - playback.currentTime) > 4
+    }
+
+    private func isStalePlaybackSnapshot(_ playback: PlaybackSnapshot) -> Bool {
+        if Date().timeIntervalSince(playback.updatedAt) > maxRemotePlaybackSnapshotAge {
+            return true
+        }
+
+        guard let current = remotePlayback, current.id == playback.id else {
+            return false
+        }
+        return playback.updatedAt < current.updatedAt
     }
 
     private func maybeSendCredentialsToInterestedPeers() {
@@ -1141,7 +1162,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             if watchSession.activationState == .activated, watchSession.isReachable {
                 watchSession.sendMessageData(data, replyHandler: nil, errorHandler: nil)
                 didSend = true
-            } else if canQueueWatchConnectivityPayload(watchSession) {
+            } else if shouldQueueWatchConnectivityEnvelope(envelope, for: watchSession) {
                 watchSession.transferUserInfo(["payload": data])
                 didSend = true
             }
@@ -1190,6 +1211,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
 
         case .playbackState:
             guard syncModeEnabled, envelope.sender.syncModeEnabled, let playback = envelope.playback else { return }
+            guard !isStalePlaybackSnapshot(playback) else { return }
             if shouldPublishRemotePlayback(playback) {
                 remotePlayback = playback
             }
@@ -1380,7 +1402,12 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         pendingTargetedCommandRetryAttempts[deviceID] = attempt + 1
 
         pendingTargetedCommandRetryTasks[deviceID] = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            do {
+                try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
             self.pendingTargetedCommandRetryTasks[deviceID] = nil
             guard self.pendingTargetedCommands[deviceID] != nil else { return }
             self.flushPendingCommand(for: deviceID)
@@ -1388,6 +1415,19 @@ final class DeviceSyncManager: NSObject, ObservableObject {
     }
 
 #if os(iOS) || os(watchOS)
+    private func shouldQueueWatchConnectivityEnvelope(_ envelope: SyncEnvelope, for session: WCSession) -> Bool {
+        guard canQueueWatchConnectivityPayload(session) else { return false }
+
+        switch envelope.kind {
+        case .credentials:
+            return envelope.credentials != nil
+        case .hello, .syncRequest:
+            return true
+        case .playbackState, .playbackSession, .playbackCommand:
+            return false
+        }
+    }
+
     private func canQueueWatchConnectivityPayload(_ session: WCSession) -> Bool {
 #if os(iOS)
         return session.activationState == .activated && session.isPaired && session.isWatchAppInstalled
@@ -1450,7 +1490,11 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         discoveredMultipeerPeers.removeAll()
 
         multipeerRestartTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            do {
+                try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            } catch {
+                return
+            }
             guard !Task.isCancelled else { return }
             self.multipeerRestartTask = nil
             self.startMultipeerDiscovery()
@@ -1482,7 +1526,11 @@ final class DeviceSyncManager: NSObject, ObservableObject {
 
         inviteRetryTasksByPeerDisplayName[key] = Task { @MainActor in
             if delay > 0 {
-                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                do {
+                    try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                } catch {
+                    return
+                }
             }
 
             guard !Task.isCancelled else { return }
