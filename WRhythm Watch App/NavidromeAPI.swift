@@ -235,13 +235,12 @@ final class NavidromeAPI: ObservableObject {
             return false
         }
 
-        if let issuedAt = credentials.issuedAt {
-            guard issuedAt > credentialClearedAt else {
+        guard CredentialSyncPolicy.shouldImport(incomingIssuedAt: credentials.issuedAt, localClearedAt: credentialClearedAt) else {
+            if credentials.issuedAt == nil {
+                print("🔐 Skipped legacy credential import after local logout")
+            } else {
                 print("🔐 Skipped stale credential import from before local logout")
-                return false
             }
-        } else if credentialClearedAt > .distantPast {
-            print("🔐 Skipped legacy credential import after local logout")
             return false
         }
 

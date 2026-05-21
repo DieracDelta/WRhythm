@@ -117,6 +117,73 @@ extension PlaybackSnapshot {
     }
 }
 
+struct PlaybackSyncPolicy: Sendable {
+    static let defaultMaxRemotePlaybackSnapshotAge: TimeInterval = 30
+
+    static func isStalePlaybackSnapshot(
+        _ playback: PlaybackSnapshot,
+        current: PlaybackSnapshot?,
+        now: Date = Date(),
+        maxAge: TimeInterval = defaultMaxRemotePlaybackSnapshotAge
+    ) -> Bool {
+        if now.timeIntervalSince(playback.updatedAt) > maxAge {
+            return true
+        }
+
+        guard let current, current.id == playback.id else {
+            return false
+        }
+
+        return playback.updatedAt < current.updatedAt
+    }
+
+    static func shouldPublishRemotePlayback(_ playback: PlaybackSnapshot, current: PlaybackSnapshot?) -> Bool {
+        guard let current, current.id == playback.id else { return true }
+        guard playback.updatedAt >= current.updatedAt else { return false }
+        if current.deviceName != playback.deviceName || current.platform != playback.platform { return true }
+        if current.song?.id != playback.song?.id { return true }
+        if current.isPlaying != playback.isPlaying { return true }
+        if (current.isBuffering ?? false) != (playback.isBuffering ?? false) { return true }
+        if (current.prebufferedTrackCount ?? 0) != (playback.prebufferedTrackCount ?? 0) { return true }
+        if abs(current.duration - playback.duration) > 1 { return true }
+        if abs((current.volume ?? -1) - (playback.volume ?? -1)) > 0.01 { return true }
+        if current.currentIndex != playback.currentIndex { return true }
+        if current.queue.map(\.id) != playback.queue.map(\.id) { return true }
+        return abs(current.estimatedCurrentTime - playback.currentTime) > 4
+    }
+}
+
+enum WatchConnectivitySyncPayloadKind: Sendable {
+    case hello
+    case syncRequest
+    case playbackState
+    case playbackSession
+    case playbackCommand
+    case credentials(hasPayload: Bool)
+}
+
+struct WatchConnectivitySyncPolicy: Sendable {
+    static func shouldQueue(_ kind: WatchConnectivitySyncPayloadKind) -> Bool {
+        switch kind {
+        case .credentials(let hasPayload):
+            return hasPayload
+        case .hello, .syncRequest:
+            return true
+        case .playbackState, .playbackSession, .playbackCommand:
+            return false
+        }
+    }
+}
+
+struct CredentialSyncPolicy: Sendable {
+    static func shouldImport(incomingIssuedAt: Date?, localClearedAt: Date) -> Bool {
+        if let incomingIssuedAt {
+            return incomingIssuedAt > localClearedAt
+        }
+        return localClearedAt <= .distantPast
+    }
+}
+
 struct PlaybackTargetDevice: Identifiable, Equatable, Sendable {
     let id: String
     let name: String
@@ -226,6 +293,25 @@ private struct SyncEnvelope: Codable, Sendable {
     }
 }
 
+private extension SyncEnvelope.Kind {
+    var watchConnectivityPayloadKind: WatchConnectivitySyncPayloadKind {
+        switch self {
+        case .hello:
+            return .hello
+        case .syncRequest:
+            return .syncRequest
+        case .playbackState:
+            return .playbackState
+        case .playbackSession:
+            return .playbackSession
+        case .playbackCommand:
+            return .playbackCommand
+        case .credentials:
+            return .credentials(hasPayload: false)
+        }
+    }
+}
+
 @MainActor
 final class DeviceSyncManager: NSObject, ObservableObject {
     static let shared = DeviceSyncManager()
@@ -280,8 +366,6 @@ final class DeviceSyncManager: NSObject, ObservableObject {
     private var processedCommandIDs = Set<String>()
     private var processedCommandIDOrder: [String] = []
     private let sharedSessionID: String
-    private let maxRemotePlaybackSnapshotAge: TimeInterval = 30
-
 #if os(iOS) || os(watchOS)
     private var watchSession: WCSession?
 #endif
@@ -1070,32 +1154,11 @@ final class DeviceSyncManager: NSObject, ObservableObject {
     }
 
     private func shouldPublishRemotePlayback(_ playback: PlaybackSnapshot) -> Bool {
-        guard let current = remotePlayback, current.id == playback.id else { return true }
-        guard playback.updatedAt >= current.updatedAt else { return false }
-        if current.deviceName != playback.deviceName || current.platform != playback.platform { return true }
-        if current.song?.id != playback.song?.id { return true }
-        if current.isPlaying != playback.isPlaying { return true }
-        if (current.isBuffering ?? false) != (playback.isBuffering ?? false) { return true }
-        if (current.prebufferedTrackCount ?? 0) != (playback.prebufferedTrackCount ?? 0) { return true }
-        if abs(current.duration - playback.duration) > 1 { return true }
-        if abs((current.volume ?? -1) - (playback.volume ?? -1)) > 0.01 { return true }
-        if current.currentIndex != playback.currentIndex { return true }
-        if current.queue.map(\.id) != playback.queue.map(\.id) { return true }
-
-        // The progress bar can estimate time locally between snapshots. Publishing
-        // every remote clock tick forces Now Playing to rebuild and visibly flicker.
-        return abs(current.estimatedCurrentTime - playback.currentTime) > 4
+        PlaybackSyncPolicy.shouldPublishRemotePlayback(playback, current: remotePlayback)
     }
 
     private func isStalePlaybackSnapshot(_ playback: PlaybackSnapshot) -> Bool {
-        if Date().timeIntervalSince(playback.updatedAt) > maxRemotePlaybackSnapshotAge {
-            return true
-        }
-
-        guard let current = remotePlayback, current.id == playback.id else {
-            return false
-        }
-        return playback.updatedAt < current.updatedAt
+        PlaybackSyncPolicy.isStalePlaybackSnapshot(playback, current: remotePlayback)
     }
 
     private func maybeSendCredentialsToInterestedPeers() {
@@ -1420,11 +1483,11 @@ final class DeviceSyncManager: NSObject, ObservableObject {
 
         switch envelope.kind {
         case .credentials:
-            return envelope.credentials != nil
+            return WatchConnectivitySyncPolicy.shouldQueue(.credentials(hasPayload: envelope.credentials != nil))
         case .hello, .syncRequest:
-            return true
+            return WatchConnectivitySyncPolicy.shouldQueue(envelope.kind.watchConnectivityPayloadKind)
         case .playbackState, .playbackSession, .playbackCommand:
-            return false
+            return WatchConnectivitySyncPolicy.shouldQueue(envelope.kind.watchConnectivityPayloadKind)
         }
     }
 
