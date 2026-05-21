@@ -12,7 +12,7 @@ struct AlbumsView: View {
     @State private var searchText = ""
     @State private var searchResults: [AlbumSummary] = []
     @State private var isSearching = false
-    @State private var showingSearchSheet = false
+    @State private var presentedSheet: AlbumsSheet?
     @ObservedObject var downloadManager = DownloadManager.shared
     @AppStorage("offlineMode") private var offlineMode = false
     private let pageSize = 20
@@ -69,7 +69,7 @@ struct AlbumsView: View {
 
                                 Button(action: {
 
-                                    showingSearchSheet = true
+                                    presentedSheet = .search
 
                                 }) {
 
@@ -84,9 +84,11 @@ struct AlbumsView: View {
                     }
                 }
 
-                .sheet(isPresented: $showingSearchSheet) {
+                .sheet(item: $presentedSheet) { sheet in
+                    switch sheet {
+                    case .search:
                     PlatformSearchSheet("Search Albums", onCancel: {
-                        showingSearchSheet = false
+                        presentedSheet = nil
                     }) {
                         VStack(spacing: 16) {
                             TextField("Search albums", text: $searchText)
@@ -94,7 +96,7 @@ struct AlbumsView: View {
                                 .frame(maxWidth: .infinity)
 
                             Button("Search") {
-                                showingSearchSheet = false
+                                presentedSheet = nil
                                 performSearch(query: searchText)
                             }
                             .buttonStyle(.borderedProminent)
@@ -102,6 +104,7 @@ struct AlbumsView: View {
 
                             Spacer()
                         }
+                    }
                     }
                 }
 
@@ -380,6 +383,12 @@ struct AlbumsView: View {
             }
         }
     }
+}
+
+private enum AlbumsSheet: String, Identifiable {
+    case search
+
+    var id: String { rawValue }
 }
 
 #Preview {

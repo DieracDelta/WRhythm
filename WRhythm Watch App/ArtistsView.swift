@@ -14,7 +14,7 @@ struct ArtistsView: View {
     @State private var searchText = ""
     @State private var searchResults: [Artist] = []
     @State private var isSearching = false
-    @State private var showingSearchSheet = false
+    @State private var presentedSheet: ArtistsSheet?
     @ObservedObject var downloadManager = DownloadManager.shared
     @AppStorage("offlineMode") private var offlineMode = false
     private let batchSize = 20
@@ -58,7 +58,7 @@ struct ArtistsView: View {
                             }
                         } else {
                             Button(action: {
-                                showingSearchSheet = true
+                                presentedSheet = .search
                             }) {
                                 Image(systemName: "magnifyingglass")
                             }
@@ -66,9 +66,11 @@ struct ArtistsView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showingSearchSheet) {
+            .sheet(item: $presentedSheet) { sheet in
+                switch sheet {
+                case .search:
                 PlatformSearchSheet("Search Artists", onCancel: {
-                    showingSearchSheet = false
+                    presentedSheet = nil
                 }) {
                     VStack(spacing: 16) {
                         TextField("Search artists", text: $searchText)
@@ -76,7 +78,7 @@ struct ArtistsView: View {
                             .frame(maxWidth: .infinity)
 
                         Button("Search") {
-                            showingSearchSheet = false
+                            presentedSheet = nil
                             performSearch(query: searchText)
                         }
                         .buttonStyle(.borderedProminent)
@@ -84,6 +86,7 @@ struct ArtistsView: View {
 
                         Spacer()
                     }
+                }
                 }
             }
             .onAppear {
@@ -273,6 +276,12 @@ struct ArtistsView: View {
             }
         }
     }
+}
+
+private enum ArtistsSheet: String, Identifiable {
+    case search
+
+    var id: String { rawValue }
 }
 
 #Preview {

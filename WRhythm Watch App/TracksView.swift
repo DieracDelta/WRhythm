@@ -14,7 +14,7 @@ struct TracksView: View {
     @State private var artistResults: [Artist] = []
     @State private var isSearching = false
     @State private var errorMessage = ""
-    @State private var showingSearchSheet = false
+    @State private var presentedSheet: TracksSheet?
     @ObservedObject var downloadManager = DownloadManager.shared
     @ObservedObject var player = AudioPlayer.shared
     @AppStorage("offlineMode") private var offlineMode = false
@@ -127,7 +127,7 @@ struct TracksView: View {
                         }
 
                         Button(action: {
-                            showingSearchSheet = true
+                            presentedSheet = .search
                         }) {
                             HStack {
                                 Image(systemName: "magnifyingglass")
@@ -254,7 +254,7 @@ struct TracksView: View {
                         .foregroundColor(.secondary)
 
                     Button(action: {
-                        showingSearchSheet = true
+                        presentedSheet = .search
                     }) {
                         HStack {
                             Image(systemName: "magnifyingglass")
@@ -357,16 +357,18 @@ struct TracksView: View {
                     }
                 } else {
                     Button(action: {
-                        showingSearchSheet = true
+                        presentedSheet = .search
                     }) {
                         Image(systemName: "magnifyingglass")
                     }
                 }
             }
         }
-        .sheet(isPresented: $showingSearchSheet) {
+        .sheet(item: $presentedSheet) { sheet in
+            switch sheet {
+            case .search:
             PlatformSearchSheet(offlineMode ? "Offline Search" : "Search", onCancel: {
-                showingSearchSheet = false
+                presentedSheet = nil
             }) {
                 VStack(spacing: 16) {
                     TextField(offlineMode ? "Search offline music" : "Search music", text: $searchText)
@@ -374,7 +376,7 @@ struct TracksView: View {
                         .frame(maxWidth: .infinity)
 
                     Button("Search") {
-                        showingSearchSheet = false
+                        presentedSheet = nil
                         if !offlineMode {
                             performSearch(query: searchText)
                         }
@@ -385,6 +387,7 @@ struct TracksView: View {
 
                     Spacer()
                 }
+            }
             }
         }
     }
@@ -515,6 +518,12 @@ struct TracksView: View {
         let remainingSeconds = seconds % 60
         return String(format: "%d:%02d", minutes, remainingSeconds)
     }
+}
+
+private enum TracksSheet: String, Identifiable {
+    case search
+
+    var id: String { rawValue }
 }
 
 #Preview {

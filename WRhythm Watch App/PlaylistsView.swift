@@ -11,7 +11,7 @@ struct PlaylistsView: View {
     @EnvironmentObject var libraryDataManager: LibraryDataManager
     @State private var isSyncing = false
     @State private var searchText = ""
-    @State private var showingSearchSheet = false
+    @State private var presentedSheet: PlaylistsSheet?
     @ObservedObject var downloadManager = DownloadManager.shared
     @AppStorage("offlineMode") private var offlineMode = false
 
@@ -52,7 +52,7 @@ struct PlaylistsView: View {
                     .disabled(isSyncing)
 
                     Button(action: {
-                        showingSearchSheet = true
+                        presentedSheet = .search
                     }) {
                         Image(systemName: "magnifyingglass")
                     }
@@ -75,9 +75,11 @@ struct PlaylistsView: View {
         .navigationTitle("Playlists")
         .wrhythmPageBackground()
         .platformNavigationBarTitleDisplayModeInline()
-        .sheet(isPresented: $showingSearchSheet) {
+        .sheet(item: $presentedSheet) { sheet in
+            switch sheet {
+            case .search:
             PlatformSearchSheet("Search Playlists", onCancel: {
-                showingSearchSheet = false
+                presentedSheet = nil
             }) {
                 VStack(spacing: 16) {
                     TextField("Search playlists", text: $searchText)
@@ -85,13 +87,14 @@ struct PlaylistsView: View {
                         .frame(maxWidth: .infinity)
 
                     Button("Search") {
-                        showingSearchSheet = false
+                        presentedSheet = nil
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(searchText.isEmpty)
 
                     Spacer()
                 }
+            }
             }
         }
         .onAppear {
@@ -237,6 +240,12 @@ struct PlaylistsView: View {
             }
         }
     }
+}
+
+private enum PlaylistsSheet: String, Identifiable {
+    case search
+
+    var id: String { rawValue }
 }
 
 #Preview {
