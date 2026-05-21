@@ -103,67 +103,34 @@ struct TracksView: View {
             if offlineMode {
                 // Offline mode: search through downloaded content
                 if searchText.isEmpty {
-                    VStack(spacing: 12) {
-                        Image(systemName: "magnifyingglass")
-                            .font(.largeTitle)
-                            .foregroundColor(.secondary)
-                        Text("Search offline music")
-                            .font(.headline)
-                            .foregroundColor(.secondary)
-                        let downloadedCount = downloadManager.songMetadata.values.filter { downloadManager.isDownloaded($0.id) }.count
-                        if downloadedCount == 0 {
-                            Text("No downloaded songs")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Text("Download songs while online to search offline")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal)
-                        } else {
-                            Text("\(downloadedCount) songs available")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-
-                        Button(action: {
-                            presentedSheet = .search
-                        }) {
-                            HStack {
-                                Image(systemName: "magnifyingglass")
-                                Text("Start Search")
-                            }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .padding(.top, 8)
+                    WRhythmEmptyState(
+                        systemImage: "magnifyingglass",
+                        title: "Search offline music",
+                        message: offlineSearchMessage,
+                        actionTitle: "Search"
+                    ) {
+                        presentedSheet = .search
                     }
                 } else if displayedSongs.isEmpty && offlineAlbumResults.isEmpty && offlineArtistResults.isEmpty && offlinePlaylistResults.isEmpty {
-                    VStack {
-                        Image(systemName: "music.note")
-                            .font(.largeTitle)
-                            .foregroundColor(.secondary)
-                        Text("No offline results")
-                            .font(.headline)
-                            .foregroundColor(.secondary)
-                    }
+                    WRhythmEmptyState(
+                        systemImage: "music.note",
+                        title: "No offline results",
+                        message: "Try a different search term"
+                    )
                 } else {
                     List {
                         if !offlinePlaylistResults.isEmpty {
                             Section(header: Text("Playlists")) {
                                 ForEach(offlinePlaylistResults, id: \.id) { playlist in
                                 NavigationLink(destination: PlaylistDetailView(playlistId: playlist.id, playlistName: playlist.name)) {
-                                        HStack {
-                                            WRhythmArtworkThumbnail(coverArtId: playlist.coverArt, fallbackSystemImage: "music.note.list", size: 42)
-
-                                            VStack(alignment: .leading) {
-                                                Text(playlist.name)
-                                                    .font(.headline)
-                                                    .lineLimit(1)
-                                                Text("\(playlist.songCount) songs")
-                                                    .font(.caption)
-                                                    .foregroundColor(.secondary)
-                                            }
-                                        }
+                                        WRhythmCollectionRow(
+                                            title: playlist.name,
+                                            subtitle: "\(playlist.songCount) songs",
+                                            detail: "Cached playlist",
+                                            coverArtId: playlist.coverArt,
+                                            fallbackSystemImage: "music.note.list",
+                                            tint: .purple
+                                        )
                                     }
                                     .contextMenu {
                                         PlaylistContextMenuItems(playlistId: playlist.id, playlistName: playlist.name)
@@ -179,13 +146,13 @@ struct TracksView: View {
                                         // Filter songs by this artist
                                         searchText = artist.name
                                     }) {
-                                        HStack {
-                                            WRhythmArtworkThumbnail(coverArtId: artist.coverArt, fallbackSystemImage: "person.fill", size: 42)
-
-                                            Text(artist.name)
-                                                .font(.headline)
-                                                .lineLimit(1)
-                                        }
+                                        WRhythmCollectionRow(
+                                            title: artist.name,
+                                            subtitle: "Artist",
+                                            coverArtId: artist.coverArt,
+                                            fallbackSystemImage: "person.fill",
+                                            tint: .indigo
+                                        )
                                     }
                                     .contextMenu {
                                         ArtistContextMenuItems(artistId: "offline-\(artist.name)", artistName: artist.name)
@@ -201,21 +168,13 @@ struct TracksView: View {
                                         // Filter songs by this album
                                         searchText = album.name
                                     }) {
-                                        HStack {
-                                            WRhythmArtworkThumbnail(coverArtId: album.coverArt, fallbackSystemImage: "square.stack", size: 42)
-
-                                            VStack(alignment: .leading) {
-                                                Text(album.name)
-                                                    .font(.headline)
-                                                    .lineLimit(1)
-                                                if let artist = album.artist {
-                                                    Text(artist)
-                                                        .font(.caption)
-                                                        .foregroundColor(.secondary)
-                                                        .lineLimit(1)
-                                                }
-                                            }
-                                        }
+                                        WRhythmCollectionRow(
+                                            title: album.name,
+                                            subtitle: album.artist,
+                                            coverArtId: album.coverArt,
+                                            fallbackSystemImage: "square.stack",
+                                            tint: .teal
+                                        )
                                     }
                                     .contextMenu {
                                         AlbumContextMenuItems(albumId: album.id, albumName: album.name)
@@ -235,64 +194,46 @@ struct TracksView: View {
                     .wrhythmListSurface()
                 }
             } else if isSearching {
-                ProgressView("Searching...")
+                WRhythmLoadingState(
+                    systemImage: "magnifyingglass",
+                    title: "Searching",
+                    message: searchText
+                )
             } else if !errorMessage.isEmpty {
-                VStack {
-                    Text("Error")
-                        .font(.headline)
-                    Text(errorMessage)
-                        .font(.caption)
-                        .foregroundColor(.red)
+                WRhythmErrorState(
+                    title: "Search Error",
+                    message: errorMessage
+                ) {
+                    performSearch(query: searchText)
                 }
             } else if searchText.isEmpty {
-                VStack(spacing: 12) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.largeTitle)
-                        .foregroundColor(.secondary)
-                    Text("Search music")
-                        .font(.headline)
-                        .foregroundColor(.secondary)
-
-                    Button(action: {
-                        presentedSheet = .search
-                    }) {
-                        HStack {
-                            Image(systemName: "magnifyingglass")
-                            Text("Start Search")
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .padding(.top, 8)
+                WRhythmEmptyState(
+                    systemImage: "magnifyingglass",
+                    title: "Search music",
+                    message: "Find songs, albums, artists, and playlists",
+                    actionTitle: "Search"
+                ) {
+                    presentedSheet = .search
                 }
             } else if searchResults.isEmpty && albumResults.isEmpty && artistResults.isEmpty {
-                VStack {
-                    Image(systemName: "music.note")
-                        .font(.largeTitle)
-                        .foregroundColor(.secondary)
-                    Text("No results")
-                        .font(.headline)
-                        .foregroundColor(.secondary)
-                }
+                WRhythmEmptyState(
+                    systemImage: "music.note",
+                    title: "No results",
+                    message: "Try a different search term"
+                )
             } else {
                 List {
                     if !artistResults.isEmpty {
                         Section(header: Text("Artists")) {
                             ForEach(artistResults) { artist in
                                 NavigationLink(destination: ArtistDetailView(artistId: artist.id, artistName: artist.name)) {
-                                    HStack {
-                                        WRhythmArtworkThumbnail(coverArtId: artist.coverArt, fallbackSystemImage: "person.fill", size: 42)
-
-                                        VStack(alignment: .leading) {
-                                            Text(artist.name)
-                                                .font(.headline)
-                                                .lineLimit(1)
-                                            if let albumCount = artist.albumCount {
-                                                Text("\(albumCount) albums")
-                                                    .font(.caption)
-                                                    .foregroundColor(.secondary)
-                                            }
-                                        }
-                                    }
+                                    WRhythmCollectionRow(
+                                        title: artist.name,
+                                        subtitle: artist.albumCount.map { "\($0) albums" },
+                                        coverArtId: artist.coverArt,
+                                        fallbackSystemImage: "person.fill",
+                                        tint: .indigo
+                                    )
                                     .contextMenu {
                                         ArtistContextMenuItems(artistId: artist.id, artistName: artist.name)
                                     }
@@ -305,21 +246,14 @@ struct TracksView: View {
                         Section(header: Text("Albums")) {
                             ForEach(albumResults) { album in
                                 NavigationLink(destination: AlbumDetailView(albumId: album.id)) {
-                                    HStack {
-                                        WRhythmArtworkThumbnail(coverArtId: album.coverArt, fallbackSystemImage: "square.stack", size: 42)
-
-                                        VStack(alignment: .leading) {
-                                            Text(album.name)
-                                                .font(.headline)
-                                                .lineLimit(1)
-                                            if let artist = album.artist {
-                                                Text(artist)
-                                                    .font(.caption)
-                                                    .foregroundColor(.secondary)
-                                                    .lineLimit(1)
-                                            }
-                                        }
-                                    }
+                                    WRhythmCollectionRow(
+                                        title: album.name,
+                                        subtitle: album.artist,
+                                        detail: album.year.map(String.init),
+                                        coverArtId: album.coverArt,
+                                        fallbackSystemImage: "square.stack",
+                                        tint: .teal
+                                    )
                                     .contextMenu {
                                         AlbumContextMenuItems(albumId: album.id, albumName: album.name)
                                     }
@@ -394,86 +328,66 @@ struct TracksView: View {
 
     @ViewBuilder
     private func songRow(song: Song) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            // Title and metadata - tappable to play
-            HStack(spacing: 4) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(song.title)
-                        .font(.headline)
-                        .lineLimit(2)
-                    HStack(spacing: 4) {
-                        if let artist = song.artist {
-                            Text(artist)
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
-                        }
-                        if song.album != nil && song.artist != nil {
-                            Text("•")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                        if let album = song.album {
-                            Text(album)
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
-                        }
-                    }
-                }
-
-                Spacer()
-            }
-            .contentShape(Rectangle())
-            .onTapGesture {
-                AudioPlayer.shared.playSong(song)
-            }
-
-            // Controls row
-            HStack(spacing: 8) {
-                if player.currentSong?.id == song.id && player.isPlaying {
-                    Image(systemName: "speaker.wave.2.fill")
-                        .font(.caption2)
-                        .foregroundColor(.accentColor)
-                }
-
-                Spacer()
-
-                if downloadManager.isDownloading(song.id) {
-                    ProgressView()
-                        .scaleEffect(0.6)
-                } else if downloadManager.isDownloaded(song.id) {
-                    Image(systemName: "arrow.down.circle.fill")
-                        .font(.caption2)
-                        .foregroundColor(.green)
-                } else if !offlineMode {
-                    Button(action: {
-                        DownloadManager.shared.downloadSong(song)
-                    }) {
-                        Image(systemName: "arrow.down.circle")
+        Button(action: {
+            AudioPlayer.shared.playSong(song)
+        }) {
+            WRhythmMediaRow(
+                title: song.title,
+                subtitle: song.artist,
+                detail: song.album,
+                coverArtId: song.coverArt,
+                artworkSize: 44,
+                isCurrent: player.currentSong?.id == song.id,
+                isPlaying: player.currentSong?.id == song.id && player.isPlaying
+            ) {
+                HStack(spacing: 8) {
+                    if downloadManager.isDownloading(song.id) {
+                        ProgressView()
+                            .scaleEffect(0.6)
+                    } else if downloadManager.isDownloaded(song.id) {
+                        Image(systemName: "arrow.down.circle.fill")
                             .font(.caption2)
-                            .foregroundColor(.blue)
-                            .frame(width: 30, height: 30)
+                            .foregroundColor(.green)
+                    } else if !offlineMode {
+                        Button(action: {
+                            DownloadManager.shared.downloadSong(song)
+                        }) {
+                            Image(systemName: "arrow.down.circle")
+                                .font(.caption2)
+                                .foregroundColor(.blue)
+                                .frame(width: 30, height: 30)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
-                }
 
-                NavigationLink(destination: RadioOptionsView(
-                    sourceSong: song,
-                    sourceTitle: song.title,
-                    sourceType: .song
-                )) {
-                    Image(systemName: "music.note.list")
-                        .font(.caption2)
-                        .foregroundColor(.blue)
-                        .frame(width: 30, height: 30)
+                    if !offlineMode {
+                        NavigationLink(destination: RadioOptionsView(
+                            sourceSong: song,
+                            sourceTitle: song.title,
+                            sourceType: .song
+                        )) {
+                            Image(systemName: "music.note.list")
+                                .font(.caption2)
+                                .foregroundColor(.blue)
+                                .frame(width: 30, height: 30)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
-                .buttonStyle(.plain)
             }
         }
+        .buttonStyle(.plain)
         .contextMenu {
             TrackContextMenuItems(song: song)
         }
+    }
+
+    private var offlineSearchMessage: String {
+        let downloadedCount = downloadManager.songMetadata.values.filter { downloadManager.isDownloaded($0.id) }.count
+        if downloadedCount == 0 {
+            return "Download songs while online to search offline"
+        }
+        return "\(downloadedCount) songs available offline"
     }
 
     private func performSearch(query: String) {

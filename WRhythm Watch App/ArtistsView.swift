@@ -97,7 +97,7 @@ struct ArtistsView: View {
                     }
                 }
             }
-            .onChange(of: libraryDataManager.artists) { newArtists in
+            .onChange(of: libraryDataManager.artists) { _, newArtists in
                 if !newArtists.isEmpty && displayedArtists.isEmpty {
                     loadMoreArtists()
                 }
@@ -135,24 +135,15 @@ struct ArtistsView: View {
         } else {
             List {
                 ForEach(Array(filteredArtists.enumerated()), id: \.element.name) { index, artist in
+                    let albumCount = downloadManager.getDownloadedAlbums().filter { $0.artist == artist.name }.count
                     NavigationLink(destination: ArtistDetailView(artistId: "offline-\(artist.name)", artistName: artist.name)) {
-                        HStack {
-                            WRhythmArtworkThumbnail(coverArtId: artist.coverArt, fallbackSystemImage: "person.fill", size: 42)
-
-                            VStack(alignment: .leading) {
-                                Text(artist.name)
-                                    .font(.headline)
-                                    .lineLimit(1)
-                                let albumCount = downloadManager.getDownloadedAlbums().filter { $0.artist == artist.name }.count
-                                if albumCount > 0 {
-                                    Text("\(albumCount) album\(albumCount == 1 ? "" : "s")")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-
-                            Spacer()
-
+                        WRhythmCollectionRow(
+                            title: artist.name,
+                            subtitle: albumCount > 0 ? "\(albumCount) album\(albumCount == 1 ? "" : "s")" : nil,
+                            coverArtId: artist.coverArt,
+                            fallbackSystemImage: "person.fill",
+                            tint: .indigo
+                        ) {
                             Image(systemName: "arrow.down.circle.fill")
                                 .font(.caption2)
                                 .foregroundColor(.green)
@@ -199,20 +190,13 @@ struct ArtistsView: View {
             List {
                 ForEach(filteredDisplayedArtists) { artist in
                     NavigationLink(destination: ArtistDetailView(artistId: artist.id, artistName: artist.name)) {
-                        HStack {
-                            WRhythmArtworkThumbnail(coverArtId: artist.coverArt, fallbackSystemImage: "person.fill", size: 42)
-
-                            VStack(alignment: .leading) {
-                                Text(artist.name)
-                                    .font(.headline)
-                                    .lineLimit(1)
-                                if let albumCount = artist.albumCount {
-                                    Text("\(albumCount) albums")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                        }
+                        WRhythmCollectionRow(
+                            title: artist.name,
+                            subtitle: artist.albumCount.map { "\($0) albums" },
+                            coverArtId: artist.coverArt,
+                            fallbackSystemImage: "person.fill",
+                            tint: .indigo
+                        )
                     }
                     .contextMenu {
                         ArtistContextMenuItems(artistId: artist.id, artistName: artist.name)

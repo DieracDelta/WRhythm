@@ -179,49 +179,17 @@ struct AlbumsView: View {
                     ForEach(filteredAlbums, id: \.id) { album in
 
                         NavigationLink(destination: AlbumDetailView(albumId: album.id)) {
-
-                            HStack {
-
-                                WRhythmArtworkThumbnail(coverArtId: album.coverArt, fallbackSystemImage: "square.stack", size: 42)
-
-    
-
-                                VStack(alignment: .leading) {
-
-                                    Text(album.name)
-
-                                        .font(.headline)
-
-                                        .lineLimit(1)
-
-                                    if let artist = album.artist {
-
-                                        Text(artist)
-
-                                            .font(.caption)
-
-                                            .foregroundColor(.secondary)
-
-                                            .lineLimit(1)
-
-                                    }
-
-                                }
-
-    
-
-                                Spacer()
-
-    
-
+                            WRhythmCollectionRow(
+                                title: album.name,
+                                subtitle: album.artist,
+                                coverArtId: album.coverArt,
+                                fallbackSystemImage: "square.stack",
+                                tint: .teal
+                            ) {
                                 Image(systemName: "arrow.down.circle.fill")
-
                                     .font(.caption2)
-
                                     .foregroundColor(.green)
-
                             }
-
                         }
                         .contextMenu {
                             AlbumContextMenuItems(albumId: album.id, albumName: album.name)
@@ -283,37 +251,14 @@ struct AlbumsView: View {
                     ForEach(filteredAlbums) { album in
 
                         NavigationLink(destination: AlbumDetailView(albumId: album.id)) {
-
-                            HStack {
-
-                                WRhythmArtworkThumbnail(coverArtId: album.coverArt, fallbackSystemImage: "square.stack", size: 42)
-
-    
-
-                                VStack(alignment: .leading) {
-
-                                    Text(album.name)
-
-                                        .font(.headline)
-
-                                        .lineLimit(1)
-
-                                    if let artist = album.artist {
-
-                                        Text(artist)
-
-                                            .font(.caption)
-
-                                            .foregroundColor(.secondary)
-
-                                            .lineLimit(1)
-
-                                    }
-
-                                }
-
-                            }
-
+                            WRhythmCollectionRow(
+                                title: album.name,
+                                subtitle: album.artist,
+                                detail: album.year.map(String.init),
+                                coverArtId: album.coverArt,
+                                fallbackSystemImage: "square.stack",
+                                tint: .teal
+                            )
                         }
                         .contextMenu {
                             AlbumContextMenuItems(albumId: album.id, albumName: album.name)

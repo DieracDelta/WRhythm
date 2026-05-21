@@ -125,17 +125,17 @@ struct PlaylistsView: View {
         } else {
             List(filteredCachedPlaylists, id: \.id) { playlist in
                 NavigationLink(destination: PlaylistDetailView(playlistId: playlist.id, playlistName: playlist.name)) {
-                    HStack {
-                        WRhythmArtworkThumbnail(coverArtId: playlist.coverArt, fallbackSystemImage: "music.note.list", size: 42)
-
-                        VStack(alignment: .leading) {
-                            Text(playlist.name)
-                                .font(.headline)
-                                .lineLimit(1)
-                            Text("\(playlist.songCount) songs")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
+                    WRhythmCollectionRow(
+                        title: playlist.name,
+                        subtitle: "\(playlist.songCount) songs",
+                        detail: "Cached",
+                        coverArtId: playlist.coverArt,
+                        fallbackSystemImage: "music.note.list",
+                        tint: .purple
+                    ) {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .font(.caption2)
+                            .foregroundColor(.green)
                     }
                 }
                 .contextMenu {
@@ -174,18 +174,13 @@ struct PlaylistsView: View {
         } else {
             List(filteredPlaylists) { playlist in
                 NavigationLink(destination: PlaylistDetailView(playlistId: playlist.id, playlistName: playlist.name)) {
-                    HStack {
-                        WRhythmArtworkThumbnail(coverArtId: playlist.coverArt, fallbackSystemImage: "music.note.list", size: 42)
-
-                        VStack(alignment: .leading) {
-                            Text(playlist.name)
-                                .font(.headline)
-                                .lineLimit(1)
-                            Text("\(playlist.songCount) songs")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
+                    WRhythmCollectionRow(
+                        title: playlist.name,
+                        subtitle: "\(playlist.songCount) songs",
+                        coverArtId: playlist.coverArt,
+                        fallbackSystemImage: "music.note.list",
+                        tint: .purple
+                    )
                 }
                 .contextMenu {
                     PlaylistContextMenuItems(playlistId: playlist.id, playlistName: playlist.name)

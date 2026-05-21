@@ -52,7 +52,6 @@ struct FavouritesView: View {
             .navigationTitle("Favourites")
             .wrhythmPageBackground()
             .onAppear {
-                print("📱 FavouritesView appeared - offlineMode=\(offlineMode), starred=\(libraryDataManager.starred != nil ? "loaded" : "nil"), isLoading=\(libraryDataManager.isLoadingStarred)")
                 if !offlineMode && libraryDataManager.starred == nil && !libraryDataManager.isLoadingStarred {
                     libraryDataManager.fetchStarred()
                 }
@@ -199,30 +198,14 @@ struct FavouritesView: View {
 
                                 ForEach(albumsToShow) { album in
                                     NavigationLink(destination: AlbumDetailView(albumId: album.id)) {
-                                        HStack {
-                                            if let coverArtId = album.coverArt,
-                                               let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 100) {
-                                                CachedAsyncImage(url: coverURL) { image in
-                                                    image
-                                                        .resizable()
-                                                        .aspectRatio(contentMode: .fill)
-                                                }
-                                                .frame(width: 40, height: 40)
-                                                .cornerRadius(4)
-                                            }
-
-                                            VStack(alignment: .leading) {
-                                                Text(album.name)
-                                                    .font(.caption)
-                                                    .lineLimit(1)
-                                                if let artist = album.artist {
-                                                    Text(artist)
-                                                        .font(.caption2)
-                                                        .foregroundColor(.secondary)
-                                                        .lineLimit(1)
-                                                }
-                                            }
-                                        }
+                                        WRhythmCollectionRow(
+                                            title: album.name,
+                                            subtitle: album.artist,
+                                            detail: album.year.map(String.init),
+                                            coverArtId: album.coverArt,
+                                            fallbackSystemImage: "square.stack",
+                                            tint: .teal
+                                        )
                                     }
                                     .contextMenu {
                                         AlbumContextMenuItems(albumId: album.id, albumName: album.name)
@@ -244,29 +227,13 @@ struct FavouritesView: View {
 
                                 ForEach(artistsToShow) { artist in
                                     NavigationLink(destination: ArtistDetailView(artistId: artist.id, artistName: artist.name)) {
-                                        HStack {
-                                            if let coverArtId = artist.coverArt,
-                                               let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 100) {
-                                                CachedAsyncImage(url: coverURL) { image in
-                                                    image
-                                                        .resizable()
-                                                        .aspectRatio(contentMode: .fill)
-                                                }
-                                                .frame(width: 40, height: 40)
-                                                .cornerRadius(4)
-                                            }
-
-                                            VStack(alignment: .leading) {
-                                                Text(artist.name)
-                                                    .font(.caption)
-                                                    .lineLimit(1)
-                                                if let albumCount = artist.albumCount {
-                                                    Text("\(albumCount) albums")
-                                                        .font(.caption2)
-                                                        .foregroundColor(.secondary)
-                                                }
-                                            }
-                                        }
+                                        WRhythmCollectionRow(
+                                            title: artist.name,
+                                            subtitle: artist.albumCount.map { "\($0) albums" },
+                                            coverArtId: artist.coverArt,
+                                            fallbackSystemImage: "person.fill",
+                                            tint: .indigo
+                                        )
                                     }
                                     .contextMenu {
                                         ArtistContextMenuItems(artistId: artist.id, artistName: artist.name)
@@ -281,14 +248,11 @@ struct FavouritesView: View {
             }
         } else {
             // Fallback state - shouldn't normally reach here
-            VStack {
-                Text("Loading...")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            .onAppear {
-                print("⚠️ FavouritesView in unexpected state - starred=nil, isLoading=\(libraryDataManager.isLoadingStarred), offlineMode=\(offlineMode)")
-            }
+            WRhythmLoadingState(
+                systemImage: "star",
+                title: "Loading favourites",
+                message: nil
+            )
         }
     }
 }

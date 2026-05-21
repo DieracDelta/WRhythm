@@ -23,19 +23,37 @@ struct ContentView: View {
                 MacContentLayout(selection: $selectedMacDestination)
 #else
                 TabView(selection: $selectedTab) {
-                    MenuView()
+                    NavigationStack {
+                        MenuView()
+                    }
                         .tabItem {
-                            Label("Menu", systemImage: "list.bullet")
+                            Label("Library", systemImage: "square.grid.2x2")
                         }
                         .tag(0)
 
-                    NavigationView {
+                    NavigationStack {
+                        TracksView()
+                    }
+                    .tabItem {
+                        Label("Search", systemImage: "magnifyingglass")
+                    }
+                    .tag(1)
+
+                    NavigationStack {
                         NowPlayingView()
                     }
                     .tabItem {
                         Label("Playing", systemImage: "play.circle.fill")
                     }
-                    .tag(1)
+                    .tag(2)
+
+                    NavigationStack {
+                        DownloadsView()
+                    }
+                    .tabItem {
+                        Label("Downloads", systemImage: "arrow.down.circle")
+                    }
+                    .tag(3)
                 }
 #endif
             } else {
@@ -50,7 +68,7 @@ struct ContentView: View {
 #if !os(macOS)
                 // When app becomes active, go to Now Playing if music is playing
                 if AudioPlayer.shared.isPlaying {
-                    selectedTab = 1
+                    selectedTab = 2
                 }
 #endif
             case .inactive, .background:
