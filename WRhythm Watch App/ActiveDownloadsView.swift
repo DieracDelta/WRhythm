@@ -12,141 +12,42 @@ struct ActiveDownloadsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 12) {
+            VStack(spacing: WRhythmVisual.sectionSpacing) {
                 if downloadManager.activeDownloads.isEmpty {
-                    VStack(spacing: 8) {
-                        Image(systemName: "arrow.down.circle")
-                            .font(.largeTitle)
-                            .foregroundColor(.secondary)
-                        Text("No Active Downloads")
-                            .font(.headline)
-                        Text("Downloads will appear here while in progress")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                    }
-                    .padding()
+                    WRhythmEmptyState(
+                        systemImage: "arrow.down.circle",
+                        title: "No Active Downloads",
+                        message: "Downloads will appear here while in progress"
+                    )
                 } else {
-                    VStack(spacing: 4) {
-                        Text("\(downloadManager.activeDownloads.count) downloading")
-                            .font(.headline)
-                    }
-                    .padding(.vertical, 8)
+                    WRhythmFeatureHeader(
+                        title: "\(downloadManager.activeDownloads.count) downloading",
+                        subtitle: downloadManager.downloadQueue.isEmpty ? nil : "\(downloadManager.downloadQueue.count) queued",
+                        systemImage: "arrow.down.circle.fill",
+                        tint: .blue
+                    )
 
-                    Divider()
+                    WRhythmSectionHeader(title: "Active", subtitle: "Current transfers")
 
-                    VStack(spacing: 12) {
-                        // Active downloads
+                    VStack(spacing: 10) {
                         ForEach(Array(downloadManager.activeDownloads.keys), id: \.self) { songId in
-                            VStack(spacing: 6) {
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        if let song = findSongInfo(songId) {
-                                            Text(song.title)
-                                                .font(.caption)
-                                                .lineLimit(1)
-                                            if let artist = song.artist {
-                                                Text(artist)
-                                                    .font(.caption2)
-                                                    .foregroundColor(.secondary)
-                                                    .lineLimit(1)
-                                            }
-                                        } else {
-                                            Text("Downloading...")
-                                                .font(.caption)
-                                                .foregroundColor(.secondary)
-                                        }
-                                    }
-
-                                    Spacer()
-
-                                    HStack(spacing: 8) {
-                                        let progress = downloadManager.downloadProgress(songId)
-                                        Text("\(Int(progress * 100))%")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                            .monospacedDigit()
-
-                                        Button(action: {
-                                            downloadManager.retryDownload(songId)
-                                        }) {
-                                            Image(systemName: "arrow.clockwise")
-                                                .font(.caption2)
-                                        }
-                                        .buttonStyle(.plain)
-
-                                        Button(action: {
-                                            downloadManager.cancelDownload(songId)
-                                        }) {
-                                            Image(systemName: "xmark")
-                                                .font(.caption2)
-                                        }
-                                        .buttonStyle(.plain)
-                                        .foregroundColor(.red)
-                                    }
-                                }
-
-                                ProgressView(value: downloadManager.downloadProgress(songId))
-                                    .progressViewStyle(.linear)
-                            }
-                            .padding(.horizontal)
-                            .padding(.vertical, 8)
-                            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous))
+                            ActiveDownloadRow(songId: songId, song: findSongInfo(songId))
                         }
+                    }
 
-                        // Queued downloads
-                        if !downloadManager.downloadQueue.isEmpty {
-                            Divider()
+                    if !downloadManager.downloadQueue.isEmpty {
+                        WRhythmSectionHeader(title: "Queued", subtitle: "\(downloadManager.downloadQueue.count) waiting")
 
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Queued (\(downloadManager.downloadQueue.count))")
+                        VStack(spacing: 10) {
+                            ForEach(Array(downloadManager.downloadQueue.prefix(20)), id: \.id) { song in
+                                QueuedDownloadRow(song: song)
+                            }
+
+                            if downloadManager.downloadQueue.count > 20 {
+                                Text("+ \(downloadManager.downloadQueue.count - 20) more")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
-                                    .padding(.horizontal)
-
-                                ForEach(Array(downloadManager.downloadQueue.prefix(20)), id: \.id) { song in
-                                    HStack {
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(song.title)
-                                                .font(.caption)
-                                                .lineLimit(1)
-                                            if let artist = song.artist {
-                                                Text(artist)
-                                                    .font(.caption2)
-                                                    .foregroundColor(.secondary)
-                                                    .lineLimit(1)
-                                            }
-                                        }
-
-                                        Spacer()
-
-                                        HStack(spacing: 8) {
-                                            Image(systemName: "clock")
-                                                .font(.caption2)
-                                                .foregroundColor(.secondary)
-
-                                            Button(action: {
-                                                downloadManager.cancelDownload(song.id)
-                                            }) {
-                                                Image(systemName: "xmark")
-                                                    .font(.caption2)
-                                            }
-                                            .buttonStyle(.plain)
-                                            .foregroundColor(.red)
-                                        }
-                                    }
-                                    .padding(.horizontal)
-                                    .padding(.vertical, 8)
-                                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous))
-                                    .opacity(0.6)
-                                }
-
-                                if downloadManager.downloadQueue.count > 20 {
-                                    Text("+ \(downloadManager.downloadQueue.count - 20) more...")
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
-                                        .padding(.horizontal)
-                                }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                             }
                         }
                     }
@@ -161,5 +62,93 @@ struct ActiveDownloadsView: View {
     private func findSongInfo(_ songId: String) -> Song? {
         // Get song metadata for active downloads
         return downloadManager.songMetadata[songId]
+    }
+}
+
+private struct ActiveDownloadRow: View {
+    let songId: String
+    let song: Song?
+    @ObservedObject var downloadManager = DownloadManager.shared
+
+    var body: some View {
+        let progress = downloadManager.downloadProgress(songId)
+
+        WRhythmCard(padding: 10) {
+            VStack(spacing: 8) {
+                WRhythmMediaRow(
+                    title: song?.title ?? "Downloading",
+                    subtitle: song?.artist,
+                    detail: "Active download",
+                    coverArtId: song?.coverArt,
+                    fallbackSystemImage: "arrow.down.circle",
+                    artworkSize: 42
+                ) {
+                    HStack(spacing: 8) {
+                        Text("\(Int(progress * 100))%")
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(.secondary)
+                            .monospacedDigit()
+
+                        Button(action: {
+                            downloadManager.retryDownload(songId)
+                        }) {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.caption2)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Retry download")
+
+                        Button(action: {
+                            downloadManager.cancelDownload(songId)
+                        }) {
+                            Image(systemName: "xmark")
+                                .font(.caption2)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(.red)
+                        .accessibilityLabel("Cancel download")
+                    }
+                }
+
+                ProgressView(value: progress)
+                    .progressViewStyle(.linear)
+                    .tint(.blue)
+            }
+        }
+    }
+}
+
+private struct QueuedDownloadRow: View {
+    let song: Song
+    @ObservedObject var downloadManager = DownloadManager.shared
+
+    var body: some View {
+        WRhythmCard(padding: 10) {
+            WRhythmMediaRow(
+                title: song.title,
+                subtitle: song.artist,
+                detail: "Queued",
+                coverArtId: song.coverArt,
+                fallbackSystemImage: "clock",
+                artworkSize: 42
+            ) {
+                HStack(spacing: 8) {
+                    Image(systemName: "clock")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+
+                    Button(action: {
+                        downloadManager.cancelDownload(song.id)
+                    }) {
+                        Image(systemName: "xmark")
+                            .font(.caption2)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(.red)
+                    .accessibilityLabel("Cancel queued download")
+                }
+            }
+        }
+        .opacity(0.72)
     }
 }

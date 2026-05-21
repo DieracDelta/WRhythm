@@ -14,19 +14,12 @@ struct RadioPlaylistsView: View {
     var body: some View {
         List {
             if player.playlistGenQueue.isEmpty && downloadManager.radioPlaylists.isEmpty {
-                VStack(spacing: 12) {
-                    Image(systemName: "music.note.list")
-                        .font(.largeTitle)
-                        .foregroundColor(.secondary)
-                    Text("No Playlist Gen")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Text("Start Playlist Gen from a song, album, artist, or playlist")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .padding()
+                WRhythmEmptyState(
+                    systemImage: "music.note.list",
+                    title: "No Playlist Gen",
+                    message: "Start Playlist Gen from a song, album, artist, or playlist"
+                )
+                .listRowBackground(Color.clear)
             }
 
             if !player.playlistGenQueue.isEmpty {
@@ -59,45 +52,38 @@ struct CurrentPlaylistGenSummary: View {
     @ObservedObject var downloadManager = DownloadManager.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(player.playlistGenSourceTitle ?? "Current Playlist Gen")
-                    .font(.headline)
-                    .lineLimit(1)
+        WRhythmCard(padding: 12) {
+            VStack(alignment: .leading, spacing: 12) {
+                WRhythmCollectionRow(
+                    title: player.playlistGenSourceTitle ?? "Current Playlist Gen",
+                    subtitle: player.playlistGenSourceArtist,
+                    detail: "\(player.playlistGenQueue.count) songs",
+                    coverArtId: player.playlistGenQueue.first?.coverArt,
+                    fallbackSystemImage: "music.note.list",
+                    tint: .purple
+                )
 
-                if let artist = player.playlistGenSourceArtist {
-                    Text(artist)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
+                HStack(spacing: 8) {
+                    Button(action: playCurrentPlaylist) {
+                        Label("Play", systemImage: "play.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+
+                    Button(action: downloadCurrentPlaylist) {
+                        Label("Download", systemImage: "arrow.down.circle")
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button(action: {
+                        player.clearPlaylistGen()
+                    }) {
+                        Image(systemName: "xmark")
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityLabel("Clear Playlist Gen")
                 }
-
-                Text("\(player.playlistGenQueue.count) songs")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
-
-            HStack(spacing: 8) {
-                Button(action: playCurrentPlaylist) {
-                    Label("Play", systemImage: "play.fill")
-                }
-                .buttonStyle(.borderedProminent)
-
-                Button(action: downloadCurrentPlaylist) {
-                    Label("Download", systemImage: "arrow.down.circle")
-                }
-                .buttonStyle(.bordered)
-
-                Button(action: {
-                    player.clearPlaylistGen()
-                }) {
-                    Image(systemName: "xmark")
-                }
-                .buttonStyle(.bordered)
-                .accessibilityLabel("Clear Playlist Gen")
             }
         }
-        .padding(.vertical, 4)
     }
 
     private func playCurrentPlaylist() {
@@ -122,27 +108,15 @@ struct RadioPlaylistRow: View {
 
     var body: some View {
         NavigationLink(destination: RadioPlaylistDetailView(radio: radio)) {
-            HStack {
-                WRhythmArtworkThumbnail(coverArtId: radio.coverArt, fallbackSystemImage: "radio", size: 42)
-
-                VStack(alignment: .leading) {
-                    Text(radio.sourceSongTitle)
-                        .font(.caption)
-                        .lineLimit(1)
-                    if let artist = radio.sourceSongArtist {
-                        Text(artist)
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                    }
-                    let downloadedCount = radio.songIds.filter { downloadManager.isDownloaded($0) }.count
-                    Text("\(downloadedCount)/\(radio.songIds.count) songs")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-
-                Spacer()
-            }
+            let downloadedCount = radio.songIds.filter { downloadManager.isDownloaded($0) }.count
+            WRhythmCollectionRow(
+                title: radio.sourceSongTitle,
+                subtitle: radio.sourceSongArtist,
+                detail: "\(downloadedCount)/\(radio.songIds.count) songs",
+                coverArtId: radio.coverArt,
+                fallbackSystemImage: "radio",
+                tint: .purple
+            )
         }
         .buttonStyle(.plain)
     }
@@ -154,105 +128,84 @@ struct RadioPlaylistDetailView: View {
     @ObservedObject var player = AudioPlayer.shared
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 12) {
-                if let coverArtId = radio.coverArt,
-                   let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 300) {
-                    CachedAsyncImage(url: coverURL) { image in
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                    }
-                    .frame(height: 120)
-                    .cornerRadius(8)
-                }
+        WRhythmScreen(coverArtId: radio.coverArt) {
+            let downloadedSongs = radio.songIds.filter { downloadManager.isDownloaded($0) }
 
-                VStack(spacing: 4) {
-                    Text(radio.sourceSongTitle)
-                        .font(.headline)
-                    if let artist = radio.sourceSongArtist {
-                        Text(artist)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    let downloadedSongs = radio.songIds.filter { downloadManager.isDownloaded($0) }
-                    Text("\(downloadedSongs.count) of \(radio.songIds.count) songs downloaded")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
+            WRhythmHeroHeader(
+                title: radio.sourceSongTitle,
+                subtitle: radio.sourceSongArtist,
+                detail: "\(downloadedSongs.count) of \(radio.songIds.count) songs downloaded",
+                systemImage: "radio",
+                tint: .purple,
+                coverArtId: radio.coverArt
+            )
 
+            WRhythmActionStrip {
                 if !downloadedSongs.isEmpty {
-                    HStack(spacing: 8) {
-                        Button(action: {
-                            playRadio()
-                        }) {
-                            Label("Play", systemImage: "play.fill")
-                        }
-                        .buttonStyle(.borderedProminent)
-
-                        Button(action: {
-                            shuffleRadio()
-                        }) {
-                            Image(systemName: "shuffle")
-                        }
-                        .buttonStyle(.bordered)
+                    Button(action: {
+                        playRadio()
+                    }) {
+                        Label("Play", systemImage: "play.fill")
                     }
+                    .buttonStyle(.borderedProminent)
 
                     Button(action: {
-                        deleteRadio()
+                        shuffleRadio()
                     }) {
-                        Label("Delete Playlist Gen", systemImage: "trash")
+                        Image(systemName: "shuffle")
                     }
                     .buttonStyle(.bordered)
-                    .tint(.red)
                 }
 
-                Divider()
+                Button(action: {
+                    deleteRadio()
+                }) {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(.bordered)
+                .tint(.red)
+                .accessibilityLabel("Delete Playlist Gen")
+            }
 
-                if downloadedSongs.isEmpty {
-                    VStack {
-                        Image(systemName: "arrow.down.circle")
-                            .font(.largeTitle)
-                            .foregroundColor(.secondary)
-                        Text("No downloaded songs")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding()
-                } else {
-                    VStack(spacing: 8) {
-                        ForEach(downloadedSongItems) { item in
-                            if let downloadedSong = downloadManager.downloadedSongs[item.songId] {
-                                let song = Song(
-                                    id: downloadedSong.songId,
-                                    title: downloadedSong.title,
-                                    album: downloadedSong.album,
-                                    albumId: nil,
-                                    artist: downloadedSong.artist,
-                                    artistId: nil,
-                                    track: nil,
-                                    year: nil,
-                                    genre: nil,
-                                    coverArt: downloadedSong.coverArt,
-                                    size: Int(downloadedSong.fileSize),
-                                    contentType: nil,
-                                    suffix: nil,
-                                    duration: nil,
-                                    bitRate: nil,
-                                    path: downloadedSong.filePath
-                                )
-                                TrackRowView(song: song, player: player, downloadManager: downloadManager, offlineMode: true) {
-                                    playRadio(startingAt: item.index)
-                                }
+            if downloadedSongs.isEmpty {
+                WRhythmEmptyState(
+                    systemImage: "arrow.down.circle",
+                    title: "No downloaded songs",
+                    message: "Download this Playlist Gen before playing it offline"
+                )
+            } else {
+                WRhythmSectionHeader(title: "Songs", subtitle: "\(downloadedSongs.count) ready")
+
+                VStack(spacing: 8) {
+                    ForEach(downloadedSongItems) { item in
+                        if let downloadedSong = downloadManager.downloadedSongs[item.songId] {
+                            let song = Song(
+                                id: downloadedSong.songId,
+                                title: downloadedSong.title,
+                                album: downloadedSong.album,
+                                albumId: nil,
+                                artist: downloadedSong.artist,
+                                artistId: nil,
+                                track: nil,
+                                year: nil,
+                                genre: nil,
+                                coverArt: downloadedSong.coverArt,
+                                size: Int(downloadedSong.fileSize),
+                                contentType: nil,
+                                suffix: nil,
+                                duration: nil,
+                                bitRate: nil,
+                                path: downloadedSong.filePath
+                            )
+                            TrackRowView(song: song, player: player, downloadManager: downloadManager, offlineMode: true) {
+                                playRadio(startingAt: item.index)
                             }
                         }
                     }
                 }
             }
-            .padding()
         }
         .navigationTitle("Playlist Gen")
-        .wrhythmPageBackground(coverArtId: radio.coverArt)
     }
 
     private var downloadedSongs: [String] {
