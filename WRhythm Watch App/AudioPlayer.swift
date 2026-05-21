@@ -113,6 +113,16 @@ class AudioPlayer: NSObject, ObservableObject {
     private var mediaKeyMonitors: [Any] = []
     private var mediaKeyEventTap: CFMachPort?
     private var mediaKeyRunLoopSource: CFRunLoopSource?
+    private var lastMacMediaKeyActionDate = Date.distantPast
+    private let macMediaKeyDuplicateWindow: TimeInterval = 0.45
+
+    private enum MacMediaKeyAction {
+        case play
+        case pause
+        case toggle
+        case next
+        case previous
+    }
 #endif
 
     override init() {
@@ -305,7 +315,7 @@ class AudioPlayer: NSObject, ObservableObject {
         commandCenter.playCommand.addTarget { [weak self] _ in
 #if os(macOS)
             Task { @MainActor in
-                PlaybackKeyboardActions.setPlaying(true)
+                self?.performMacMediaKeyAction(.play)
             }
 #else
             self?.play()
@@ -316,7 +326,7 @@ class AudioPlayer: NSObject, ObservableObject {
         commandCenter.pauseCommand.addTarget { [weak self] _ in
 #if os(macOS)
             Task { @MainActor in
-                PlaybackKeyboardActions.setPlaying(false)
+                self?.performMacMediaKeyAction(.pause)
             }
 #else
             self?.pause()
@@ -327,7 +337,7 @@ class AudioPlayer: NSObject, ObservableObject {
         commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
 #if os(macOS)
             Task { @MainActor in
-                PlaybackKeyboardActions.togglePlayback()
+                self?.performMacMediaKeyAction(.toggle)
             }
 #else
             self?.togglePlayPause()
@@ -338,7 +348,7 @@ class AudioPlayer: NSObject, ObservableObject {
         commandCenter.nextTrackCommand.addTarget { [weak self] _ in
 #if os(macOS)
             Task { @MainActor in
-                PlaybackKeyboardActions.nextTrack()
+                self?.performMacMediaKeyAction(.next)
             }
 #else
             self?.next()
@@ -349,7 +359,7 @@ class AudioPlayer: NSObject, ObservableObject {
         commandCenter.previousTrackCommand.addTarget { [weak self] _ in
 #if os(macOS)
             Task { @MainActor in
-                PlaybackKeyboardActions.previousTrack()
+                self?.performMacMediaKeyAction(.previous)
             }
 #else
             self?.previous()
@@ -371,6 +381,30 @@ class AudioPlayer: NSObject, ObservableObject {
     }
 
 #if os(macOS)
+    @MainActor
+    private func performMacMediaKeyAction(_ action: MacMediaKeyAction) {
+        let now = Date()
+        guard now.timeIntervalSince(lastMacMediaKeyActionDate) >= macMediaKeyDuplicateWindow else {
+            print("⏭️ Ignored duplicate macOS media key event")
+            return
+        }
+
+        lastMacMediaKeyActionDate = now
+
+        switch action {
+        case .play:
+            PlaybackKeyboardActions.setPlaying(true)
+        case .pause:
+            PlaybackKeyboardActions.setPlaying(false)
+        case .toggle:
+            PlaybackKeyboardActions.togglePlayback()
+        case .next:
+            PlaybackKeyboardActions.nextTrack()
+        case .previous:
+            PlaybackKeyboardActions.previousTrack()
+        }
+    }
+
     private func setupMacMediaKeyCommands() {
         if setupMacMediaKeyEventTap() {
             return
@@ -463,15 +497,15 @@ class AudioPlayer: NSObject, ObservableObject {
         switch keyCode {
         case 16:
             DispatchQueue.main.async {
-                PlaybackKeyboardActions.togglePlayback()
+                self.performMacMediaKeyAction(.toggle)
             }
         case 17:
             DispatchQueue.main.async {
-                PlaybackKeyboardActions.nextTrack()
+                self.performMacMediaKeyAction(.next)
             }
         case 18:
             DispatchQueue.main.async {
-                PlaybackKeyboardActions.previousTrack()
+                self.performMacMediaKeyAction(.previous)
             }
         default:
             return false
