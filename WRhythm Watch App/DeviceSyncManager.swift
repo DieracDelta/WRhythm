@@ -184,6 +184,61 @@ struct CredentialSyncPolicy: Sendable {
     }
 }
 
+enum PlaybackSyncCommandAction: String, Codable, Sendable {
+    case play
+    case pause
+    case toggle
+    case next
+    case previous
+    case seek
+    case setVolume
+    case playQueue
+    case enqueue
+    case syncQueue
+    case stop
+}
+
+struct PlaybackCommandSyncPolicy: Sendable {
+    static let volumeAcknowledgmentTolerance = 0.02
+    static let seekAcknowledgmentTolerance: TimeInterval = 5
+    static let maxRetryDelay: TimeInterval = 8
+
+    static func needsPlaybackAcknowledgment(_ action: PlaybackSyncCommandAction) -> Bool {
+        switch action {
+        case .play, .pause, .seek, .setVolume:
+            return true
+        case .toggle, .next, .previous, .playQueue, .enqueue, .syncQueue, .stop:
+            return false
+        }
+    }
+
+    static func isAcknowledged(
+        action: PlaybackSyncCommandAction,
+        expectedTime: TimeInterval? = nil,
+        expectedVolume: Double? = nil,
+        by playback: PlaybackSnapshot
+    ) -> Bool {
+        switch action {
+        case .play:
+            return playback.isPlaying
+        case .pause:
+            return !playback.isPlaying
+        case .seek:
+            guard let expectedTime else { return false }
+            return abs(playback.currentTime - expectedTime) <= seekAcknowledgmentTolerance
+        case .setVolume:
+            guard let expectedVolume, let actualVolume = playback.volume else { return false }
+            return abs(expectedVolume - actualVolume) < volumeAcknowledgmentTolerance
+        case .toggle, .next, .previous, .playQueue, .enqueue, .syncQueue, .stop:
+            return false
+        }
+    }
+
+    static func retryDelay(forAttempt attempt: Int) -> TimeInterval {
+        min(pow(2.0, Double(max(0, attempt))), maxRetryDelay)
+    }
+}
+
 struct PlaybackTargetDevice: Identifiable, Equatable, Sendable {
     let id: String
     let name: String
@@ -214,28 +269,21 @@ private struct SyncPeerInfo: Codable, Sendable {
 }
 
 private struct PlaybackCommand: Codable, Sendable {
-    enum Action: String, Codable, Sendable {
-        case play
-        case pause
-        case toggle
-        case next
-        case previous
-        case seek
-        case setVolume
-        case playQueue
-        case enqueue
-        case syncQueue
-        case stop
-    }
-
-    let action: Action
+    let action: PlaybackSyncCommandAction
     let commandID: String?
     let songs: [Song]?
     let startingIndex: Int?
     let time: TimeInterval?
     let volume: Double?
 
-    init(action: Action, commandID: String? = nil, songs: [Song]?, startingIndex: Int?, time: TimeInterval?, volume: Double? = nil) {
+    init(
+        action: PlaybackSyncCommandAction,
+        commandID: String? = nil,
+        songs: [Song]?,
+        startingIndex: Int?,
+        time: TimeInterval?,
+        volume: Double? = nil
+    ) {
         self.action = action
         self.commandID = commandID
         self.songs = songs
@@ -1401,26 +1449,16 @@ final class DeviceSyncManager: NSObject, ObservableObject {
     }
 
     private func commandNeedsPlaybackAcknowledgment(_ command: PlaybackCommand) -> Bool {
-        switch command.action {
-        case .play, .pause, .setVolume:
-            return true
-        case .toggle, .next, .previous, .seek, .playQueue, .enqueue, .syncQueue, .stop:
-            return false
-        }
+        PlaybackCommandSyncPolicy.needsPlaybackAcknowledgment(command.action)
     }
 
     private func pendingCommand(_ command: PlaybackCommand, isAcknowledgedBy playback: PlaybackSnapshot) -> Bool {
-        switch command.action {
-        case .play:
-            return playback.isPlaying
-        case .pause:
-            return !playback.isPlaying
-        case .setVolume:
-            guard let expectedVolume = command.volume, let actualVolume = playback.volume else { return false }
-            return abs(expectedVolume - actualVolume) < 0.02
-        case .toggle, .next, .previous, .seek, .playQueue, .enqueue, .syncQueue, .stop:
-            return false
-        }
+        PlaybackCommandSyncPolicy.isAcknowledged(
+            action: command.action,
+            expectedTime: command.time,
+            expectedVolume: command.volume,
+            by: playback
+        )
     }
 
     private func acknowledgePendingCommandIfSatisfied(by playback: PlaybackSnapshot) {
@@ -1461,7 +1499,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         guard pendingTargetedCommandRetryTasks[deviceID] == nil else { return }
 
         let attempt = pendingTargetedCommandRetryAttempts[deviceID, default: 0]
-        let delay = min(pow(2.0, Double(attempt)), 8)
+        let delay = PlaybackCommandSyncPolicy.retryDelay(forAttempt: attempt)
         pendingTargetedCommandRetryAttempts[deviceID] = attempt + 1
 
         pendingTargetedCommandRetryTasks[deviceID] = Task { @MainActor in
