@@ -7,6 +7,7 @@
 
 import SwiftUI
 
+@MainActor
 enum TrackActions {
     static func addToQueue(_ song: Song) {
         Task { @MainActor in

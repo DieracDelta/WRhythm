@@ -22,6 +22,16 @@ import WatchKit
 @preconcurrency import MultipeerConnectivity
 #endif
 
+#if os(iOS) || os(macOS)
+private struct SyncInvitationHandler: @unchecked Sendable {
+    let handler: (Bool, MCSession?) -> Void
+
+    func callAsFunction(_ shouldAccept: Bool, _ session: MCSession?) {
+        handler(shouldAccept, session)
+    }
+}
+#endif
+
 struct SyncedCredentials: Codable, Sendable {
     let baseURL: String
     let username: String
@@ -1587,11 +1597,12 @@ extension DeviceSyncManager: MCSessionDelegate {
 
 extension DeviceSyncManager: MCNearbyServiceAdvertiserDelegate {
     nonisolated func advertiser(_ advertiser: MCNearbyServiceAdvertiser, didReceiveInvitationFromPeer peerID: MCPeerID, withContext context: Data?, invitationHandler: @escaping (Bool, MCSession?) -> Void) {
+        let handler = SyncInvitationHandler(handler: invitationHandler)
         Task { @MainActor in
             let manager = DeviceSyncManager.shared
             let shouldAccept = (manager.syncModeEnabled || manager.credentialSyncEnabled) && manager.session != nil
             print("\(shouldAccept ? "📨" : "🚫") Sync invitation from \(peerID.displayName)")
-            invitationHandler(shouldAccept, manager.session)
+            handler(shouldAccept, manager.session)
         }
     }
 

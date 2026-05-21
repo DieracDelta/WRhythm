@@ -791,7 +791,9 @@ struct AudioRouteView: View {
             queue: .main
         ) { _ in
             print("🎧 Audio route changed, updating...")
-            updateAudioRouteInfo()
+            Task { @MainActor in
+                updateAudioRouteInfo()
+            }
         }
     }
 

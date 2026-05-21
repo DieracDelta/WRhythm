@@ -9,7 +9,7 @@ import Foundation
 import CryptoKit
 import Combine
 
-class DownloadProgressDelegate: NSObject, URLSessionDataDelegate {
+final class DownloadProgressDelegate: NSObject, URLSessionDataDelegate, @unchecked Sendable {
     private let progressHandler: (Double, Int64, Int64) -> Void
     private var expectedBytes: Int64 = 0
     private var receivedBytes: Int64 = 0
@@ -63,7 +63,8 @@ class DownloadProgressDelegate: NSObject, URLSessionDataDelegate {
     }
 }
 
-class NavidromeAPI: ObservableObject {
+@MainActor
+final class NavidromeAPI: ObservableObject {
     static let shared = NavidromeAPI()
 
     @Published var isAuthenticated = false
@@ -105,9 +106,7 @@ class NavidromeAPI: ObservableObject {
         UserDefaults.standard.set(self.password, forKey: "navidrome_password")
 
         self.isAuthenticated = true
-        Task { @MainActor in
-            DeviceSyncManager.shared.credentialsDidChange()
-        }
+        DeviceSyncManager.shared.credentialsDidChange()
     }
 
     func validateAndConfigure(baseURL: String, username: String, password: String) async throws -> Bool {
@@ -132,12 +131,10 @@ class NavidromeAPI: ObservableObject {
                 UserDefaults.standard.set(self.username, forKey: "navidrome_username")
                 UserDefaults.standard.set(self.password, forKey: "navidrome_password")
                 self.isAuthenticated = true
-                await MainActor.run {
-                    DeviceSyncManager.shared.credentialsDidChange()
-                }
+                DeviceSyncManager.shared.credentialsDidChange()
 
                 // Check transcoding support after successful login
-                Task {
+                Task { @MainActor in
                     await self.checkTranscodingSupport()
                 }
 
@@ -223,14 +220,10 @@ class NavidromeAPI: ObservableObject {
     func checkTranscodingSupport() async -> Bool {
         print("🔍 Checking server transcoding support...")
 
-        await MainActor.run {
-            isCheckingTranscoding = true
-        }
+        isCheckingTranscoding = true
 
         defer {
-            Task { @MainActor in
-                isCheckingTranscoding = false
-            }
+            isCheckingTranscoding = false
         }
 
         do {
@@ -306,11 +299,9 @@ class NavidromeAPI: ObservableObject {
     }
 
     private func updateTranscodingSupport(_ supported: Bool) async {
-        await MainActor.run {
-            self.transcodingSupported = supported
-            UserDefaults.standard.set(supported, forKey: "server_supports_transcoding")
-            print("💾 Cached transcoding support: \(supported)")
-        }
+        transcodingSupported = supported
+        UserDefaults.standard.set(supported, forKey: "server_supports_transcoding")
+        print("💾 Cached transcoding support: \(supported)")
     }
 
     private func generateAuthParams() -> [String: String] {

@@ -439,7 +439,7 @@ class AudioPlayer: NSObject, ObservableObject {
 
     private func setupMacMediaKeyEventTap() -> Bool {
         let accessibilityOptions = [
-            kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true
+            "AXTrustedCheckOptionPrompt": true
         ] as CFDictionary
         guard AXIsProcessTrustedWithOptions(accessibilityOptions) else {
             print("⚠️ WRhythm needs macOS Accessibility permission to fully claim media keys before Apple Music.")
@@ -1502,6 +1502,7 @@ class AudioPlayer: NSObject, ObservableObject {
 #endif
     }
 
+    @MainActor
     deinit {
         if let observer = timeObserver {
             player.removeTimeObserver(observer)

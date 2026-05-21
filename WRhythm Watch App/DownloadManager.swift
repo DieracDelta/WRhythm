@@ -136,7 +136,8 @@ struct RadioPlaylist: Codable, Identifiable, Sendable {
     let createdAt: Date
 }
 
-class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
+@MainActor
+final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     static let shared = DownloadManager()
 
     @Published var downloadedSongs: [String: DownloadedSong] = [:]
@@ -274,15 +275,21 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            guard let self = self else { return }
-            let timestamp = ISO8601DateFormatter().string(from: Date())
-            print("🔔 [\(timestamp)] App became active")
-            print("📊 [\(timestamp)] Download state - Active: \(self.activeDownloads.count), Queue: \(self.downloadQueue.count)")
-            if !self.activeDownloads.isEmpty {
-                for (songId, progress) in self.activeDownloads {
-                    let title = self.songMetadata[songId]?.title ?? "Unknown"
-                    print("   - \(title): \(Int(progress * 100))%")
-                }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.logDownloadStateForActiveApp()
+            }
+        }
+    }
+
+    private func logDownloadStateForActiveApp() {
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        print("🔔 [\(timestamp)] App became active")
+        print("📊 [\(timestamp)] Download state - Active: \(activeDownloads.count), Queue: \(downloadQueue.count)")
+        if !activeDownloads.isEmpty {
+            for (songId, progress) in activeDownloads {
+                let title = songMetadata[songId]?.title ?? "Unknown"
+                print("   - \(title): \(Int(progress * 100))%")
             }
         }
     }
@@ -1058,7 +1065,13 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
 
     // MARK: - URLSessionDownloadDelegate
 
-    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
+    nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
+        Task { @MainActor [weak self] in
+            self?.handleDownloadProgress(downloadTask: downloadTask, totalBytesWritten: totalBytesWritten, totalBytesExpectedToWrite: totalBytesExpectedToWrite)
+        }
+    }
+
+    private func handleDownloadProgress(downloadTask: URLSessionDownloadTask, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
         guard let songId = taskToSongId[downloadTask],
               let song = songMetadata[songId] else {
             return
@@ -1090,49 +1103,53 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
             }
         }
 
-        DispatchQueue.main.async {
-            self.downloadBytesReceived[songId] = totalBytesWritten
+        downloadBytesReceived[songId] = totalBytesWritten
 
-            // Track total bytes for this download if we haven't yet
-            if self.downloadTotalBytes[songId] == nil {
-                self.downloadTotalBytes[songId] = estimatedTotal
-                self.sessionBytesTotal += estimatedTotal
-            } else if self.downloadTotalBytes[songId] != estimatedTotal {
-                // Update session total if estimate changed
-                let oldTotal = self.downloadTotalBytes[songId] ?? 0
-                self.sessionBytesTotal += (estimatedTotal - oldTotal)
-                self.downloadTotalBytes[songId] = estimatedTotal
+        // Track total bytes for this download if we haven't yet
+        if downloadTotalBytes[songId] == nil {
+            downloadTotalBytes[songId] = estimatedTotal
+            sessionBytesTotal += estimatedTotal
+        } else if downloadTotalBytes[songId] != estimatedTotal {
+            // Update session total if estimate changed
+            let oldTotal = downloadTotalBytes[songId] ?? 0
+            sessionBytesTotal += (estimatedTotal - oldTotal)
+            downloadTotalBytes[songId] = estimatedTotal
+        }
+
+        // Store pending update
+        pendingProgressUpdates[songId] = progress
+
+        // Throttle UI updates to once every 2 seconds to reduce UI load
+        let now = Date()
+        if now.timeIntervalSince(lastProgressUpdate) >= 2.0 {
+            lastProgressUpdate = now
+
+            // Apply all pending updates at once
+            for (id, prog) in pendingProgressUpdates {
+                activeDownloads[id] = prog
             }
+            pendingProgressUpdates.removeAll()
 
-            // Store pending update
-            self.pendingProgressUpdates[songId] = progress
+            // Log status every 10 seconds
+            let timestamp = ISO8601DateFormatter().string(from: Date())
+            let activeCount = activeDownloads.count
+            let queueCount = downloadQueue.count
+            let completedCount = sessionCompletedCount
 
-            // Throttle UI updates to once every 2 seconds to reduce UI load
-            let now = Date()
-            if now.timeIntervalSince(self.lastProgressUpdate) >= 2.0 {
-                self.lastProgressUpdate = now
-
-                // Apply all pending updates at once
-                for (id, prog) in self.pendingProgressUpdates {
-                    self.activeDownloads[id] = prog
-                }
-                self.pendingProgressUpdates.removeAll()
-
-                // Log status every 10 seconds
-                let timestamp = ISO8601DateFormatter().string(from: Date())
-                let activeCount = self.activeDownloads.count
-                let queueCount = self.downloadQueue.count
-                let completedCount = self.sessionCompletedCount
-
-                // Only log every 10th update (every ~10 seconds)
-                if Int(now.timeIntervalSince1970) % 10 == 0 {
-                    print("📊 [\(timestamp)] Status - Completed: \(completedCount), Active: \(activeCount), Queue: \(queueCount)")
-                }
+            // Only log every 10th update (every ~10 seconds)
+            if Int(now.timeIntervalSince1970) % 10 == 0 {
+                print("📊 [\(timestamp)] Status - Completed: \(completedCount), Active: \(activeCount), Queue: \(queueCount)")
             }
         }
     }
 
-    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
+    nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
+        Task { @MainActor [weak self] in
+            self?.handleDownloadFinished(downloadTask: downloadTask, location: location)
+        }
+    }
+
+    private func handleDownloadFinished(downloadTask: URLSessionDownloadTask, location: URL) {
         guard let songId = taskToSongId[downloadTask],
               let song = songMetadata[songId] else {
             print("❌ No song info for completed download")
@@ -1168,64 +1185,66 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
                 downloadedBitRate: self.audioQuality.rawValue
             )
 
-            DispatchQueue.main.async {
-                // Apply any pending progress updates before removing
-                if let pendingProgress = self.pendingProgressUpdates[song.id] {
-                    self.activeDownloads[song.id] = pendingProgress
-                    self.pendingProgressUpdates.removeValue(forKey: song.id)
-                }
-
-                // Add completed bytes and count to session totals
-                self.sessionBytesDownloaded += fileSize
-                self.sessionCompletedCount += 1
-
-                self.downloadedSongs[song.id] = downloadedSong
-                self.activeDownloads.removeValue(forKey: song.id)
-                self.downloadBytesReceived.removeValue(forKey: song.id)
-                self.downloadTotalBytes.removeValue(forKey: song.id)
-                self.downloadTasks.removeValue(forKey: song.id)
-                self.taskToSongId.removeValue(forKey: downloadTask)
-                // Keep songMetadata for offline mode - don't remove it!
-                // self.songMetadata.removeValue(forKey: song.id)
-                self.saveMetadata()
-                self.saveSongMetadata()
-
-                let timestamp = ISO8601DateFormatter().string(from: Date())
-                print("✅ [\(timestamp)] Downloaded: \(song.title) (\(self.formatBytes(fileSize)))")
-                print("📊 [\(timestamp)] Active downloads: \(self.activeDownloads.count), Queue: \(self.downloadQueue.count)")
-
-                // Reset session counters if all downloads are done
-                if self.activeDownloads.isEmpty && self.downloadQueue.isEmpty {
-                    print("🏁 [\(timestamp)] All downloads complete - resetting session counters")
-                    self.sessionBytesDownloaded = 0
-                    self.sessionBytesTotal = 0
-                    self.sessionCompletedCount = 0
-                    self.sessionTotalCount = 0
-                    self.clearIncompleteDownloads()
-                } else {
-                    self.saveIncompleteDownloads()
-                }
-
-                // Process next item in queue
-                self.processQueue()
+            // Apply any pending progress updates before removing
+            if let pendingProgress = pendingProgressUpdates[song.id] {
+                activeDownloads[song.id] = pendingProgress
+                pendingProgressUpdates.removeValue(forKey: song.id)
             }
+
+            // Add completed bytes and count to session totals
+            sessionBytesDownloaded += fileSize
+            sessionCompletedCount += 1
+
+            downloadedSongs[song.id] = downloadedSong
+            activeDownloads.removeValue(forKey: song.id)
+            downloadBytesReceived.removeValue(forKey: song.id)
+            downloadTotalBytes.removeValue(forKey: song.id)
+            downloadTasks.removeValue(forKey: song.id)
+            taskToSongId.removeValue(forKey: downloadTask)
+            // Keep songMetadata for offline mode - don't remove it!
+            // songMetadata.removeValue(forKey: song.id)
+            saveMetadata()
+            saveSongMetadata()
+
+            let timestamp = ISO8601DateFormatter().string(from: Date())
+            print("✅ [\(timestamp)] Downloaded: \(song.title) (\(formatBytes(fileSize)))")
+            print("📊 [\(timestamp)] Active downloads: \(activeDownloads.count), Queue: \(downloadQueue.count)")
+
+            // Reset session counters if all downloads are done
+            if activeDownloads.isEmpty && downloadQueue.isEmpty {
+                print("🏁 [\(timestamp)] All downloads complete - resetting session counters")
+                sessionBytesDownloaded = 0
+                sessionBytesTotal = 0
+                sessionCompletedCount = 0
+                sessionTotalCount = 0
+                clearIncompleteDownloads()
+            } else {
+                saveIncompleteDownloads()
+            }
+
+            // Process next item in queue
+            processQueue()
         } catch {
             print("❌ Failed to save downloaded file: \(error)")
-            DispatchQueue.main.async {
-                self.activeDownloads.removeValue(forKey: song.id)
-                self.downloadBytesReceived.removeValue(forKey: song.id)
-                self.downloadTotalBytes.removeValue(forKey: song.id)
-                self.downloadTasks.removeValue(forKey: song.id)
-                self.taskToSongId.removeValue(forKey: downloadTask)
-                self.songMetadata.removeValue(forKey: song.id)
+            activeDownloads.removeValue(forKey: song.id)
+            downloadBytesReceived.removeValue(forKey: song.id)
+            downloadTotalBytes.removeValue(forKey: song.id)
+            downloadTasks.removeValue(forKey: song.id)
+            taskToSongId.removeValue(forKey: downloadTask)
+            songMetadata.removeValue(forKey: song.id)
 
-                // Process next item in queue even on error
-                self.processQueue()
-            }
+            // Process next item in queue even on error
+            processQueue()
         }
     }
 
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+    nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        Task { @MainActor [weak self] in
+            self?.handleDownloadCompleted(task: task, error: error)
+        }
+    }
+
+    private func handleDownloadCompleted(task: URLSessionTask, error: Error?) {
         guard let downloadTask = task as? URLSessionDownloadTask,
               let songId = taskToSongId[downloadTask] else {
             if let error = error {
@@ -1250,33 +1269,34 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
             print("   Error domain: \(nsError.domain)")
             print("   Is cancellation: \(isCancellation)")
 
-            DispatchQueue.main.async {
-                self.activeDownloads.removeValue(forKey: songId)
-                self.downloadBytesReceived.removeValue(forKey: songId)
-                self.downloadTotalBytes.removeValue(forKey: songId)
-                self.downloadTasks.removeValue(forKey: songId)
-                self.taskToSongId.removeValue(forKey: downloadTask)
+            activeDownloads.removeValue(forKey: songId)
+            downloadBytesReceived.removeValue(forKey: songId)
+            downloadTotalBytes.removeValue(forKey: songId)
+            downloadTasks.removeValue(forKey: songId)
+            taskToSongId.removeValue(forKey: downloadTask)
 
-                // Only remove metadata if it's not a cancellation error
-                // For cancellations (pause/cancel), we keep metadata so retry works
-                if !isCancellation {
-                    self.songMetadata.removeValue(forKey: songId)
-                }
+            // Only remove metadata if it's not a cancellation error
+            // For cancellations (pause/cancel), we keep metadata so retry works
+            if !isCancellation {
+                songMetadata.removeValue(forKey: songId)
+            }
 
-                print("📊 [\(timestamp)] After error - Active downloads: \(self.activeDownloads.count), Queue: \(self.downloadQueue.count)")
+            print("📊 [\(timestamp)] After error - Active downloads: \(activeDownloads.count), Queue: \(downloadQueue.count)")
 
-                // Only process next item if not paused
-                if !self.isPaused {
-                    self.processQueue()
-                }
+            // Only process next item if not paused
+            if !isPaused {
+                processQueue()
             }
         }
     }
 
-    func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
-        let timestamp = ISO8601DateFormatter().string(from: Date())
-        print("🎉 [\(timestamp)] Background session finished all events")
-        print("📊 [\(timestamp)] Active downloads: \(self.activeDownloads.count), Queue: \(self.downloadQueue.count)")
+    nonisolated func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let timestamp = ISO8601DateFormatter().string(from: Date())
+            print("🎉 [\(timestamp)] Background session finished all events")
+            print("📊 [\(timestamp)] Active downloads: \(self.activeDownloads.count), Queue: \(self.downloadQueue.count)")
+        }
     }
 
     // MARK: - Download Collections

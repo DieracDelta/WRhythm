@@ -9,6 +9,7 @@ import Foundation
 import SwiftUI
 import Combine
 
+@MainActor
 final class LibraryDataManager: ObservableObject {
     // MARK: - Artists
     @Published var artists: [Artist] = []
