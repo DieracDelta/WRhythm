@@ -143,6 +143,21 @@ struct PlaybackSyncPolicyTests {
         ) == false)
     }
 
+    @Test func localPlayingSnapshotCanClaimPlaybackFromStaleRemoteSharedOutput() {
+        let now = Date()
+        let previous = makeSnapshot(id: "iphone", isPlaying: false, currentTime: 42, updatedAt: now.addingTimeInterval(-2))
+        let playing = makeSnapshot(id: "iphone", isPlaying: true, currentTime: 42, updatedAt: now)
+
+        #expect(PlaybackStateBroadcastPolicy.shouldBroadcast(
+            snapshot: playing,
+            previousSnapshot: previous,
+            lastBroadcastAt: now,
+            now: now,
+            sharedOutputDeviceID: "mac",
+            localDeviceID: "iphone"
+        ) == true)
+    }
+
     @Test func remotePauseSnapshotFromMacPublishesOnIPhoneEvenWithTinyTimeDelta() {
         let now = Date()
         let current = makeSnapshot(id: "mac", isPlaying: true, currentTime: 42, updatedAt: now.addingTimeInterval(-0.3))
@@ -160,6 +175,34 @@ struct PlaybackSyncPolicyTests {
 
         #expect(PlaybackSessionSyncPolicy.shouldApply(older, over: current) == false)
         #expect(PlaybackSessionSyncPolicy.shouldApply(newer, over: current) == true)
+    }
+
+    @Test func newerDifferentSessionWinsEvenWhenRevisionIsLower() {
+        let now = Date()
+        let staleMacSession = makeSession(id: "mac-session", revision: 20, updatedAt: now.addingTimeInterval(-5), updatedByDeviceID: "mac")
+        let freshIPhoneSession = makeSession(
+            id: "iphone-session",
+            outputDeviceID: "iphone",
+            revision: 1,
+            updatedAt: now,
+            updatedByDeviceID: "iphone"
+        )
+
+        #expect(PlaybackSessionSyncPolicy.shouldApply(freshIPhoneSession, over: staleMacSession) == true)
+    }
+
+    @Test func olderDifferentSessionDoesNotReplaceNewerSession() {
+        let now = Date()
+        let currentMacSession = makeSession(id: "mac-session", revision: 2, updatedAt: now, updatedByDeviceID: "mac")
+        let delayedIPhoneSession = makeSession(
+            id: "iphone-session",
+            outputDeviceID: "iphone",
+            revision: 99,
+            updatedAt: now.addingTimeInterval(-5),
+            updatedByDeviceID: "iphone"
+        )
+
+        #expect(PlaybackSessionSyncPolicy.shouldApply(delayedIPhoneSession, over: currentMacSession) == false)
     }
 
     @Test func sameRevisionSessionUsesTimestampThenDeviceIDTieBreaker() {
@@ -284,6 +327,22 @@ struct PlaybackSyncPolicyTests {
 
         #expect(withinPlan.shouldSetVolume == false)
         #expect(outsidePlan.shouldSetVolume == true)
+    }
+
+    @Test func localPlaybackOwnershipAllowsPlayingDeviceToPublishOverRemoteOwner() {
+        #expect(LocalPlaybackOwnershipPolicy.shouldPublishLocalPlayback(
+            sharedOutputDeviceID: "mac",
+            localDeviceID: "iphone",
+            isLocalPlaying: true
+        ) == true)
+    }
+
+    @Test func localPlaybackOwnershipKeepsPausedDeviceFromPublishingOverRemoteOwner() {
+        #expect(LocalPlaybackOwnershipPolicy.shouldPublishLocalPlayback(
+            sharedOutputDeviceID: "mac",
+            localDeviceID: "iphone",
+            isLocalPlaying: false
+        ) == false)
     }
 
     @Test(arguments: [
@@ -425,6 +484,7 @@ struct PlaybackSyncPolicyTests {
     }
 
     private func makeSession(
+        id: String = "session-1",
         songs: [Song]? = nil,
         currentIndex: Int = 0,
         outputDeviceID: String = "mac",
@@ -437,7 +497,7 @@ struct PlaybackSyncPolicyTests {
     ) -> PlaybackSession {
         let resolvedSongs = songs ?? [makeSong(id: "song-1")]
         return PlaybackSession(
-            id: "session-1",
+            id: id,
             revision: revision,
             queue: resolvedSongs,
             currentIndex: currentIndex,

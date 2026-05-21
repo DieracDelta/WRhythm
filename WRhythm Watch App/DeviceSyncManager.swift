@@ -267,6 +267,9 @@ struct PlaybackSessionSyncPolicy: Sendable {
 
     static func shouldApply(_ incoming: PlaybackSession, over existing: PlaybackSession?) -> Bool {
         guard let existing else { return true }
+        if incoming.id != existing.id {
+            return incoming.updatedAt > existing.updatedAt
+        }
         if incoming.revision != existing.revision {
             return incoming.revision > existing.revision
         }
@@ -319,6 +322,17 @@ struct PlaybackSessionSyncPolicy: Sendable {
     }
 }
 
+struct LocalPlaybackOwnershipPolicy: Sendable {
+    static func shouldPublishLocalPlayback(
+        sharedOutputDeviceID: String?,
+        localDeviceID: String,
+        isLocalPlaying: Bool
+    ) -> Bool {
+        guard let sharedOutputDeviceID else { return true }
+        return sharedOutputDeviceID == localDeviceID || isLocalPlaying
+    }
+}
+
 struct PlaybackStateBroadcastPolicy: Sendable {
     static let minimumProgressBroadcastInterval: TimeInterval = 1.5
 
@@ -334,7 +348,11 @@ struct PlaybackStateBroadcastPolicy: Sendable {
         localDeviceID: String
     ) -> Bool {
         guard syncModeEnabled, !isApplyingRemoteCommand else { return false }
-        guard sharedOutputDeviceID == nil || sharedOutputDeviceID == localDeviceID else { return false }
+        guard LocalPlaybackOwnershipPolicy.shouldPublishLocalPlayback(
+            sharedOutputDeviceID: sharedOutputDeviceID,
+            localDeviceID: localDeviceID,
+            isLocalPlaying: snapshot.isPlaying
+        ) else { return false }
         if force { return true }
         guard let previousSnapshot else { return true }
 
@@ -1130,8 +1148,12 @@ final class DeviceSyncManager: NSObject, ObservableObject {
 
     func broadcastLocalQueueAsShared() {
         guard syncModeEnabled, !isApplyingRemoteCommand else { return }
-        guard sharedSession?.outputDeviceID == nil || sharedSession?.outputDeviceID == localDeviceID else { return }
         let player = AudioPlayer.shared
+        guard LocalPlaybackOwnershipPolicy.shouldPublishLocalPlayback(
+            sharedOutputDeviceID: sharedSession?.outputDeviceID,
+            localDeviceID: localDeviceID,
+            isLocalPlaying: player.isPlaying
+        ) else { return }
         let queue = player.queue.isEmpty ? player.currentSong.map { [$0] } ?? [] : player.queue
         guard !queue.isEmpty else { return }
         publishSharedSession(makeSession(
