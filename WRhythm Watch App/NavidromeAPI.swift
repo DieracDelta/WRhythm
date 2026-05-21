@@ -105,7 +105,9 @@ class NavidromeAPI: ObservableObject {
         UserDefaults.standard.set(self.password, forKey: "navidrome_password")
 
         self.isAuthenticated = true
-        DeviceSyncManager.shared.credentialsDidChange()
+        Task { @MainActor in
+            DeviceSyncManager.shared.credentialsDidChange()
+        }
     }
 
     func validateAndConfigure(baseURL: String, username: String, password: String) async throws -> Bool {
@@ -130,7 +132,9 @@ class NavidromeAPI: ObservableObject {
                 UserDefaults.standard.set(self.username, forKey: "navidrome_username")
                 UserDefaults.standard.set(self.password, forKey: "navidrome_password")
                 self.isAuthenticated = true
-                DeviceSyncManager.shared.credentialsDidChange()
+                await MainActor.run {
+                    DeviceSyncManager.shared.credentialsDidChange()
+                }
 
                 // Check transcoding support after successful login
                 Task {
@@ -156,6 +160,7 @@ class NavidromeAPI: ObservableObject {
         }
     }
 
+    @MainActor
     func logout() {
         print("🔓 Starting logout process...")
 
@@ -972,7 +977,7 @@ struct Album: Decodable, Identifiable {
     let song: [Song]
 }
 
-struct Song: Codable, Identifiable {
+struct Song: Codable, Identifiable, Sendable {
     let id: String
     let title: String
     let album: String?

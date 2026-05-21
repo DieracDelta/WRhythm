@@ -24,6 +24,7 @@ import UIKit
 import AppKit
 #endif
 
+@MainActor
 class AudioPlayer: NSObject, ObservableObject {
     static let shared = AudioPlayer()
 
@@ -312,66 +313,78 @@ class AudioPlayer: NSObject, ObservableObject {
 #if os(iOS) || os(watchOS) || os(macOS)
         let commandCenter = MPRemoteCommandCenter.shared()
 
-        commandCenter.playCommand.addTarget { [weak self] _ in
+        commandCenter.playCommand.addTarget { _ in
 #if os(macOS)
             Task { @MainActor in
-                self?.performMacMediaKeyAction(.play)
+                AudioPlayer.shared.performMacMediaKeyAction(.play)
             }
 #else
-            self?.play()
+            Task { @MainActor in
+                AudioPlayer.shared.play()
+            }
 #endif
             return .success
         }
 
-        commandCenter.pauseCommand.addTarget { [weak self] _ in
+        commandCenter.pauseCommand.addTarget { _ in
 #if os(macOS)
             Task { @MainActor in
-                self?.performMacMediaKeyAction(.pause)
+                AudioPlayer.shared.performMacMediaKeyAction(.pause)
             }
 #else
-            self?.pause()
+            Task { @MainActor in
+                AudioPlayer.shared.pause()
+            }
 #endif
             return .success
         }
 
-        commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
+        commandCenter.togglePlayPauseCommand.addTarget { _ in
 #if os(macOS)
             Task { @MainActor in
-                self?.performMacMediaKeyAction(.toggle)
+                AudioPlayer.shared.performMacMediaKeyAction(.toggle)
             }
 #else
-            self?.togglePlayPause()
+            Task { @MainActor in
+                AudioPlayer.shared.togglePlayPause()
+            }
 #endif
             return .success
         }
 
-        commandCenter.nextTrackCommand.addTarget { [weak self] _ in
+        commandCenter.nextTrackCommand.addTarget { _ in
 #if os(macOS)
             Task { @MainActor in
-                self?.performMacMediaKeyAction(.next)
+                AudioPlayer.shared.performMacMediaKeyAction(.next)
             }
 #else
-            self?.next()
+            Task { @MainActor in
+                AudioPlayer.shared.next()
+            }
 #endif
             return .success
         }
 
-        commandCenter.previousTrackCommand.addTarget { [weak self] _ in
+        commandCenter.previousTrackCommand.addTarget { _ in
 #if os(macOS)
             Task { @MainActor in
-                self?.performMacMediaKeyAction(.previous)
+                AudioPlayer.shared.performMacMediaKeyAction(.previous)
             }
 #else
-            self?.previous()
+            Task { @MainActor in
+                AudioPlayer.shared.previous()
+            }
 #endif
             return .success
         }
 
-        commandCenter.changePlaybackPositionCommand.addTarget { [weak self] event in
+        commandCenter.changePlaybackPositionCommand.addTarget { event in
             guard let event = event as? MPChangePlaybackPositionCommandEvent else {
                 return .commandFailed
             }
-            self?.seek(to: event.positionTime)
+            Task { @MainActor in
+                AudioPlayer.shared.seek(to: event.positionTime)
+            }
             return .success
         }
 #if os(macOS)
@@ -1173,7 +1186,7 @@ class AudioPlayer: NSObject, ObservableObject {
            (DownloadManager.shared.getLocalURL(currentSong.id) != nil || currentPlaybackIsLocalFile) {
             let cmTime = CMTime(seconds: time, preferredTimescale: 600)
             player.seek(to: cmTime, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
-                DispatchQueue.main.async {
+                Task { @MainActor [weak self] in
                     guard let self else { return }
                     let actualTime = self.player.currentTime().seconds
                     self.currentTime = actualTime.isFinite ? actualTime : time
@@ -1196,31 +1209,33 @@ class AudioPlayer: NSObject, ObservableObject {
     private func addPeriodicTimeObserver() {
         let interval = CMTime(seconds: 0.5, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
         timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
-            guard let self = self else { return }
-            
-            // AVPlayer's item time is the actual playback position. Keep the optional
-            // offset at zero unless a future stream type explicitly requires it.
-            self.currentTime = self.baseTimeOffset + time.seconds
+            Task { @MainActor [weak self] in
+                guard let self else { return }
 
-            // Update duration if it's available and we don't have it yet
-            if let item = self.player.currentItem {
-                let itemDuration = item.duration
+                // AVPlayer's item time is the actual playback position. Keep the optional
+                // offset at zero unless a future stream type explicitly requires it.
+                self.currentTime = self.baseTimeOffset + time.seconds
 
-                // Only update global duration if we started from 0, otherwise the chunk duration is partial
-                if self.baseTimeOffset == 0,
-                   (self.duration == 0 || self.duration.isNaN),
-                   itemDuration.isNumeric && itemDuration.seconds > 0 {
-                    self.duration = itemDuration.seconds
-                    print("✅ Duration updated from time observer to: \(self.duration)s")
-                }
-                
-                // Manual check for end of playback if duration is available but player thinks it's indefinite
-                // (Common issue with some streams where AVPlayer treats them as live radio)
-                if itemDuration.isIndefinite,
-                   self.duration > 0,
-                   self.currentTime >= (self.duration + 5) {
-                    print("🛑 Forced end of playback because duration reached (\(self.currentTime) >= \(self.duration) + 5s buffer)")
-                    self.handlePlaybackEnded()
+                // Update duration if it's available and we don't have it yet
+                if let item = self.player.currentItem {
+                    let itemDuration = item.duration
+
+                    // Only update global duration if we started from 0, otherwise the chunk duration is partial
+                    if self.baseTimeOffset == 0,
+                       (self.duration == 0 || self.duration.isNaN),
+                       itemDuration.isNumeric && itemDuration.seconds > 0 {
+                        self.duration = itemDuration.seconds
+                        print("✅ Duration updated from time observer to: \(self.duration)s")
+                    }
+
+                    // Manual check for end of playback if duration is available but player thinks it's indefinite
+                    // (Common issue with some streams where AVPlayer treats them as live radio)
+                    if itemDuration.isIndefinite,
+                       self.duration > 0,
+                       self.currentTime >= (self.duration + 5) {
+                        print("🛑 Forced end of playback because duration reached (\(self.currentTime) >= \(self.duration) + 5s buffer)")
+                        self.handlePlaybackEnded()
+                    }
                 }
             }
         }
@@ -1335,7 +1350,7 @@ class AudioPlayer: NSObject, ObservableObject {
         let target = CMTime(seconds: clampedStart, preferredTimescale: 600)
         print("⏩ Seeking player item to \(clampedStart)s before playback")
         player.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self, weak item] finished in
-            DispatchQueue.main.async {
+            Task { @MainActor [weak self, weak item] in
                 guard let self,
                       let item,
                       self.player.currentItem === item else { return }

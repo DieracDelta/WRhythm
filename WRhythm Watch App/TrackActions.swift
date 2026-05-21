@@ -9,7 +9,9 @@ import SwiftUI
 
 enum TrackActions {
     static func addToQueue(_ song: Song) {
-        AudioPlayer.shared.enqueue([song])
+        Task { @MainActor in
+            AudioPlayer.shared.enqueue([song])
+        }
     }
 
     static func addAlbumToQueue(albumId: String, albumName: String? = nil) {

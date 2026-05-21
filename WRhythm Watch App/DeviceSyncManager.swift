@@ -9,7 +9,7 @@ import Combine
 import Foundation
 
 #if os(iOS) || os(watchOS)
-import WatchConnectivity
+@preconcurrency import WatchConnectivity
 #endif
 
 #if os(iOS)
@@ -19,16 +19,16 @@ import WatchKit
 #endif
 
 #if os(iOS) || os(macOS)
-import MultipeerConnectivity
+@preconcurrency import MultipeerConnectivity
 #endif
 
-struct SyncedCredentials: Codable {
+struct SyncedCredentials: Codable, Sendable {
     let baseURL: String
     let username: String
     let password: String
 }
 
-struct PlaybackSnapshot: Codable, Identifiable {
+struct PlaybackSnapshot: Codable, Identifiable, Sendable {
     let id: String
     let deviceName: String
     let platform: String
@@ -44,7 +44,7 @@ struct PlaybackSnapshot: Codable, Identifiable {
     let updatedAt: Date
 }
 
-struct PlaybackSession: Codable, Identifiable {
+struct PlaybackSession: Codable, Identifiable, Sendable {
     let id: String
     let revision: Int
     let queue: [Song]
@@ -99,7 +99,7 @@ extension PlaybackSnapshot {
     }
 }
 
-struct PlaybackTargetDevice: Identifiable, Equatable {
+struct PlaybackTargetDevice: Identifiable, Equatable, Sendable {
     let id: String
     let name: String
     let platform: String
@@ -119,7 +119,7 @@ struct PlaybackTargetDevice: Identifiable, Equatable {
     }
 }
 
-private struct SyncPeerInfo: Codable {
+private struct SyncPeerInfo: Codable, Sendable {
     let id: String
     let name: String
     let platform: String
@@ -128,8 +128,8 @@ private struct SyncPeerInfo: Codable {
     let hasCredentials: Bool
 }
 
-private struct PlaybackCommand: Codable {
-    enum Action: String, Codable {
+private struct PlaybackCommand: Codable, Sendable {
+    enum Action: String, Codable, Sendable {
         case play
         case pause
         case toggle
@@ -171,8 +171,8 @@ private struct PlaybackCommand: Codable {
     }
 }
 
-private struct SyncEnvelope: Codable {
-    enum Kind: String, Codable {
+private struct SyncEnvelope: Codable, Sendable {
+    enum Kind: String, Codable, Sendable {
         case hello
         case syncRequest
         case playbackState
@@ -208,6 +208,7 @@ private struct SyncEnvelope: Codable {
     }
 }
 
+@MainActor
 final class DeviceSyncManager: NSObject, ObservableObject {
     static let shared = DeviceSyncManager()
 
