@@ -27,252 +27,211 @@ struct ArtistDetailView: View {
     }
 
     var body: some View {
-        Group {
-            if offlineMode {
-                // Offline mode: show downloaded albums for this artist
-                let downloadedAlbums = downloadManager.getDownloadedAlbums().filter { $0.artist == artistName }
-                ScrollView {
-                    VStack(spacing: 12) {
-                        Text(artistName)
-                            .font(.headline)
-
-                        Text("\(downloadedAlbums.count) album\(downloadedAlbums.count == 1 ? "" : "s")")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-
-                        if !downloadedAlbums.isEmpty {
-                            HStack(spacing: 8) {
-                                Button(action: {
-                                    playAllDownloadedSongs(for: artistName)
-                                }) {
-                                    Label("Play", systemImage: "play.fill")
-                                }
-                                .buttonStyle(.borderedProminent)
-
-                                Button(action: {
-                                    shuffleAllDownloadedSongs(for: artistName)
-                                }) {
-                                    Image(systemName: "shuffle")
-                                }
-                                .buttonStyle(.bordered)
-                            }
-
-                            NavigationLink(destination: RadioOptionsView(
-                                sourceSong: Song(
-                                    id: artistId,
-                                    title: artistName,
-                                    album: nil,
-                                    albumId: nil,
-                                    artist: artistName,
-                                    artistId: artistId,
-                                    track: nil,
-                                    year: nil,
-                                    genre: nil,
-                                    coverArt: nil,
-                                    size: nil,
-                                    contentType: nil,
-                                    suffix: nil,
-                                    duration: nil,
-                                    bitRate: nil,
-                                    path: nil
-                                ),
-                                sourceTitle: artistName,
-                                sourceType: .artist
-                            )) {
-                                Label("Playlist Gen", systemImage: "music.note.list")
-                            }
-                            .buttonStyle(.bordered)
-
-                            Divider()
-
-                            VStack(spacing: 8) {
-                                ForEach(downloadedAlbums, id: \.id) { album in
-                                    NavigationLink(destination: AlbumDetailView(albumId: album.id)) {
-                                        HStack {
-                                            if let coverArtId = album.coverArt,
-                                               let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 100) {
-                                                CachedAsyncImage(url: coverURL) { image in
-                                                    image
-                                                        .resizable()
-                                                        .aspectRatio(contentMode: .fill)
-                                                }
-                                                .frame(width: 40, height: 40)
-                                                .cornerRadius(4)
-                                            }
-
-                                            VStack(alignment: .leading) {
-                                                Text(album.name)
-                                                    .font(.caption)
-                                                    .lineLimit(1)
-                                            }
-
-                                            Spacer()
-
-                                            Image(systemName: "arrow.down.circle.fill")
-                                                .font(.caption2)
-                                                .foregroundColor(.green)
-                                        }
-                                    }
-                                    .buttonStyle(.plain)
-                                    .contextMenu {
-                                        AlbumContextMenuItems(albumId: album.id, albumName: album.name)
-                                    }
-                                }
-                            }
-                        } else {
-                            VStack {
-                                Image(systemName: "arrow.down.circle")
-                                    .font(.title)
-                                    .foregroundColor(.secondary)
-                                Text("No downloaded albums")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                            .padding()
-                        }
-                    }
-                    .padding()
-                }
-            } else if isLoading {
-                ProgressView("Loading albums...")
-            } else if !errorMessage.isEmpty {
-                VStack {
-                    Text("Error")
-                        .font(.headline)
-                    Text(errorMessage)
-                        .font(.caption)
-                        .foregroundColor(.red)
-                    Button("Retry") {
-                        loadArtist()
-                    }
-                }
-            } else if let artist = artist {
-                ScrollView {
-                    VStack(spacing: 12) {
-                        Text(artistName)
-                            .font(.headline)
-
-                        let albumsToShow = filteredAlbums(artist.album)
-                        Text("\(albumsToShow.count) albums")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-
-                        HStack(spacing: 8) {
-                            Button(action: {
-                                playAllSongs(artist)
-                            }) {
-                                Label("Play", systemImage: "play.fill")
-                            }
-                            .buttonStyle(.borderedProminent)
-
-                            Button(action: {
-                                shuffleAllSongs(artist)
-                            }) {
-                                Image(systemName: "shuffle")
-                            }
-                            .buttonStyle(.bordered)
-                        }
-
-                        NavigationLink(destination: RadioOptionsView(
-                            sourceSong: Song(
-                                id: artistId,
-                                title: artistName,
-                                album: nil,
-                                albumId: nil,
-                                artist: artistName,
-                                artistId: artistId,
-                                track: nil,
-                                year: nil,
-                                genre: nil,
-                                coverArt: nil,
-                                size: nil,
-                                contentType: nil,
-                                suffix: nil,
-                                duration: nil,
-                                bitRate: nil,
-                                path: nil
-                            ),
-                            sourceTitle: artistName,
-                            sourceType: .artist
-                        )) {
-                            Label("Playlist Gen", systemImage: "music.note.list")
-                        }
-                        .buttonStyle(.bordered)
-
-                        HStack(spacing: 8) {
-                            if isArtistDownloaded(artist) {
-                                Button(action: {
-                                    deleteArtist(artist)
-                                }) {
-                                    Image(systemName: "trash")
-                                }
-                                .buttonStyle(.bordered)
-                                .tint(.red)
-                            } else {
-                                Button(action: {
-                                    downloadArtist(artist)
-                                }) {
-                                    Image(systemName: "arrow.down.circle")
-                                }
-                                .buttonStyle(.bordered)
-                            }
-                        }
-
-                        Divider()
-
-                        VStack(spacing: 8) {
-                            ForEach(filteredAlbums(artist.album)) { album in
-                                NavigationLink(destination: AlbumDetailView(albumId: album.id)) {
-                                    HStack {
-                                        if let coverArtId = album.coverArt,
-                                           let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 100) {
-                                            CachedAsyncImage(url: coverURL) { image in
-                                                image
-                                                    .resizable()
-                                                    .aspectRatio(contentMode: .fill)
-                                            }
-                                            .frame(width: 40, height: 40)
-                                            .cornerRadius(4)
-                                        }
-
-                                        VStack(alignment: .leading) {
-                                            Text(album.name)
-                                                .font(.caption)
-                                                .lineLimit(1)
-                                            if let year = album.year {
-                                                Text(String(year))
-                                                    .font(.caption2)
-                                                    .foregroundColor(.secondary)
-                                            }
-                                        }
-
-                                        Spacer()
-
-                                        if isAlbumDownloaded(album.id) {
-                                            Image(systemName: "arrow.down.circle.fill")
-                                                .font(.caption2)
-                                                .foregroundColor(.green)
-                                        }
-                                    }
-                                }
-                                .buttonStyle(.plain)
-                                .contextMenu {
-                                    AlbumContextMenuItems(albumId: album.id, albumName: album.name)
-                                }
-                            }
-                        }
-                    }
-                    .padding()
-                }
-            }
-        }
+        content
         .navigationTitle(artistName)
-        .wrhythmPageBackground()
         .onAppear {
             if !offlineMode {
                 loadArtist()
             }
         }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if offlineMode {
+            offlineArtistContent
+        } else if isLoading {
+            WRhythmLoadingState(
+                systemImage: "person.2",
+                title: "Loading artist",
+                message: nil
+            )
+            .wrhythmPageBackground()
+        } else if !errorMessage.isEmpty {
+            WRhythmErrorState(
+                title: "Artist Error",
+                message: errorMessage
+            ) {
+                loadArtist()
+            }
+            .wrhythmPageBackground()
+        } else if let artist {
+            onlineArtistContent(artist)
+        }
+    }
+
+    @ViewBuilder
+    private var offlineArtistContent: some View {
+        let albums = downloadedAlbumSummaries(for: artistName)
+        WRhythmScreen(coverArtId: albums.first?.coverArt) {
+            WRhythmHeroHeader(
+                title: artistName,
+                subtitle: "\(albums.count) downloaded album\(albums.count == 1 ? "" : "s")",
+                detail: "Offline artist",
+                systemImage: "person.fill",
+                tint: .indigo,
+                coverArtId: albums.first?.coverArt
+            ) {
+                WRhythmActionStrip {
+                    Button(action: {
+                        playAllDownloadedSongs(for: artistName)
+                    }) {
+                        Label("Play", systemImage: "play.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(albums.isEmpty)
+
+                    Button(action: {
+                        shuffleAllDownloadedSongs(for: artistName)
+                    }) {
+                        Image(systemName: "shuffle")
+                    }
+                    .disabled(albums.isEmpty)
+
+                    artistRadioLink()
+                }
+            }
+
+            if albums.isEmpty {
+                WRhythmEmptyState(
+                    systemImage: "arrow.down.circle",
+                    title: "No downloaded albums",
+                    message: "Download music while online to access this artist offline"
+                )
+            } else {
+                albumSection(albums: albums)
+            }
+        }
+    }
+
+    private func onlineArtistContent(_ artist: ArtistWithAlbums) -> some View {
+        let albums = filteredAlbums(artist.album)
+        return WRhythmScreen(coverArtId: albums.first?.coverArt) {
+            WRhythmHeroHeader(
+                title: artistName,
+                subtitle: "\(albums.count) album\(albums.count == 1 ? "" : "s")",
+                detail: "Artist",
+                systemImage: "person.fill",
+                tint: .indigo,
+                coverArtId: albums.first?.coverArt
+            ) {
+                WRhythmActionStrip {
+                    Button(action: {
+                        playAllSongs(artist)
+                    }) {
+                        Label("Play", systemImage: "play.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(albums.isEmpty)
+
+                    Button(action: {
+                        shuffleAllSongs(artist)
+                    }) {
+                        Image(systemName: "shuffle")
+                    }
+                    .disabled(albums.isEmpty)
+
+                    artistRadioLink()
+
+                    if isArtistDownloaded(artist) {
+                        Button(action: {
+                            deleteArtist(artist)
+                        }) {
+                            Image(systemName: "trash")
+                        }
+                        .tint(.red)
+                    } else {
+                        Button(action: {
+                            downloadArtist(artist)
+                        }) {
+                            Image(systemName: "arrow.down.circle")
+                        }
+                    }
+                }
+            }
+
+            albumSection(albums: albums)
+        }
+    }
+
+    private func albumSection(albums: [AlbumSummary]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            WRhythmSectionHeader(
+                title: "Albums",
+                subtitle: "\(albums.count) album\(albums.count == 1 ? "" : "s")"
+            )
+
+            WRhythmCard(padding: 10) {
+                VStack(spacing: 0) {
+                    ForEach(albums) { album in
+                        NavigationLink(destination: AlbumDetailView(albumId: album.id)) {
+                            WRhythmCollectionRow(
+                                title: album.name,
+                                subtitle: album.year.map(String.init),
+                                coverArtId: album.coverArt,
+                                fallbackSystemImage: "square.stack",
+                                tint: .teal
+                            ) {
+                                if isAlbumDownloaded(album.id) {
+                                    Image(systemName: "arrow.down.circle.fill")
+                                        .font(.caption2)
+                                        .foregroundColor(.green)
+                                }
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .contextMenu {
+                            AlbumContextMenuItems(albumId: album.id, albumName: album.name)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func artistRadioLink() -> some View {
+        NavigationLink(destination: RadioOptionsView(
+            sourceSong: Song(
+                id: artistId,
+                title: artistName,
+                album: nil,
+                albumId: nil,
+                artist: artistName,
+                artistId: artistId,
+                track: nil,
+                year: nil,
+                genre: nil,
+                coverArt: nil,
+                size: nil,
+                contentType: nil,
+                suffix: nil,
+                duration: nil,
+                bitRate: nil,
+                path: nil
+            ),
+            sourceTitle: artistName,
+            sourceType: .artist
+        )) {
+            Image(systemName: "music.note.list")
+        }
+    }
+
+    private func downloadedAlbumSummaries(for artistName: String) -> [AlbumSummary] {
+        downloadManager.getDownloadedAlbums()
+            .filter { $0.artist == artistName }
+            .map { album in
+                AlbumSummary(
+                    id: album.id,
+                    name: album.name,
+                    artist: album.artist,
+                    artistId: nil,
+                    coverArt: album.coverArt,
+                    songCount: 0,
+                    duration: 0,
+                    created: "",
+                    year: nil
+                )
+            }
     }
 
     private func loadArtist() {

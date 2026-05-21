@@ -215,195 +215,176 @@ struct AlbumDetailView: View {
     @State private var isLoading = true
     @State private var errorMessage = ""
     @AppStorage("offlineMode") private var offlineMode = false
-
-    private var player: AudioPlayer { AudioPlayer.shared }
-    private var downloadManager: DownloadManager { DownloadManager.shared }
+    @ObservedObject private var player = AudioPlayer.shared
+    @ObservedObject private var downloadManager = DownloadManager.shared
 
     var body: some View {
-        let _ = print("🔄 AlbumDetailView body recomputed for album: \(albumId)")
-        return ZStack {
-            if offlineMode {
-                // Offline mode: build album from downloaded songs using songMetadata
-                let downloadedSongs = downloadManager.songMetadata.values.filter { song in
-                    downloadManager.isDownloaded(song.id) && song.albumId == albumId
-                }
-                if downloadedSongs.isEmpty {
-                    VStack {
-                        Text("Error")
-                            .font(.headline)
-                        Text("No downloaded songs for this album")
-                            .font(.caption)
-                            .foregroundColor(.red)
-                    }
-                } else {
-                    let sortedSongs = downloadedSongs.sorted { ($0.track ?? 999) < ($1.track ?? 999) }
-                    ScrollView {
-                        VStack(spacing: 12) {
-                            Group {
-                                if let coverArtId = sortedSongs.first?.coverArt,
-                                   let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 300) {
-                                    CachedAsyncImage(url: coverURL) { image in
-                                        image
-                                            .resizable()
-                                            .aspectRatio(contentMode: .fit)
-                                    }
-                                    .id(coverURL)
-                                    .frame(maxWidth: 300, maxHeight: 300)
-                                    .frame(maxWidth: .infinity)
-                                    .cornerRadius(8)
-                                }
-                            }
-                            .id(albumId)
-
-                            VStack(spacing: 4) {
-                                Text(sortedSongs.first?.album ?? "Unknown Album")
-                                    .font(.headline)
-                                if let artist = sortedSongs.first?.artist {
-                                    Text(artist)
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-
-                            HStack(spacing: 8) {
-                                Button(action: {
-                                    player.playQueue(Array(sortedSongs), startingAt: 0)
-                                }) {
-                                    Label("Play", systemImage: "play.fill")
-                                }
-                                .buttonStyle(.borderedProminent)
-
-                                Button(action: {
-                                    player.playQueueShuffled(Array(sortedSongs))
-                                }) {
-                                    Image(systemName: "shuffle")
-                                }
-                                .buttonStyle(.bordered)
-                            }
-
-                            Divider()
-
-                            VStack(spacing: 8) {
-                                ForEach(Array(sortedSongs.enumerated()), id: \.element.id) { index, song in
-                                    TrackRowView(song: song, player: player, downloadManager: downloadManager, offlineMode: offlineMode) {
-                                        player.playQueue(Array(sortedSongs), startingAt: index)
-                                    }
-                                    .id(song.id)
-                                }
-                            }
-                        }
-                        .padding()
-                    }
-                }
-            } else if isLoading {
-                ProgressView("Loading album...")
-            } else if !errorMessage.isEmpty {
-                VStack {
-                    Text("Error")
-                        .font(.headline)
-                    Text(errorMessage)
-                        .font(.caption)
-                        .foregroundColor(.red)
-                    Button("Retry") {
-                        loadAlbum()
-                    }
-                }
-            } else if let album = album {
-                ScrollView {
-                    VStack(spacing: 12) {
-                        Group {
-                            if let coverArtId = album.coverArt,
-                               let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 300) {
-                                CachedAsyncImage(url: coverURL) { image in
-                                    let _ = print("🖼️ AlbumDetail CachedAsyncImage rendering image for album: \(album.id)")
-                                    return image
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fit)
-                                }
-                                .id(coverURL)
-                                .frame(maxWidth: 300, maxHeight: 300)
-                                .frame(maxWidth: .infinity)
-                                .cornerRadius(8)
-                                .onAppear {
-                                    print("✅ AlbumDetail CachedAsyncImage appeared for album: \(album.id), URL: \(coverURL)")
-                                }
-                                .onDisappear {
-                                    print("❌ AlbumDetail CachedAsyncImage disappeared for album: \(album.id)")
-                                }
-                            }
-                        }
-                        .id(album.id)
-
-                        VStack(spacing: 4) {
-                            Text(album.name)
-                                .font(.headline)
-                            if let artist = album.artist, let artistId = album.artistId {
-                                NavigationLink(destination: ArtistDetailView(artistId: artistId, artistName: artist)) {
-                                    Text(artist)
-                                        .font(.caption)
-                                        .foregroundColor(.blue)
-                                }
-                            } else if let artist = album.artist {
-                                Text(artist)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                            if let year = album.year {
-                                Text(String(year))
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-
-                        HStack(spacing: 8) {
-                            Button(action: {
-                                player.playQueue(album.song, startingAt: 0)
-                            }) {
-                                Label("Play", systemImage: "play.fill")
-                            }
-                            .buttonStyle(.borderedProminent)
-
-                            Button(action: {
-                                player.playQueueShuffled(album.song)
-                            }) {
-                                Image(systemName: "shuffle")
-                            }
-                            .buttonStyle(.bordered)
-                        }
-
-                        if let firstSong = album.song.first {
-                            NavigationLink(destination: RadioOptionsView(
-                                sourceSong: firstSong,
-                                sourceTitle: album.name,
-                                sourceType: .album
-                            )) {
-                                Label("Playlist Gen", systemImage: "music.note.list")
-                            }
-                            .buttonStyle(.bordered)
-                        }
-
-                        AlbumDownloadButton(album: album)
-
-                        Divider()
-
-                        VStack(spacing: 8) {
-                            ForEach(Array(filteredSongs(album.song).enumerated()), id: \.element.id) { index, song in
-                                TrackRowView(song: song, player: player, downloadManager: downloadManager, offlineMode: offlineMode) {
-                                    player.playQueue(album.song, startingAt: index)
-                                }
-                                .id(song.id)
-                            }
-                        }
-                    }
-                    .padding()
-                }
-            }
-        }
+        content
         .navigationTitle("Album")
-        .wrhythmPageBackground(coverArtId: album?.coverArt)
         .onAppear {
             if !offlineMode {
                 loadAlbum()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if offlineMode {
+            offlineAlbumContent
+        } else if isLoading {
+            WRhythmLoadingState(
+                systemImage: "square.stack",
+                title: "Loading album",
+                message: nil
+            )
+            .wrhythmPageBackground()
+        } else if !errorMessage.isEmpty {
+            WRhythmErrorState(
+                title: "Album Error",
+                message: errorMessage
+            ) {
+                loadAlbum()
+            }
+            .wrhythmPageBackground()
+        } else if let album {
+            onlineAlbumContent(album)
+        }
+    }
+
+    @ViewBuilder
+    private var offlineAlbumContent: some View {
+        let songs = offlineAlbumSongs
+        if songs.isEmpty {
+            WRhythmErrorState(
+                title: "Album unavailable offline",
+                message: "No downloaded songs were found for this album.",
+                actionTitle: "Retry"
+            ) {}
+            .wrhythmPageBackground()
+        } else {
+            WRhythmScreen(coverArtId: songs.first?.coverArt) {
+                WRhythmHeroHeader(
+                    title: songs.first?.album ?? "Unknown Album",
+                    subtitle: songs.first?.artist,
+                    detail: "\(songs.count) downloaded song\(songs.count == 1 ? "" : "s")",
+                    systemImage: "square.stack",
+                    tint: .teal,
+                    coverArtId: songs.first?.coverArt
+                ) {
+                    WRhythmActionStrip {
+                        Button(action: {
+                            player.playQueue(songs, startingAt: 0)
+                        }) {
+                            Label("Play", systemImage: "play.fill")
+                        }
+                        .buttonStyle(.borderedProminent)
+
+                        Button(action: {
+                            player.playQueueShuffled(songs)
+                        }) {
+                            Image(systemName: "shuffle")
+                        }
+                    }
+                }
+
+                trackSection(songs: songs, queue: songs)
+            }
+        }
+    }
+
+    private func onlineAlbumContent(_ album: Album) -> some View {
+        WRhythmScreen(coverArtId: album.coverArt) {
+            WRhythmHeroHeader(
+                title: album.name,
+                subtitle: album.artist,
+                detail: albumDetailText(album),
+                systemImage: "square.stack",
+                tint: .teal,
+                coverArtId: album.coverArt
+            ) {
+                WRhythmActionStrip {
+                    Button(action: {
+                        player.playQueue(album.song, startingAt: 0)
+                    }) {
+                        Label("Play", systemImage: "play.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+
+                    Button(action: {
+                        player.playQueueShuffled(album.song)
+                    }) {
+                        Image(systemName: "shuffle")
+                    }
+
+                    if let firstSong = album.song.first {
+                        NavigationLink(destination: RadioOptionsView(
+                            sourceSong: firstSong,
+                            sourceTitle: album.name,
+                            sourceType: .album
+                        )) {
+                            Image(systemName: "music.note.list")
+                        }
+                    }
+
+                    AlbumDownloadButton(album: album)
+                }
+            }
+
+            if let artist = album.artist, let artistId = album.artistId {
+                NavigationLink(destination: ArtistDetailView(artistId: artistId, artistName: artist)) {
+                    WRhythmCard(padding: 12) {
+                        WRhythmCollectionRow(
+                            title: artist,
+                            subtitle: "Artist",
+                            coverArtId: album.coverArt,
+                            fallbackSystemImage: "person.fill",
+                            tint: .indigo
+                        ) {
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+
+            trackSection(songs: filteredSongs(album.song), queue: album.song)
+        }
+    }
+
+    private var offlineAlbumSongs: [Song] {
+        downloadManager.songMetadata.values
+            .filter { song in
+                downloadManager.isDownloaded(song.id) && song.albumId == albumId
+            }
+            .sorted { ($0.track ?? 999) < ($1.track ?? 999) }
+    }
+
+    private func albumDetailText(_ album: Album) -> String {
+        var parts = ["\(album.song.count) song\(album.song.count == 1 ? "" : "s")"]
+        if let year = album.year {
+            parts.append(String(year))
+        }
+        return parts.joined(separator: " - ")
+    }
+
+    private func trackSection(songs: [Song], queue: [Song]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            WRhythmSectionHeader(
+                title: "Tracks",
+                subtitle: "\(songs.count) song\(songs.count == 1 ? "" : "s")"
+            )
+
+            WRhythmCard(padding: 10) {
+                VStack(spacing: 0) {
+                    ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
+                        TrackRowView(song: song, player: player, downloadManager: downloadManager, offlineMode: offlineMode) {
+                            player.playQueue(queue, startingAt: index)
+                        }
+                    }
+                }
             }
         }
     }

@@ -42,29 +42,18 @@ struct TrackRowView: View {
 
     var body: some View {
         Button(action: onTap) {
-            HStack(spacing: 10) {
-                WRhythmArtworkThumbnail(coverArtId: song.coverArt, size: 42)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(song.title)
-                        .font(.subheadline.weight(.medium))
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if let artist = song.artist {
-                        Text(artist)
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                    }
-                }
-
-                Spacer(minLength: 4)
-
+            WRhythmMediaRow(
+                title: song.title,
+                subtitle: song.artist,
+                detail: song.album,
+                coverArtId: song.coverArt,
+                artworkSize: 44,
+                isCurrent: isCurrentAndPlaying,
+                isPlaying: isCurrentAndPlaying
+            ) {
                 HStack(spacing: 6) {
-                    // Download/Delete button
                     if isDownloaded {
                         if !offlineMode {
-                            // Online mode: tappable to delete
                             Button(action: onDelete) {
                                 Image(systemName: "arrow.down.circle.fill")
                                     .font(.caption2)
@@ -86,7 +75,6 @@ struct TrackRowView: View {
                         .buttonStyle(.plain)
                     }
 
-                    // Heart/favorite button (online mode only)
                     if !offlineMode {
                         Button(action: onToggleFavorite) {
                             Image(systemName: isStarred ? "heart.fill" : "heart")
@@ -96,7 +84,6 @@ struct TrackRowView: View {
                         .buttonStyle(.plain)
                     }
 
-                    // Radio button (online mode only) - navigate to radio options
                     if !offlineMode {
                         NavigationLink(destination: RadioOptionsView(
                             sourceSong: song,
@@ -109,16 +96,8 @@ struct TrackRowView: View {
                         }
                         .buttonStyle(.plain)
                     }
-
-                    // Now playing indicator
-                    if isCurrentAndPlaying {
-                        Image(systemName: "speaker.wave.2.fill")
-                            .font(.caption2)
-                            .foregroundColor(.accentColor)
-                    }
                 }
             }
-            .padding(.vertical, 4)
         }
         .buttonStyle(.plain)
         .contextMenu {
