@@ -9,7 +9,7 @@ import SwiftUI
 
 struct DownloadsView: View {
     @ObservedObject var downloadManager = DownloadManager.shared
-    @State private var showingDeleteConfirmation = false
+    @State private var presentedSheet: DownloadsSheet?
     @State private var deleteConfirmationText = ""
     @State private var displayedSongCount = 20  // Start with 20 songs
 
@@ -157,7 +157,7 @@ struct DownloadsView: View {
                             Spacer()
 
                             Button(action: {
-                                showingDeleteConfirmation = true
+                                presentedSheet = .deleteAll
                                 deleteConfirmationText = ""
                             }) {
                                 Label("Delete All", systemImage: "trash")
@@ -165,7 +165,9 @@ struct DownloadsView: View {
                             .buttonStyle(.bordered)
                             .tint(.red)
                         }
-                        .sheet(isPresented: $showingDeleteConfirmation) {
+                        .sheet(item: $presentedSheet) { sheet in
+                            switch sheet {
+                            case .deleteAll:
                             NavigationView {
                                 VStack(spacing: 16) {
                                     Text("Delete All Downloads?")
@@ -186,7 +188,7 @@ struct DownloadsView: View {
 
                                     Button(action: {
                                         downloadManager.deleteAll()
-                                        showingDeleteConfirmation = false
+                                        presentedSheet = nil
                                         deleteConfirmationText = ""
                                     }) {
                                         Text("Delete All")
@@ -205,11 +207,12 @@ struct DownloadsView: View {
                                 .toolbar {
                                     ToolbarItem(placement: .cancellationAction) {
                                         Button("Cancel") {
-                                            showingDeleteConfirmation = false
+                                            presentedSheet = nil
                                             deleteConfirmationText = ""
                                         }
                                     }
                                 }
+                            }
                             }
                         }
                     }
@@ -318,4 +321,10 @@ struct DownloadsView: View {
         formatter.countStyle = .file
         return formatter.string(fromByteCount: bytes)
     }
+}
+
+private enum DownloadsSheet: String, Identifiable {
+    case deleteAll
+
+    var id: String { rawValue }
 }

@@ -13,7 +13,7 @@ struct SettingsView: View {
     @ObservedObject var deviceSyncManager = DeviceSyncManager.shared
     @AppStorage("offlineMode") private var offlineMode = false
     @AppStorage("radioDownloadCount") private var radioDownloadCount = 25
-    @State private var showingLogoutConfirmation = false
+    @State private var presentedSheet: SettingsSheet?
     @State private var logoutConfirmationText = ""
     @State private var selectedQuality: AudioQuality = DownloadManager.shared.audioQuality
     @AppStorage("streamingQuality") private var streamingQualityRaw = StreamingQuality.platformDefault.rawValue
@@ -225,7 +225,7 @@ struct SettingsView: View {
 
             Section {
                 Button(role: .destructive, action: {
-                    showingLogoutConfirmation = true
+                    presentedSheet = .logout
                     logoutConfirmationText = ""
                 }) {
                     Text("Logout")
@@ -276,7 +276,9 @@ struct SettingsView: View {
                 Text("This will re-download all songs in the new quality.")
             }
         }
-        .sheet(isPresented: $showingLogoutConfirmation) {
+        .sheet(item: $presentedSheet) { sheet in
+            switch sheet {
+            case .logout:
             NavigationView {
                 ScrollView {
                     VStack(spacing: 8) {
@@ -333,7 +335,7 @@ struct SettingsView: View {
 
                         Button(action: {
                             api.logout()
-                            showingLogoutConfirmation = false
+                            presentedSheet = nil
                             logoutConfirmationText = ""
                         }) {
                             Text("Delete All Data & Logout")
@@ -351,14 +353,21 @@ struct SettingsView: View {
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Cancel") {
-                            showingLogoutConfirmation = false
+                            presentedSheet = nil
                             logoutConfirmationText = ""
                         }
                     }
                 }
             }
+            }
         }
     }
+}
+
+private enum SettingsSheet: String, Identifiable {
+    case logout
+
+    var id: String { rawValue }
 }
 
 private struct SettingsInfoRow: View {

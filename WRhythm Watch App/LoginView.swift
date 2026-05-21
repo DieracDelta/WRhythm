@@ -16,7 +16,7 @@ struct LoginView: View {
     @State private var isLoading = false
     @State private var errorMessage = ""
     @State private var showError = false
-    @State private var showingHelpSheet = false
+    @State private var presentedSheet: LoginSheet?
 
     var body: some View {
         NavigationView {
@@ -32,7 +32,7 @@ struct LoginView: View {
                             .font(.title2.weight(.semibold))
 
                         Button(action: {
-                            showingHelpSheet = true
+                            presentedSheet = .help
                         }) {
                             Image(systemName: "info.circle")
                                 .font(.caption)
@@ -94,7 +94,9 @@ struct LoginView: View {
             }
             .wrhythmPageBackground()
         }
-        .sheet(isPresented: $showingHelpSheet) {
+        .sheet(item: $presentedSheet) { sheet in
+            switch sheet {
+            case .help:
             NavigationView {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
@@ -121,6 +123,7 @@ struct LoginView: View {
                 }
                 .navigationTitle("Help")
                 .platformNavigationBarTitleDisplayModeInline()
+            }
             }
         }
         .onAppear {
@@ -174,6 +177,12 @@ struct LoginView: View {
         errorMessage = message
         showError = true
     }
+}
+
+private enum LoginSheet: String, Identifiable {
+    case help
+
+    var id: String { rawValue }
 }
 
 #Preview {
