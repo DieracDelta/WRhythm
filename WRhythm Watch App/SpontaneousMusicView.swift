@@ -17,29 +17,14 @@ struct SpontaneousMusicView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 20) {
-                // Header
-                VStack(spacing: 8) {
-                    Image(systemName: "shuffle")
-                        .font(.system(size: 56, weight: .semibold))
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundColor(.accentColor)
-                        .frame(width: 96, height: 96)
-                        .background(.regularMaterial, in: Circle())
+            VStack(spacing: WRhythmVisual.sectionSpacing) {
+                WRhythmFeatureHeader(
+                    title: "Spontaneous Music",
+                    subtitle: offlineMode ? "Shuffle downloaded songs" : "Shuffle all songs",
+                    systemImage: "shuffle",
+                    tint: .orange
+                )
 
-                    Text("Spontaneous Music")
-                        .font(.headline)
-
-                    Text(offlineMode ? "Shuffle downloaded songs" : "Shuffle all songs")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .padding(.top, 20)
-
-                Divider()
-
-                // Shuffle Button
                 Button(action: {
                     shuffleAll()
                 }) {
@@ -56,20 +41,27 @@ struct SpontaneousMusicView: View {
                 .disabled(isLoading)
 
                 if isLoading {
-                    ProgressView()
-                        .padding()
+                    WRhythmCard {
+                        HStack(spacing: 10) {
+                            ProgressView()
+                            Text("Finding music")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
                 }
 
                 if !errorMessage.isEmpty {
-                    Text(errorMessage)
-                        .font(.caption)
-                        .foregroundColor(.red)
-                        .multilineTextAlignment(.center)
-                        .padding()
+                    WRhythmCard {
+                        Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundColor(.red)
+                            .multilineTextAlignment(.leading)
+                    }
                 }
 
-                // Info section
-                VStack(alignment: .leading, spacing: 8) {
+                WRhythmCard {
+                    VStack(alignment: .leading, spacing: 8) {
                     if offlineMode {
                         HStack {
                             Image(systemName: "info.circle")
@@ -95,9 +87,8 @@ struct SpontaneousMusicView: View {
                             .font(.caption2)
                             .foregroundColor(.secondary)
                     }
+                    }
                 }
-                .padding()
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous))
 
                 Spacer()
             }

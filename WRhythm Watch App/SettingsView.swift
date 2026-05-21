@@ -31,44 +31,27 @@ struct SettingsView: View {
         List {
             Section {
                 if let serverURL = UserDefaults.standard.string(forKey: "navidrome_url") {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Server")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text(serverURL)
-                            .font(.caption2)
-                            .lineLimit(2)
-                    }
+                    SettingsInfoRow(title: "Server", value: serverURL, systemImage: "server.rack")
                 }
 
                 if let username = UserDefaults.standard.string(forKey: "navidrome_username") {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Username")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text(username)
-                            .font(.caption2)
-                    }
+                    SettingsInfoRow(title: "Username", value: username, systemImage: "person.crop.circle")
                 }
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Version")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Text("\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"))")
-                        .font(.caption2)
-                }
+                SettingsInfoRow(
+                    title: "Version",
+                    value: "\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"))",
+                    systemImage: "app.badge"
+                )
             }
 
             Section(header: Text("Appearance")) {
                 Toggle(isOn: $darkModeEnabled) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Dark Mode")
-                            .font(.caption)
-                        Text(darkModeEnabled ? "Use dark appearance" : "Use light appearance")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
+                    SettingsToggleLabel(
+                        title: "Dark Mode",
+                        subtitle: darkModeEnabled ? "Use dark appearance" : "Use light appearance",
+                        systemImage: darkModeEnabled ? "moon.fill" : "sun.max"
+                    )
                 }
             }
 
@@ -208,45 +191,36 @@ struct SettingsView: View {
 
             Section(header: Text("Offline")) {
                 Toggle(isOn: $offlineMode) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Offline Mode")
-                            .font(.caption)
-                        Text("Only show downloaded content")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
+                    SettingsToggleLabel(
+                        title: "Offline Mode",
+                        subtitle: "Only show downloaded content",
+                        systemImage: "wifi.slash"
+                    )
                 }
             }
 
             Section(header: Text("Devices")) {
                 Toggle(isOn: $deviceSyncManager.syncModeEnabled) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Sync Mode")
-                            .font(.caption)
-                        Text("Show and control playback on nearby WRhythm devices")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
+                    SettingsToggleLabel(
+                        title: "Sync Mode",
+                        subtitle: "Show and control playback on nearby WRhythm devices",
+                        systemImage: "display.2"
+                    )
                 }
 
                 Toggle(isOn: $deviceSyncManager.credentialSyncEnabled) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Sync Credentials")
-                            .font(.caption)
-                        Text("Only fills empty logins on devices that also enabled this")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
+                    SettingsToggleLabel(
+                        title: "Sync Credentials",
+                        subtitle: "Only fills empty logins on devices that also enabled this",
+                        systemImage: "key"
+                    )
                 }
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Connected")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Text(deviceSyncManager.connectedDeviceNames.isEmpty ? "No nearby devices" : deviceSyncManager.connectedDeviceNames.joined(separator: ", "))
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
+                SettingsInfoRow(
+                    title: "Connected",
+                    value: deviceSyncManager.connectedDeviceNames.isEmpty ? "No nearby devices" : deviceSyncManager.connectedDeviceNames.joined(separator: ", "),
+                    systemImage: "point.3.connected.trianglepath.dotted"
+                )
             }
 
             Section {
@@ -384,6 +358,51 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+}
+
+private struct SettingsInfoRow: View {
+    let title: String
+    let value: String
+    let systemImage: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            WRhythmIconBadge(systemImage: systemImage, tint: .accentColor, size: 32)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.caption.weight(.medium))
+                Text(value)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+}
+
+private struct SettingsToggleLabel: View {
+    let title: String
+    let subtitle: String
+    let systemImage: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            WRhythmIconBadge(systemImage: systemImage, tint: .accentColor, size: 32)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.caption.weight(.medium))
+                Text(subtitle)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.vertical, 2)
     }
 }
 

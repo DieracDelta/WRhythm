@@ -118,29 +118,17 @@ struct ArtistsView: View {
             artist.name.localizedCaseInsensitiveContains(searchText)
         }
         if downloadedArtists.isEmpty {
-            VStack {
-                Image(systemName: "arrow.down.circle")
-                    .font(.largeTitle)
-                    .foregroundColor(.secondary)
-                Text("No downloaded artists")
-                    .font(.headline)
-                Text("Download music while online to access it here")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
-            }
+            WRhythmEmptyState(
+                systemImage: "arrow.down.circle",
+                title: "No downloaded artists",
+                message: "Download music while online to access it here"
+            )
         } else if filteredArtists.isEmpty {
-            VStack {
-                Image(systemName: "magnifyingglass")
-                    .font(.largeTitle)
-                    .foregroundColor(.secondary)
-                Text("No artists found")
-                    .font(.headline)
-                Text("Try a different search term")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
+            WRhythmEmptyState(
+                systemImage: "magnifyingglass",
+                title: "No artists found",
+                message: "Try a different search term"
+            )
         } else {
             List {
                 ForEach(Array(filteredArtists.enumerated()), id: \.element.name) { index, artist in
@@ -180,34 +168,35 @@ struct ArtistsView: View {
     @ViewBuilder
     private var onlineContent: some View {
         if libraryDataManager.isLoadingArtists {
-            VStack(spacing: 8) {
-                ProgressView("Loading all artists...")
-                
-                Text("Please wait...")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+            WRhythmEmptyState(
+                systemImage: "person.2",
+                title: "Loading artists",
+                message: "Please wait..."
+            )
+            .overlay {
+                ProgressView()
+                    .padding(.top, 96)
             }
         } else if !libraryDataManager.artistsErrorMessage.isEmpty {
-            VStack {
-                Text("Error")
-                    .font(.headline)
-                Text(libraryDataManager.artistsErrorMessage)
-                    .font(.caption)
-                    .foregroundColor(.red)
-                Button("Retry") {
+            WRhythmEmptyState(
+                systemImage: "exclamationmark.triangle.fill",
+                title: "Artist Error",
+                message: libraryDataManager.artistsErrorMessage,
+                actionTitle: "Retry"
+            ) {
                     libraryDataManager.fetchArtists(forceRefresh: true)
-                }
             }
         } else if displayedArtists.isEmpty && !libraryDataManager.artists.isEmpty {
            // Initializing display
            ProgressView()
         } else if displayedArtists.isEmpty {
-            VStack {
-                Text("No artists found")
-                    .foregroundColor(.secondary)
-                Button("Retry") {
+            WRhythmEmptyState(
+                systemImage: "person.2",
+                title: "No artists found",
+                message: nil,
+                actionTitle: "Retry"
+            ) {
                     libraryDataManager.fetchArtists(forceRefresh: true)
-                }
             }
         } else {
             List {

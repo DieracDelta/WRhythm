@@ -155,51 +155,19 @@ struct AlbumsView: View {
 
             if downloadedAlbums.isEmpty {
 
-                VStack {
-
-                    Image(systemName: "arrow.down.circle")
-
-                        .font(.largeTitle)
-
-                        .foregroundColor(.secondary)
-
-                    Text("No downloaded albums")
-
-                        .font(.headline)
-
-                    Text("Download albums while online to access them here")
-
-                        .font(.caption)
-
-                        .foregroundColor(.secondary)
-
-                        .multilineTextAlignment(.center)
-
-                        .padding(.horizontal)
-
-                }
+                WRhythmEmptyState(
+                    systemImage: "arrow.down.circle",
+                    title: "No downloaded albums",
+                    message: "Download albums while online to access them here"
+                )
 
             } else if filteredAlbums.isEmpty {
 
-                VStack {
-
-                    Image(systemName: "magnifyingglass")
-
-                        .font(.largeTitle)
-
-                        .foregroundColor(.secondary)
-
-                    Text("No albums found")
-
-                        .font(.headline)
-
-                    Text("Try a different search term")
-
-                        .font(.caption)
-
-                        .foregroundColor(.secondary)
-
-                }
+                WRhythmEmptyState(
+                    systemImage: "magnifyingglass",
+                    title: "No albums found",
+                    message: "Try a different search term"
+                )
 
             } else {
 
@@ -275,53 +243,39 @@ struct AlbumsView: View {
 
             if libraryDataManager.albums.isEmpty && libraryDataManager.isLoadingAlbums {
 
-                VStack(spacing: 8) {
-
-                    ProgressView("Loading albums...")
-
-                    Text("Please wait...")
-
-                        .font(.caption)
-
-                        .foregroundColor(.secondary)
-
+                WRhythmEmptyState(
+                    systemImage: "square.stack",
+                    title: "Loading albums",
+                    message: "Please wait..."
+                )
+                .overlay {
+                    ProgressView()
+                        .padding(.top, 96)
                 }
 
             } else if !libraryDataManager.albumsErrorMessage.isEmpty && libraryDataManager.albums.isEmpty {
 
-                VStack {
-
-                    Text("Error")
-
-                        .font(.headline)
-
-                    Text(libraryDataManager.albumsErrorMessage)
-
-                        .font(.caption)
-
-                        .foregroundColor(.red)
-
-                    Button("Retry") {
+                WRhythmEmptyState(
+                    systemImage: "exclamationmark.triangle.fill",
+                    title: "Album Error",
+                    message: libraryDataManager.albumsErrorMessage,
+                    actionTitle: "Retry"
+                ) {
 
                         libraryDataManager.fetchInitialAlbums(forceRefresh: true)
-
-                    }
 
                 }
 
             } else if libraryDataManager.albums.isEmpty {
 
-                VStack {
-
-                    Text("No albums found")
-
-                        .foregroundColor(.secondary)
-
-                    Button("Retry") {
+                WRhythmEmptyState(
+                    systemImage: "square.stack",
+                    title: "No albums found",
+                    message: nil,
+                    actionTitle: "Retry"
+                ) {
 
                         libraryDataManager.fetchInitialAlbums(forceRefresh: true)
-
-                    }
 
                 }
 

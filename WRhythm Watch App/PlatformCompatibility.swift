@@ -110,6 +110,8 @@ enum WRhythmVisual {
     static let cornerRadius: CGFloat = 18
     static let compactCornerRadius: CGFloat = 12
     static let thumbnailCornerRadius: CGFloat = 9
+    static let sectionSpacing: CGFloat = 14
+    static let cardPadding: CGFloat = 14
 
     static var pageBackground: LinearGradient {
         LinearGradient(
@@ -121,6 +123,122 @@ enum WRhythmVisual {
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
+    }
+}
+
+struct WRhythmCard<Content: View>: View {
+    var padding: CGFloat = WRhythmVisual.cardPadding
+    private let content: Content
+
+    init(padding: CGFloat = WRhythmVisual.cardPadding, @ViewBuilder content: () -> Content) {
+        self.padding = padding
+        self.content = content()
+    }
+
+    var body: some View {
+        content
+            .padding(padding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
+            }
+    }
+}
+
+struct WRhythmFeatureHeader: View {
+    let title: String
+    let subtitle: String?
+    let systemImage: String
+    var tint: Color = .accentColor
+    var coverArtId: String?
+
+    var body: some View {
+        VStack(spacing: 10) {
+            ZStack {
+                if let coverArtId,
+                   let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 180) {
+                    CachedAsyncImage(url: coverURL) { image in
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    }
+                    .saturation(1.08)
+                } else {
+                    LinearGradient(
+                        colors: [tint.opacity(0.42), Color.primary.opacity(0.10)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    Image(systemName: systemImage)
+                        .font(.system(size: 44, weight: .semibold))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundColor(tint)
+                }
+            }
+            .frame(width: 92, height: 92)
+            .clipShape(RoundedRectangle(cornerRadius: WRhythmVisual.cornerRadius, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: WRhythmVisual.cornerRadius, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+            }
+            .shadow(color: tint.opacity(0.20), radius: 20, y: 10)
+
+            VStack(spacing: 4) {
+                Text(title)
+                    .font(.headline)
+                    .multilineTextAlignment(.center)
+                if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 8)
+    }
+}
+
+struct WRhythmIconBadge: View {
+    let systemImage: String
+    var tint: Color = .accentColor
+    var size: CGFloat = 34
+
+    var body: some View {
+        Image(systemName: systemImage)
+            .font(.system(size: max(14, size * 0.42), weight: .semibold))
+            .symbolRenderingMode(.hierarchical)
+            .foregroundColor(tint)
+            .frame(width: size, height: size)
+            .background(tint.opacity(0.14), in: RoundedRectangle(cornerRadius: min(10, size * 0.28), style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: min(10, size * 0.28), style: .continuous)
+                    .strokeBorder(tint.opacity(0.18), lineWidth: 1)
+            }
+    }
+}
+
+struct WRhythmMetricRow: View {
+    let title: String
+    let value: String
+    var valueColor: Color = .primary
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text(title)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+            Spacer(minLength: 8)
+            Text(value)
+                .font(.caption.weight(.semibold))
+                .foregroundColor(valueColor)
+                .monospacedDigit()
+        }
     }
 }
 

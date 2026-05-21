@@ -45,8 +45,7 @@ struct PlaylistsView: View {
                             ProgressView()
                                 .scaleEffect(0.8)
                         } else {
-                            Text("🔄")
-                                .font(.title3)
+                            Image(systemName: "arrow.clockwise")
                         }
                     }
                     .buttonStyle(.bordered)
@@ -55,8 +54,7 @@ struct PlaylistsView: View {
                     Button(action: {
                         showingSearchSheet = true
                     }) {
-                        Text("🔍")
-                            .font(.title3)
+                        Image(systemName: "magnifyingglass")
                     }
                     .buttonStyle(.bordered)
 
@@ -64,8 +62,7 @@ struct PlaylistsView: View {
                         Button(action: {
                             searchText = ""
                         }) {
-                            Text("✕")
-                                .font(.title3)
+                            Image(systemName: "xmark.circle.fill")
                                 .foregroundColor(.secondary)
                         }
                         .buttonStyle(.plain)
@@ -117,18 +114,11 @@ struct PlaylistsView: View {
     private var offlineContent: some View {
         // Offline mode: show cached playlists
         if filteredCachedPlaylists.isEmpty {
-            VStack {
-                Image(systemName: "music.note.list")
-                    .font(.largeTitle)
-                    .foregroundColor(.secondary)
-                Text("No cached playlists")
-                    .font(.headline)
-                Text("View playlists while online to cache them")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
-            }
+            WRhythmEmptyState(
+                systemImage: "music.note.list",
+                title: "No cached playlists",
+                message: "View playlists while online to cache them"
+            )
         } else {
             List(filteredCachedPlaylists, id: \.id) { playlist in
                 NavigationLink(destination: PlaylistDetailView(playlistId: playlist.id, playlistName: playlist.name)) {
@@ -157,25 +147,32 @@ struct PlaylistsView: View {
     @ViewBuilder
     private var onlineContent: some View {
         if libraryDataManager.playlists.isEmpty && libraryDataManager.isLoadingPlaylists {
-            ProgressView("Loading playlists...")
+            WRhythmEmptyState(
+                systemImage: "music.note.list",
+                title: "Loading playlists",
+                message: nil
+            )
+            .overlay {
+                ProgressView()
+                    .padding(.top, 96)
+            }
         } else if !libraryDataManager.playlistsErrorMessage.isEmpty && libraryDataManager.playlists.isEmpty {
-            VStack {
-                Text("Error")
-                    .font(.headline)
-                Text(libraryDataManager.playlistsErrorMessage)
-                    .font(.caption)
-                    .foregroundColor(.red)
-                Button("Retry") {
+            WRhythmEmptyState(
+                systemImage: "exclamationmark.triangle.fill",
+                title: "Playlist Error",
+                message: libraryDataManager.playlistsErrorMessage,
+                actionTitle: "Retry"
+            ) {
                     libraryDataManager.fetchPlaylists(forceRefresh: true)
-                }
             }
         } else if libraryDataManager.playlists.isEmpty {
-            VStack {
-                Text("No playlists")
-                    .foregroundColor(.secondary)
-                Button("Retry") {
+            WRhythmEmptyState(
+                systemImage: "music.note.list",
+                title: "No playlists",
+                message: nil,
+                actionTitle: "Retry"
+            ) {
                     libraryDataManager.fetchPlaylists(forceRefresh: true)
-                }
             }
         } else {
             List(filteredPlaylists) { playlist in

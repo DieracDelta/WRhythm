@@ -73,19 +73,11 @@ struct FavouritesView: View {
     private var offlineContent: some View {
         // Offline mode: show starred songs from local cache
         if offlineStarredSongs.isEmpty {
-            VStack {
-                Image(systemName: "star")
-                    .font(.largeTitle)
-                    .foregroundColor(.secondary)
-                Text("No favourites available offline")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Text("Star and download songs while online to see them here")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
-            }
+            WRhythmEmptyState(
+                systemImage: "star",
+                title: "No favourites available offline",
+                message: "Star and download songs while online to see them here"
+            )
         } else {
             ScrollView {
                 VStack(spacing: 16) {
@@ -127,33 +119,31 @@ struct FavouritesView: View {
     @ViewBuilder
     private var onlineContent: some View {
         if libraryDataManager.isLoadingStarred {
-            ProgressView("Loading favourites...")
+            WRhythmEmptyState(
+                systemImage: "star",
+                title: "Loading favourites",
+                message: nil
+            )
+            .overlay {
+                ProgressView()
+                    .padding(.top, 96)
+            }
         } else if !libraryDataManager.starredErrorMessage.isEmpty {
-            VStack {
-                Text("Error")
-                    .font(.headline)
-                Text(libraryDataManager.starredErrorMessage)
-                    .font(.caption)
-                    .foregroundColor(.red)
-                Button("Retry") {
+            WRhythmEmptyState(
+                systemImage: "exclamationmark.triangle.fill",
+                title: "Favourites Error",
+                message: libraryDataManager.starredErrorMessage,
+                actionTitle: "Retry"
+            ) {
                     libraryDataManager.fetchStarred(forceRefresh: true)
-                }
             }
         } else if let starred = libraryDataManager.starred {
             if (starred.song?.isEmpty ?? true) && (starred.album?.isEmpty ?? true) && (starred.artist?.isEmpty ?? true) {
-                VStack {
-                    Image(systemName: "star")
-                        .font(.largeTitle)
-                        .foregroundColor(.secondary)
-                    Text("No favourites yet")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Text("Star items in Navidrome to see them here")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal)
-                }
+                WRhythmEmptyState(
+                    systemImage: "star",
+                    title: "No favourites yet",
+                    message: "Star items in Navidrome to see them here"
+                )
             } else {
                 ScrollView {
                     VStack(spacing: 16) {

@@ -17,76 +17,42 @@ struct DownloadsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 12) {
-                // Download Statistics Panel
+            VStack(spacing: WRhythmVisual.sectionSpacing) {
                 let totalPending = downloadManager.getTotalPendingDownloads()
                 if totalPending > 0 || downloadManager.isPaused {
-                    VStack(spacing: 8) {
+                    WRhythmCard(padding: 12) {
+                        VStack(spacing: 10) {
                         HStack {
-                            Image(systemName: "arrow.down.circle.fill")
-                                .foregroundColor(.blue)
+                            WRhythmIconBadge(systemImage: "arrow.down.circle.fill", tint: .blue, size: 30)
                             Text("Download Status")
-                                .font(.caption)
-                                .fontWeight(.semibold)
+                                .font(.headline)
                             Spacer()
                         }
 
                         VStack(spacing: 4) {
-                            HStack {
-                                Text("Completed:")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                                Spacer()
-                                Text("\(downloadManager.sessionCompletedCount)")
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                                    .foregroundColor(.green)
-                            }
+                            WRhythmMetricRow(
+                                title: "Completed",
+                                value: "\(downloadManager.sessionCompletedCount)",
+                                valueColor: .green
+                            )
 
-                            HStack {
-                                Text("Active:")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                                Spacer()
-                                Text("\(downloadManager.getActiveDownloadCount())")
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                                    .foregroundColor(.blue)
-                            }
+                            WRhythmMetricRow(
+                                title: "Active",
+                                value: "\(downloadManager.getActiveDownloadCount())",
+                                valueColor: .blue
+                            )
 
-                            HStack {
-                                Text("Queued:")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                                Spacer()
-                                Text("\(downloadManager.getQueuedDownloadCount())")
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                                    .foregroundColor(.orange)
-                            }
+                            WRhythmMetricRow(
+                                title: "Queued",
+                                value: "\(downloadManager.getQueuedDownloadCount())",
+                                valueColor: .orange
+                            )
 
-                            HStack {
-                                Text("Total:")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                                Spacer()
-                                Text("\(downloadManager.sessionTotalCount)")
-                                    .font(.caption)
-                                    .fontWeight(.bold)
-                                    .foregroundColor(.primary)
-                            }
+                            WRhythmMetricRow(title: "Total", value: "\(downloadManager.sessionTotalCount)")
 
                             if downloadManager.getActiveDownloadCount() > 0 {
                                 let avgProgress = downloadManager.getAverageDownloadProgress()
-                                HStack {
-                                    Text("Avg Progress:")
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
-                                    Spacer()
-                                    Text("\(Int(avgProgress * 100))%")
-                                        .font(.caption)
-                                        .fontWeight(.medium)
-                                }
+                                WRhythmMetricRow(title: "Avg Progress", value: "\(Int(avgProgress * 100))%")
 
                                 ProgressView(value: avgProgress)
                                     .progressViewStyle(.linear)
@@ -100,37 +66,9 @@ struct DownloadsView: View {
                                 let remainingBytes = downloadManager.getBytesRemaining()
 
                                 VStack(spacing: 4) {
-                                    HStack {
-                                        Text("Downloaded:")
-                                            .font(.caption2)
-                                            .foregroundColor(.secondary)
-                                        Spacer()
-                                        Text(formatBytes(downloadedBytes))
-                                            .font(.caption)
-                                            .fontWeight(.medium)
-                                            .foregroundColor(.green)
-                                    }
-
-                                    HStack {
-                                        Text("Total Size:")
-                                            .font(.caption2)
-                                            .foregroundColor(.secondary)
-                                        Spacer()
-                                        Text(formatBytes(totalBytes))
-                                            .font(.caption)
-                                            .fontWeight(.medium)
-                                    }
-
-                                    HStack {
-                                        Text("Remaining:")
-                                            .font(.caption2)
-                                            .foregroundColor(.secondary)
-                                        Spacer()
-                                        Text(formatBytes(remainingBytes))
-                                            .font(.caption)
-                                            .fontWeight(.bold)
-                                            .foregroundColor(.orange)
-                                    }
+                                    WRhythmMetricRow(title: "Downloaded", value: formatBytes(downloadedBytes), valueColor: .green)
+                                    WRhythmMetricRow(title: "Total Size", value: formatBytes(totalBytes))
+                                    WRhythmMetricRow(title: "Remaining", value: formatBytes(remainingBytes), valueColor: .orange)
 
                                     if totalBytes > 0 {
                                         let bytesProgress = Double(downloadedBytes) / Double(totalBytes)
@@ -185,7 +123,7 @@ struct DownloadsView: View {
                         NavigationLink(destination: ActiveDownloadsView()) {
                             HStack {
                                 Text("View Details")
-                                    .font(.caption2)
+                                    .font(.caption.weight(.medium))
                                 Spacer()
                                 Image(systemName: "chevron.right")
                                     .font(.caption2)
@@ -194,41 +132,39 @@ struct DownloadsView: View {
                         }
                         .buttonStyle(.plain)
                     }
-                    .padding(8)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous))
-
-                    Divider()
+                    }
                 }
 
                 if downloadManager.downloadedSongs.isEmpty {
-                    VStack(spacing: 8) {
-                        Image(systemName: "arrow.down.circle")
-                            .font(.largeTitle)
-                            .foregroundColor(.secondary)
-                        Text("No Downloads")
-                            .font(.headline)
-                        Text("Download songs, albums, or playlists for offline playback")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                    }
-                    .padding()
+                    WRhythmEmptyState(
+                        systemImage: "arrow.down.circle",
+                        title: "No Downloads",
+                        message: "Download songs, albums, or playlists for offline playback"
+                    )
                 } else {
-                    VStack(spacing: 8) {
-                        Text("\(downloadManager.getTotalDownloaded()) songs")
-                            .font(.headline)
-                        Text(formatBytes(downloadManager.getTotalSize()))
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                    WRhythmCard {
+                        HStack(spacing: 12) {
+                            WRhythmIconBadge(systemImage: "internaldrive", tint: .green)
 
-                        Button(action: {
-                            showingDeleteConfirmation = true
-                            deleteConfirmationText = ""
-                        }) {
-                            Label("Delete All", systemImage: "trash")
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("\(downloadManager.getTotalDownloaded()) songs")
+                                    .font(.headline)
+                                Text(formatBytes(downloadManager.getTotalSize()))
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+
+                            Spacer()
+
+                            Button(action: {
+                                showingDeleteConfirmation = true
+                                deleteConfirmationText = ""
+                            }) {
+                                Label("Delete All", systemImage: "trash")
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(.red)
                         }
-                        .buttonStyle(.bordered)
-                        .tint(.red)
                         .sheet(isPresented: $showingDeleteConfirmation) {
                             NavigationView {
                                 VStack(spacing: 16) {
@@ -277,9 +213,6 @@ struct DownloadsView: View {
                             }
                         }
                     }
-                    .padding(.vertical, 8)
-
-                    Divider()
 
                     let sortedSongs = Array(downloadManager.downloadedSongs.values.sorted(by: { $0.downloadedAt > $1.downloadedAt }))
                     let songsToDisplay = Array(sortedSongs.prefix(displayedSongCount))

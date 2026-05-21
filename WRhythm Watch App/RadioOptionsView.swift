@@ -25,61 +25,46 @@ struct RadioOptionsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
-                // Header
-                VStack(spacing: 4) {
-                    Image(systemName: "music.note.list")
-                        .font(.largeTitle)
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundColor(.accentColor)
-                        .frame(width: 76, height: 76)
-                        .background(.regularMaterial, in: Circle())
-                    Text("Playlist Gen Options")
-                        .font(.headline)
-                    Text(sourceTitle)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.center)
-                }
-                .padding(.top)
+            VStack(spacing: WRhythmVisual.sectionSpacing) {
+                WRhythmFeatureHeader(
+                    title: "Playlist Gen Options",
+                    subtitle: sourceTitle,
+                    systemImage: "music.note.list",
+                    tint: .pink,
+                    coverArtId: sourceSong.coverArt
+                )
 
-                Divider()
+                WRhythmCard {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Number of Songs")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
 
-                // Song count selector
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Number of Songs")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        HStack {
+                            Text("\(selectedCount)")
+                                .font(.title3)
+                                .fontWeight(.semibold)
+                                .monospacedDigit()
+                                .frame(width: 50, alignment: .leading)
 
-                    HStack {
-                        Text("\(selectedCount)")
-                            .font(.title3)
-                            .fontWeight(.semibold)
-                            .monospacedDigit()
-                            .frame(width: 50, alignment: .leading)
+                            Slider(
+                                value: Binding(
+                                    get: { Double(selectedCount) },
+                                    set: { selectedCount = Int($0) }
+                                ),
+                                in: 10...500,
+                                step: 10
+                            )
+                        }
 
-                        Slider(
-                            value: Binding(
-                                get: { Double(selectedCount) },
-                                set: { selectedCount = Int($0) }
-                            ),
-                            in: 10...500,
-                            step: 10
-                        )
+                        Text("Similar songs to include in Playlist Gen")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
                     }
-
-                    Text("Similar songs to include in Playlist Gen")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
                 }
-                .padding()
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous))
 
-                Divider()
-
-                // Action buttons
-                VStack(spacing: 12) {
+                WRhythmCard {
+                    VStack(spacing: 12) {
                     Button(action: {
                         playRadio()
                     }) {
@@ -103,11 +88,18 @@ struct RadioOptionsView: View {
                     }
                     .buttonStyle(.bordered)
                     .disabled(isProcessing)
+                    }
                 }
 
                 if isProcessing {
-                    ProgressView()
-                        .padding()
+                    WRhythmCard {
+                        HStack(spacing: 10) {
+                            ProgressView()
+                            Text("Preparing playlist")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
                 }
             }
             .padding()
