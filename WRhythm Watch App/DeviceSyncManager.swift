@@ -80,8 +80,12 @@ struct PlaybackSession: Codable, Identifiable, Sendable {
     }
 
     var estimatedPosition: TimeInterval {
+        estimatedPosition(at: Date())
+    }
+
+    func estimatedPosition(at now: Date) -> TimeInterval {
         let basePosition = position.isFinite ? position : 0
-        let advancedPosition = isPlaying ? basePosition + max(0, Date().timeIntervalSince(updatedAt)) : basePosition
+        let advancedPosition = isPlaying ? basePosition + max(0, now.timeIntervalSince(updatedAt)) : basePosition
         let clampedPosition = max(0, advancedPosition)
 
         guard let duration = currentSong?.duration, duration > 0 else {
@@ -236,6 +240,82 @@ struct PlaybackCommandSyncPolicy: Sendable {
 
     static func retryDelay(forAttempt attempt: Int) -> TimeInterval {
         min(pow(2.0, Double(max(0, attempt))), maxRetryDelay)
+    }
+}
+
+struct LocalPlaybackSyncState: Equatable, Sendable {
+    let queueIDs: [String]
+    let currentSongID: String?
+    let currentIndex: Int
+    let currentTime: TimeInterval
+    let isPlaying: Bool
+    let volume: Double
+}
+
+struct PlaybackSessionReconciliationPlan: Equatable, Sendable {
+    let shouldStop: Bool
+    let shouldReplaceQueue: Bool
+    let shouldSeek: Bool
+    let shouldSetVolume: Bool
+    let shouldPlay: Bool
+    let shouldPause: Bool
+}
+
+struct PlaybackSessionSyncPolicy: Sendable {
+    static let seekDriftTolerance: TimeInterval = 3
+    static let volumeTolerance = 0.01
+
+    static func shouldApply(_ incoming: PlaybackSession, over existing: PlaybackSession?) -> Bool {
+        guard let existing else { return true }
+        if incoming.revision != existing.revision {
+            return incoming.revision > existing.revision
+        }
+        if incoming.updatedAt != existing.updatedAt {
+            return incoming.updatedAt > existing.updatedAt
+        }
+        return incoming.updatedByDeviceID > existing.updatedByDeviceID
+    }
+
+    static func reconciliationPlan(
+        for session: PlaybackSession,
+        localDeviceID: String,
+        localState: LocalPlaybackSyncState,
+        now: Date = Date()
+    ) -> PlaybackSessionReconciliationPlan {
+        guard session.outputDeviceID == localDeviceID else {
+            return PlaybackSessionReconciliationPlan(
+                shouldStop: false,
+                shouldReplaceQueue: false,
+                shouldSeek: false,
+                shouldSetVolume: false,
+                shouldPlay: false,
+                shouldPause: localState.isPlaying
+            )
+        }
+
+        guard let sessionSong = session.currentSong else {
+            return PlaybackSessionReconciliationPlan(
+                shouldStop: localState.currentSongID != nil,
+                shouldReplaceQueue: false,
+                shouldSeek: false,
+                shouldSetVolume: false,
+                shouldPlay: false,
+                shouldPause: false
+            )
+        }
+
+        let sessionPosition = session.estimatedPosition(at: now)
+        let currentMatches = localState.currentSongID == sessionSong.id && localState.currentIndex == session.currentIndex
+        let queueMatches = localState.queueIDs == session.queue.map(\.id)
+
+        return PlaybackSessionReconciliationPlan(
+            shouldStop: false,
+            shouldReplaceQueue: !currentMatches || !queueMatches,
+            shouldSeek: !currentMatches || abs(localState.currentTime - sessionPosition) > seekDriftTolerance,
+            shouldSetVolume: session.volume.map { abs(localState.volume - $0) > volumeTolerance } ?? false,
+            shouldPlay: session.isPlaying && !localState.isPlaying,
+            shouldPause: !session.isPlaying && (localState.isPlaying || !currentMatches)
+        )
     }
 }
 
@@ -665,20 +745,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
     }
 
     private func applySharedSession(_ session: PlaybackSession, applyLocally: Bool) {
-        if let existing = sharedSession {
-            if session.revision < existing.revision {
-                return
-            }
-            if session.revision == existing.revision,
-               session.updatedAt < existing.updatedAt {
-                return
-            }
-            if session.revision == existing.revision,
-               session.updatedAt == existing.updatedAt,
-               session.updatedByDeviceID <= existing.updatedByDeviceID {
-                return
-            }
-        }
+        guard PlaybackSessionSyncPolicy.shouldApply(session, over: sharedSession) else { return }
 
         sharedSession = session
         selectedPlaybackTargetID = session.outputDeviceID
@@ -691,48 +758,61 @@ final class DeviceSyncManager: NSObject, ObservableObject {
     private func reconcileLocalPlayback(with session: PlaybackSession) {
         guard syncModeEnabled else { return }
         let player = AudioPlayer.shared
+        let localState = LocalPlaybackSyncState(
+            queueIDs: player.queue.map(\.id),
+            currentSongID: player.currentSong?.id,
+            currentIndex: player.currentIndex,
+            currentTime: player.liveCurrentTime,
+            isPlaying: player.isPlaying,
+            volume: player.volume
+        )
+        let plan = PlaybackSessionSyncPolicy.reconciliationPlan(
+            for: session,
+            localDeviceID: localDeviceID,
+            localState: localState
+        )
 
         if session.outputDeviceID == localDeviceID {
             guard let song = session.currentSong else {
-                if player.currentSong != nil {
+                if plan.shouldStop {
                     player.stop()
                 }
                 return
             }
 
-            let queueMatches = player.queue.map(\.id) == session.queue.map(\.id)
-            let currentMatches = player.currentSong?.id == song.id && player.currentIndex == session.currentIndex
+            let currentMatches = localState.currentSongID == song.id && localState.currentIndex == session.currentIndex
 
             if currentMatches {
-                if !queueMatches {
+                if plan.shouldReplaceQueue {
                     player.queue = session.queue
                     player.currentIndex = session.currentIndex
                 }
-                let drift = abs(player.liveCurrentTime - session.estimatedPosition)
-                if drift > 3 {
+                if plan.shouldSeek {
                     player.seek(to: session.estimatedPosition)
                 }
-                if let volume = session.volume, abs(player.volume - volume) > 0.01 {
+                if let volume = session.volume, plan.shouldSetVolume {
                     player.volume = clampedVolume(volume)
                 }
-                if session.isPlaying, !player.isPlaying {
+                if plan.shouldPlay {
                     player.play()
-                } else if !session.isPlaying, player.isPlaying {
+                } else if plan.shouldPause {
                     player.pause()
                 }
             } else {
                 isApplyingRemoteCommand = true
                 player.playQueue(session.queue, startingAt: session.currentIndex)
-                player.seek(to: session.estimatedPosition)
+                if plan.shouldSeek {
+                    player.seek(to: session.estimatedPosition)
+                }
                 if let volume = session.volume {
                     player.volume = clampedVolume(volume)
                 }
-                if !session.isPlaying {
+                if plan.shouldPause {
                     player.pause()
                 }
                 isApplyingRemoteCommand = false
             }
-        } else if player.isPlaying {
+        } else if plan.shouldPause {
             player.pause()
         }
     }

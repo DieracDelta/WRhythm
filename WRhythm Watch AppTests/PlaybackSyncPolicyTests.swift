@@ -57,6 +57,140 @@ struct PlaybackSyncPolicyTests {
         #expect(PlaybackSyncPolicy.shouldPublishRemotePlayback(seeked, current: current) == true)
     }
 
+    @Test func newerSessionRevisionWinsOverCurrentSession() {
+        let now = Date()
+        let current = makeSession(revision: 4, updatedAt: now, updatedByDeviceID: "iphone")
+        let older = makeSession(revision: 3, updatedAt: now.addingTimeInterval(10), updatedByDeviceID: "mac")
+        let newer = makeSession(revision: 5, updatedAt: now.addingTimeInterval(-10), updatedByDeviceID: "mac")
+
+        #expect(PlaybackSessionSyncPolicy.shouldApply(older, over: current) == false)
+        #expect(PlaybackSessionSyncPolicy.shouldApply(newer, over: current) == true)
+    }
+
+    @Test func sameRevisionSessionUsesTimestampThenDeviceIDTieBreaker() {
+        let now = Date()
+        let current = makeSession(revision: 4, updatedAt: now, updatedByDeviceID: "iphone")
+        let olderTimestamp = makeSession(revision: 4, updatedAt: now.addingTimeInterval(-1), updatedByDeviceID: "zzzz")
+        let newerTimestamp = makeSession(revision: 4, updatedAt: now.addingTimeInterval(1), updatedByDeviceID: "aaaa")
+        let lowerDeviceTie = makeSession(revision: 4, updatedAt: now, updatedByDeviceID: "aaaa")
+        let higherDeviceTie = makeSession(revision: 4, updatedAt: now, updatedByDeviceID: "mac")
+
+        #expect(PlaybackSessionSyncPolicy.shouldApply(olderTimestamp, over: current) == false)
+        #expect(PlaybackSessionSyncPolicy.shouldApply(newerTimestamp, over: current) == true)
+        #expect(PlaybackSessionSyncPolicy.shouldApply(lowerDeviceTie, over: current) == false)
+        #expect(PlaybackSessionSyncPolicy.shouldApply(higherDeviceTie, over: current) == true)
+    }
+
+    @Test func remoteOutputSessionPausesLocalPlaybackWithoutReplacingQueue() {
+        let now = Date()
+        let localState = makeLocalState(currentTime: 10, isPlaying: true)
+        let session = makeSession(outputDeviceID: "iphone", isPlaying: true, position: 20, updatedAt: now)
+
+        let plan = PlaybackSessionSyncPolicy.reconciliationPlan(
+            for: session,
+            localDeviceID: "mac",
+            localState: localState,
+            now: now
+        )
+
+        #expect(plan.shouldPause == true)
+        #expect(plan.shouldReplaceQueue == false)
+        #expect(plan.shouldSeek == false)
+    }
+
+    @Test func localOutputPauseSessionSeeksAndPausesWhenPositionChanged() {
+        let now = Date()
+        let localState = makeLocalState(currentTime: 2, isPlaying: true)
+        let session = makeSession(outputDeviceID: "mac", isPlaying: false, position: 30, updatedAt: now)
+
+        let plan = PlaybackSessionSyncPolicy.reconciliationPlan(
+            for: session,
+            localDeviceID: "mac",
+            localState: localState,
+            now: now
+        )
+
+        #expect(plan.shouldReplaceQueue == false)
+        #expect(plan.shouldSeek == true)
+        #expect(plan.shouldPause == true)
+        #expect(plan.shouldPlay == false)
+    }
+
+    @Test func pausedDifferentTrackSessionStillPausesAfterQueueReplacement() {
+        let now = Date()
+        let localState = makeLocalState(
+            queueIDs: ["song-1"],
+            currentSongID: "song-1",
+            currentIndex: 0,
+            currentTime: 2,
+            isPlaying: false
+        )
+        let session = makeSession(
+            songs: [makeSong(id: "song-2")],
+            outputDeviceID: "mac",
+            isPlaying: false,
+            position: 30,
+            updatedAt: now
+        )
+
+        let plan = PlaybackSessionSyncPolicy.reconciliationPlan(
+            for: session,
+            localDeviceID: "mac",
+            localState: localState,
+            now: now
+        )
+
+        #expect(plan.shouldReplaceQueue == true)
+        #expect(plan.shouldSeek == true)
+        #expect(plan.shouldPause == true)
+    }
+
+    @Test func localOutputSessionIgnoresSmallDriftButSeeksLargeDrift() {
+        let now = Date()
+        let nearbyState = makeLocalState(currentTime: 11.5)
+        let farState = makeLocalState(currentTime: 20)
+        let session = makeSession(outputDeviceID: "mac", isPlaying: true, position: 10, updatedAt: now)
+
+        let nearbyPlan = PlaybackSessionSyncPolicy.reconciliationPlan(
+            for: session,
+            localDeviceID: "mac",
+            localState: nearbyState,
+            now: now
+        )
+        let farPlan = PlaybackSessionSyncPolicy.reconciliationPlan(
+            for: session,
+            localDeviceID: "mac",
+            localState: farState,
+            now: now
+        )
+
+        #expect(nearbyPlan.shouldSeek == false)
+        #expect(farPlan.shouldSeek == true)
+    }
+
+    @Test func localOutputSessionPlansVolumeUpdateOnlyOutsideTolerance() {
+        let now = Date()
+        let withinTolerance = makeLocalState(volume: 0.505)
+        let outsideTolerance = makeLocalState(volume: 0.55)
+        let session = makeSession(outputDeviceID: "mac", volume: 0.5, updatedAt: now)
+
+        let withinPlan = PlaybackSessionSyncPolicy.reconciliationPlan(
+            for: session,
+            localDeviceID: "mac",
+            localState: withinTolerance,
+            now: now
+        )
+        let outsidePlan = PlaybackSessionSyncPolicy.reconciliationPlan(
+            for: session,
+            localDeviceID: "mac",
+            localState: outsideTolerance,
+            now: now
+        )
+
+        #expect(withinPlan.shouldSetVolume == false)
+        #expect(outsidePlan.shouldSetVolume == true)
+    }
+
     @Test(arguments: [
         (WatchConnectivitySyncPayloadKind.hello, true),
         (.syncRequest, true),
@@ -192,6 +326,50 @@ struct PlaybackSyncPolicyTests {
             duration: 180,
             bitRate: 900,
             path: "music/\(id).flac"
+        )
+    }
+
+    private func makeSession(
+        songs: [Song]? = nil,
+        currentIndex: Int = 0,
+        outputDeviceID: String = "mac",
+        isPlaying: Bool = true,
+        position: TimeInterval = 10,
+        volume: Double? = 0.8,
+        revision: Int = 1,
+        updatedAt: Date,
+        updatedByDeviceID: String = "mac"
+    ) -> PlaybackSession {
+        let resolvedSongs = songs ?? [makeSong(id: "song-1")]
+        return PlaybackSession(
+            id: "session-1",
+            revision: revision,
+            queue: resolvedSongs,
+            currentIndex: currentIndex,
+            position: position,
+            isPlaying: isPlaying,
+            volume: volume,
+            outputDeviceID: outputDeviceID,
+            updatedAt: updatedAt,
+            updatedByDeviceID: updatedByDeviceID
+        )
+    }
+
+    private func makeLocalState(
+        queueIDs: [String] = ["song-1"],
+        currentSongID: String? = "song-1",
+        currentIndex: Int = 0,
+        currentTime: TimeInterval = 10,
+        isPlaying: Bool = true,
+        volume: Double = 0.8
+    ) -> LocalPlaybackSyncState {
+        LocalPlaybackSyncState(
+            queueIDs: queueIDs,
+            currentSongID: currentSongID,
+            currentIndex: currentIndex,
+            currentTime: currentTime,
+            isPlaying: isPlaying,
+            volume: volume
         )
     }
 }
