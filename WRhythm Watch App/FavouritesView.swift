@@ -10,9 +10,8 @@ import SwiftUI
 struct FavouritesView: View {
     @EnvironmentObject var libraryDataManager: LibraryDataManager
     @ObservedObject var downloadManager = DownloadManager.shared
+    @ObservedObject var player = AudioPlayer.shared
     @AppStorage("offlineMode") private var offlineMode = false
-
-    private var player: AudioPlayer { AudioPlayer.shared }
 
     // Get starred songs from downloaded songs in offline mode
     private var offlineStarredSongs: [Song] {
@@ -105,7 +104,7 @@ struct FavouritesView: View {
                         }
 
                         ForEach(Array(offlineStarredSongs.enumerated()), id: \.element.id) { index, song in
-                            TrackRowView(song: song) {
+                            TrackRowView(song: song, player: player, downloadManager: downloadManager, offlineMode: offlineMode) {
                                 player.playQueue(offlineStarredSongs, startingAt: index)
                             }
                         }
@@ -119,21 +118,15 @@ struct FavouritesView: View {
     @ViewBuilder
     private var onlineContent: some View {
         if libraryDataManager.isLoadingStarred {
-            WRhythmEmptyState(
+            WRhythmLoadingState(
                 systemImage: "star",
                 title: "Loading favourites",
                 message: nil
             )
-            .overlay {
-                ProgressView()
-                    .padding(.top, 96)
-            }
         } else if !libraryDataManager.starredErrorMessage.isEmpty {
-            WRhythmEmptyState(
-                systemImage: "exclamationmark.triangle.fill",
+            WRhythmErrorState(
                 title: "Favourites Error",
-                message: libraryDataManager.starredErrorMessage,
-                actionTitle: "Retry"
+                message: libraryDataManager.starredErrorMessage
             ) {
                     libraryDataManager.fetchStarred(forceRefresh: true)
             }
@@ -186,7 +179,7 @@ struct FavouritesView: View {
                                 }
 
                                 ForEach(Array(songsToShow.enumerated()), id: \.element.id) { index, song in
-                                    TrackRowView(song: song) {
+                                    TrackRowView(song: song, player: player, downloadManager: downloadManager, offlineMode: offlineMode) {
                                         player.playQueue(songsToShow, startingAt: index)
                                     }
                                 }

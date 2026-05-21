@@ -14,8 +14,7 @@ struct NowPlayingView: View {
     @ObservedObject var deviceSyncManager = DeviceSyncManager.shared
     @State private var isStarring = false
     @State private var hasLoadedStarredSongs = false
-    @State private var showVolumeControl = false
-    @State private var showAudioRouteMenu = false
+    @State private var presentedSheet: NowPlayingSheet?
     @State private var scrubTime: TimeInterval?
     @AppStorage("offlineMode") private var offlineMode = false
 
@@ -131,7 +130,7 @@ struct NowPlayingView: View {
                     // Action buttons
                     HStack(spacing: 8) {
                         Button(action: {
-                            showVolumeControl = true
+                            presentedSheet = .volume
                         }) {
                             Image(systemName: "speaker.wave.3.fill")
                                 .font(.title3)
@@ -141,7 +140,7 @@ struct NowPlayingView: View {
                         .buttonStyle(.bordered)
 
                         Button(action: {
-                            showAudioRouteMenu = true
+                            presentedSheet = .audioRoute
                         }) {
                             Image(systemName: "airpodsmax")
                                 .font(.title3)
@@ -234,11 +233,13 @@ struct NowPlayingView: View {
         }
         .background(WRhythmArtworkBackdrop(coverArtId: primaryArtworkCoverArtId).ignoresSafeArea())
         .navigationTitle("Now Playing")
-        .sheet(isPresented: $showVolumeControl) {
-            VolumeControlView()
-        }
-        .sheet(isPresented: $showAudioRouteMenu) {
-            AudioRouteView()
+        .sheet(item: $presentedSheet) { sheet in
+            switch sheet {
+            case .volume:
+                VolumeControlView()
+            case .audioRoute:
+                AudioRouteView()
+            }
         }
         .onAppear {
             if !hasLoadedStarredSongs {
@@ -379,6 +380,13 @@ struct NowPlayingView: View {
 
 private func bufferedTrackLabel(_ count: Int) -> String {
     "\(count) \(count == 1 ? "track" : "tracks") buffered"
+}
+
+private enum NowPlayingSheet: String, Identifiable {
+    case volume
+    case audioRoute
+
+    var id: String { rawValue }
 }
 
 private struct NowPlayingArtwork: View, Equatable {

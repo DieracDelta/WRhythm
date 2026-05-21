@@ -142,36 +142,24 @@ struct MacSidebar: View {
                         Text("No queued songs")
                             .foregroundColor(.secondary)
                     } else {
-                        ForEach(Array(displayedQueue.enumerated()), id: \.offset) { index, song in
+                        ForEach(queueItems(displayedQueue)) { item in
                             Button(action: {
                                 selection = .nowPlaying
                                 if deviceSyncManager.sharedSession != nil {
-                                    deviceSyncManager.playSharedQueueItem(at: index)
+                                    deviceSyncManager.playSharedQueueItem(at: item.index)
                                 } else {
-                                    player.playQueue(player.queue, startingAt: index)
+                                    player.playQueue(player.queue, startingAt: item.index)
                                 }
                             }) {
-                                HStack(spacing: 8) {
-                                    if displayedCurrentIndex == index {
-                                        Image(systemName: displayedQueueIsPlaying ? "speaker.wave.2.fill" : "speaker")
-                                            .foregroundColor(.accentColor)
-                                    }
-
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(song.title)
-                                            .lineLimit(1)
-                                        if let artist = song.artist {
-                                            Text(artist)
-                                                .font(.caption)
-                                                .foregroundColor(.secondary)
-                                                .lineLimit(1)
-                                        }
-                                    }
-                                }
+                                MacQueueRow(
+                                    song: item.song,
+                                    isCurrent: displayedCurrentIndex == item.index,
+                                    isPlaying: displayedQueueIsPlaying
+                                )
                             }
                             .buttonStyle(.plain)
                             .contextMenu {
-                                TrackContextMenuItems(song: song)
+                                TrackContextMenuItems(song: item.song)
                             }
                         }
                     }
@@ -185,32 +173,20 @@ struct MacSidebar: View {
                             Text("No queued songs")
                                 .foregroundColor(.secondary)
                         } else {
-                            ForEach(Array(remoteQueue.enumerated()), id: \.offset) { index, song in
+                            ForEach(queueItems(remoteQueue)) { item in
                                 Button(action: {
                                     selection = .nowPlaying
-                                    deviceSyncManager.playRemoteQueueItem(remote, at: index)
+                                    deviceSyncManager.playRemoteQueueItem(remote, at: item.index)
                                 }) {
-                                    HStack(spacing: 8) {
-                                        if remote.currentIndex == index {
-                                            Image(systemName: remote.isPlaying ? "speaker.wave.2.fill" : "speaker")
-                                                .foregroundColor(.accentColor)
-                                        }
-
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(song.title)
-                                                .lineLimit(1)
-                                            if let artist = song.artist {
-                                                Text(artist)
-                                                    .font(.caption)
-                                                    .foregroundColor(.secondary)
-                                                    .lineLimit(1)
-                                            }
-                                        }
-                                    }
+                                    MacQueueRow(
+                                        song: item.song,
+                                        isCurrent: remote.currentIndex == item.index,
+                                        isPlaying: remote.isPlaying
+                                    )
                                 }
                                 .buttonStyle(.plain)
                                 .contextMenu {
-                                    TrackContextMenuItems(song: song)
+                                    TrackContextMenuItems(song: item.song)
                                 }
                             }
                         }
@@ -278,6 +254,47 @@ struct MacSidebar: View {
 
     private var localQueueSectionTitle: String {
         deviceSyncManager.sharedSession != nil || remoteQueueMatchesLocal ? "Shared Queue" : "Mac Queue"
+    }
+
+    private func queueItems(_ songs: [Song]) -> [QueueDisplayItem] {
+        songs.enumerated().map { index, song in
+            QueueDisplayItem(index: index, song: song)
+        }
+    }
+}
+
+private struct QueueDisplayItem: Identifiable {
+    let index: Int
+    let song: Song
+
+    var id: String {
+        "\(song.id)-\(index)"
+    }
+}
+
+private struct MacQueueRow: View {
+    let song: Song
+    let isCurrent: Bool
+    let isPlaying: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if isCurrent {
+                Image(systemName: isPlaying ? "speaker.wave.2.fill" : "speaker")
+                    .foregroundColor(.accentColor)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(song.title)
+                    .lineLimit(1)
+                if let artist = song.artist {
+                    Text(artist)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+            }
+        }
     }
 }
 

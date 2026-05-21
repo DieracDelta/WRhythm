@@ -147,21 +147,15 @@ struct PlaylistsView: View {
     @ViewBuilder
     private var onlineContent: some View {
         if libraryDataManager.playlists.isEmpty && libraryDataManager.isLoadingPlaylists {
-            WRhythmEmptyState(
+            WRhythmLoadingState(
                 systemImage: "music.note.list",
                 title: "Loading playlists",
                 message: nil
             )
-            .overlay {
-                ProgressView()
-                    .padding(.top, 96)
-            }
         } else if !libraryDataManager.playlistsErrorMessage.isEmpty && libraryDataManager.playlists.isEmpty {
-            WRhythmEmptyState(
-                systemImage: "exclamationmark.triangle.fill",
+            WRhythmErrorState(
                 title: "Playlist Error",
-                message: libraryDataManager.playlistsErrorMessage,
-                actionTitle: "Retry"
+                message: libraryDataManager.playlistsErrorMessage
             ) {
                     libraryDataManager.fetchPlaylists(forceRefresh: true)
             }

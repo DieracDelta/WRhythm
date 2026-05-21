@@ -16,9 +16,8 @@ struct PlaylistDetailView: View {
     @State private var isSyncing = false
     @State private var errorMessage = ""
     @ObservedObject var downloadManager = DownloadManager.shared
+    @ObservedObject var player = AudioPlayer.shared
     @AppStorage("offlineMode") private var offlineMode = false
-
-    private var player: AudioPlayer { AudioPlayer.shared }
 
     var body: some View {
         Group {
@@ -163,7 +162,7 @@ struct PlaylistDetailView: View {
                                 }
 
                                 ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
-                                    TrackRowView(song: song) {
+                                    TrackRowView(song: song, player: player, downloadManager: downloadManager, offlineMode: offlineMode) {
                                         player.playQueue(songs, startingAt: index)
                                     }
                                     .id(song.id)
@@ -263,7 +262,7 @@ struct PlaylistDetailView: View {
 
                         VStack(spacing: 8) {
                             ForEach(Array(filteredSongs(songs).enumerated()), id: \.element.id) { index, song in
-                                TrackRowView(song: song) {
+                                TrackRowView(song: song, player: player, downloadManager: downloadManager, offlineMode: offlineMode) {
                                     player.playQueue(songs, startingAt: index)
                                 }
                                 .id(song.id)

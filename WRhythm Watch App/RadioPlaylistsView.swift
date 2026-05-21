@@ -34,7 +34,7 @@ struct RadioPlaylistsView: View {
                     CurrentPlaylistGenSummary()
 
                     ForEach(Array(player.playlistGenQueue.enumerated()), id: \.element.id) { index, song in
-                        TrackRowView(song: song) {
+                        TrackRowView(song: song, player: player, downloadManager: downloadManager, offlineMode: false) {
                             player.playQueue(player.playlistGenQueue, startingAt: index, clearGeneratedPlaylist: false)
                         }
                     }
@@ -221,8 +221,8 @@ struct RadioPlaylistDetailView: View {
                     .padding()
                 } else {
                     VStack(spacing: 8) {
-                        ForEach(Array(downloadedSongs.enumerated()), id: \.offset) { index, songId in
-                            if let downloadedSong = downloadManager.downloadedSongs[songId] {
+                        ForEach(downloadedSongItems) { item in
+                            if let downloadedSong = downloadManager.downloadedSongs[item.songId] {
                                 let song = Song(
                                     id: downloadedSong.songId,
                                     title: downloadedSong.title,
@@ -241,8 +241,8 @@ struct RadioPlaylistDetailView: View {
                                     bitRate: nil,
                                     path: downloadedSong.filePath
                                 )
-                                TrackRowView(song: song) {
-                                    playRadio(startingAt: index)
+                                TrackRowView(song: song, player: player, downloadManager: downloadManager, offlineMode: true) {
+                                    playRadio(startingAt: item.index)
                                 }
                             }
                         }
@@ -257,6 +257,12 @@ struct RadioPlaylistDetailView: View {
 
     private var downloadedSongs: [String] {
         radio.songIds.filter { downloadManager.isDownloaded($0) }
+    }
+
+    private var downloadedSongItems: [DownloadedRadioSongItem] {
+        downloadedSongs.enumerated().map { index, songId in
+            DownloadedRadioSongItem(index: index, songId: songId)
+        }
     }
 
     private func playRadio(startingAt index: Int = 0) {
@@ -323,5 +329,14 @@ struct RadioPlaylistDetailView: View {
 
     private func deleteRadio() {
         downloadManager.deleteRadioPlaylist(radio.id)
+    }
+}
+
+private struct DownloadedRadioSongItem: Identifiable {
+    let index: Int
+    let songId: String
+
+    var id: String {
+        "\(songId)-\(index)"
     }
 }

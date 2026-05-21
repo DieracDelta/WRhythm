@@ -168,21 +168,15 @@ struct ArtistsView: View {
     @ViewBuilder
     private var onlineContent: some View {
         if libraryDataManager.isLoadingArtists {
-            WRhythmEmptyState(
+            WRhythmLoadingState(
                 systemImage: "person.2",
                 title: "Loading artists",
                 message: "Please wait..."
             )
-            .overlay {
-                ProgressView()
-                    .padding(.top, 96)
-            }
         } else if !libraryDataManager.artistsErrorMessage.isEmpty {
-            WRhythmEmptyState(
-                systemImage: "exclamationmark.triangle.fill",
+            WRhythmErrorState(
                 title: "Artist Error",
-                message: libraryDataManager.artistsErrorMessage,
-                actionTitle: "Retry"
+                message: libraryDataManager.artistsErrorMessage
             ) {
                     libraryDataManager.fetchArtists(forceRefresh: true)
             }

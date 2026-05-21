@@ -243,23 +243,17 @@ struct AlbumsView: View {
 
             if libraryDataManager.albums.isEmpty && libraryDataManager.isLoadingAlbums {
 
-                WRhythmEmptyState(
+                WRhythmLoadingState(
                     systemImage: "square.stack",
                     title: "Loading albums",
                     message: "Please wait..."
                 )
-                .overlay {
-                    ProgressView()
-                        .padding(.top, 96)
-                }
 
             } else if !libraryDataManager.albumsErrorMessage.isEmpty && libraryDataManager.albums.isEmpty {
 
-                WRhythmEmptyState(
-                    systemImage: "exclamationmark.triangle.fill",
+                WRhythmErrorState(
                     title: "Album Error",
-                    message: libraryDataManager.albumsErrorMessage,
-                    actionTitle: "Retry"
+                    message: libraryDataManager.albumsErrorMessage
                 ) {
 
                         libraryDataManager.fetchInitialAlbums(forceRefresh: true)

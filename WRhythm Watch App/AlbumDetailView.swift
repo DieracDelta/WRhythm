@@ -285,7 +285,7 @@ struct AlbumDetailView: View {
 
                             VStack(spacing: 8) {
                                 ForEach(Array(sortedSongs.enumerated()), id: \.element.id) { index, song in
-                                    TrackRowView(song: song) {
+                                    TrackRowView(song: song, player: player, downloadManager: downloadManager, offlineMode: offlineMode) {
                                         player.playQueue(Array(sortedSongs), startingAt: index)
                                     }
                                     .id(song.id)
@@ -388,7 +388,7 @@ struct AlbumDetailView: View {
 
                         VStack(spacing: 8) {
                             ForEach(Array(filteredSongs(album.song).enumerated()), id: \.element.id) { index, song in
-                                TrackRowView(song: song) {
+                                TrackRowView(song: song, player: player, downloadManager: downloadManager, offlineMode: offlineMode) {
                                     player.playQueue(album.song, startingAt: index)
                                 }
                                 .id(song.id)

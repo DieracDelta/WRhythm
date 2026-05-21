@@ -399,6 +399,43 @@ struct WRhythmEmptyState: View {
     }
 }
 
+struct WRhythmLoadingState: View {
+    let title: String
+    var message: String?
+    var systemImage = "arrow.triangle.2.circlepath"
+
+    init(systemImage: String = "arrow.triangle.2.circlepath", title: String, message: String?) {
+        self.systemImage = systemImage
+        self.title = title
+        self.message = message
+    }
+
+    var body: some View {
+        WRhythmEmptyState(systemImage: systemImage, title: title, message: message)
+            .overlay {
+                ProgressView()
+                    .padding(.top, 96)
+            }
+    }
+}
+
+struct WRhythmErrorState: View {
+    let title: String
+    let message: String
+    var actionTitle = "Retry"
+    let action: () -> Void
+
+    var body: some View {
+        WRhythmEmptyState(
+            systemImage: "exclamationmark.triangle.fill",
+            title: title,
+            message: message,
+            actionTitle: actionTitle,
+            action: action
+        )
+    }
+}
+
 struct WRhythmActionBar<Content: View>: View {
     private let content: Content
 
