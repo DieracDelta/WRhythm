@@ -98,7 +98,7 @@ class AudioPlayer: NSObject, ObservableObject {
     private var queueFinished = false
     private var isRestoringPlaybackState = false
     private var lastPersistenceWrite = Date.distantPast
-    private var pendingPersistenceWorkItem: DispatchWorkItem?
+    private var pendingPersistenceTask: Task<Void, Never>?
     private let prebufferAheadCount = 8
     private let maxConcurrentPrebuffers = 3
     private var prebufferTasks: [String: Task<Void, Never>] = [:]
@@ -196,19 +196,23 @@ class AudioPlayer: NSObject, ObservableObject {
             return
         }
 
-        pendingPersistenceWorkItem?.cancel()
+        pendingPersistenceTask?.cancel()
         let delay = max(0.5, 5 - elapsed)
-        let workItem = DispatchWorkItem { [weak self] in
+        pendingPersistenceTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
             self?.persistPlaybackState()
         }
-        pendingPersistenceWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
     }
 
     private func persistPlaybackState() {
         guard !isRestoringPlaybackState else { return }
-        pendingPersistenceWorkItem?.cancel()
-        pendingPersistenceWorkItem = nil
+        pendingPersistenceTask?.cancel()
+        pendingPersistenceTask = nil
         lastPersistenceWrite = Date()
 
         let songs = queue.isEmpty ? currentSong.map { [$0] } ?? [] : queue
@@ -509,15 +513,15 @@ class AudioPlayer: NSObject, ObservableObject {
 
         switch keyCode {
         case 16:
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 self.performMacMediaKeyAction(.toggle)
             }
         case 17:
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 self.performMacMediaKeyAction(.next)
             }
         case 18:
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 self.performMacMediaKeyAction(.previous)
             }
         default:
@@ -1452,7 +1456,11 @@ class AudioPlayer: NSObject, ObservableObject {
         print("⏳ Retrying playback for \(song.title) in \(Int(delay))s after \(reason) (attempt \(attempt + 1))")
 
         playbackRetryTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            do {
+                try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            } catch {
+                return
+            }
             guard !Task.isCancelled else { return }
             self.playbackRetryTask = nil
             guard self.currentSong?.id == song.id else { return }
@@ -1481,12 +1489,14 @@ class AudioPlayer: NSObject, ObservableObject {
 
         if let coverArtId = song.coverArt,
            let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 300) {
+            let artworkSongID = song.id
             Task {
                 do {
                     let (data, _) = try await URLSession.shared.data(from: coverURL)
                     if let image = PlatformImage(data: data) {
                         let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
                         await MainActor.run {
+                            guard self.currentSong?.id == artworkSongID else { return }
                             var updatedInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
                             updatedInfo[MPMediaItemPropertyArtwork] = artwork
                             MPNowPlayingInfoCenter.default().nowPlayingInfo = updatedInfo
@@ -1504,6 +1514,9 @@ class AudioPlayer: NSObject, ObservableObject {
 
     @MainActor
     deinit {
+        pendingPersistenceTask?.cancel()
+        playbackRetryTask?.cancel()
+        prebufferTasks.values.forEach { $0.cancel() }
         if let observer = timeObserver {
             player.removeTimeObserver(observer)
         }

@@ -1368,25 +1368,21 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
             task.cancel()
             print("🛑 Cancelled download for song: \(songId)")
 
-            DispatchQueue.main.async {
-                self.activeDownloads.removeValue(forKey: songId)
-                self.downloadBytesReceived.removeValue(forKey: songId)
-                self.downloadTotalBytes.removeValue(forKey: songId)
-                self.downloadTasks.removeValue(forKey: songId)
-                if let task = self.downloadTasks[songId] {
-                    self.taskToSongId.removeValue(forKey: task)
-                }
-                self.songMetadata.removeValue(forKey: songId)
+            activeDownloads.removeValue(forKey: songId)
+            downloadBytesReceived.removeValue(forKey: songId)
+            downloadTotalBytes.removeValue(forKey: songId)
+            downloadTasks.removeValue(forKey: songId)
+            taskToSongId.removeValue(forKey: task)
+            songMetadata.removeValue(forKey: songId)
 
-                // Decrement session total since we're cancelling
-                if self.sessionTotalCount > 0 {
-                    self.sessionTotalCount -= 1
-                }
+            // Decrement session total since we're cancelling
+            if sessionTotalCount > 0 {
+                sessionTotalCount -= 1
+            }
 
-                // Process next in queue
-                if !self.isPaused {
-                    self.processQueue()
-                }
+            // Process next in queue
+            if !isPaused {
+                processQueue()
             }
             return
         }
