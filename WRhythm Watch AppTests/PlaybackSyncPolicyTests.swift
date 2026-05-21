@@ -57,6 +57,101 @@ struct PlaybackSyncPolicyTests {
         #expect(PlaybackSyncPolicy.shouldPublishRemotePlayback(seeked, current: current) == true)
     }
 
+    @Test func localPauseStateBypassesPlaybackBroadcastThrottle() {
+        let now = Date()
+        let playing = makeSnapshot(id: "mac", isPlaying: true, currentTime: 42, updatedAt: now.addingTimeInterval(-0.2))
+        let paused = makeSnapshot(id: "mac", isPlaying: false, currentTime: 42.1, updatedAt: now)
+
+        #expect(PlaybackStateBroadcastPolicy.shouldBroadcast(
+            snapshot: paused,
+            previousSnapshot: playing,
+            lastBroadcastAt: now,
+            now: now,
+            localDeviceID: "mac"
+        ) == true)
+    }
+
+    @Test func localPlayStateBypassesPlaybackBroadcastThrottle() {
+        let now = Date()
+        let paused = makeSnapshot(id: "mac", isPlaying: false, currentTime: 42, updatedAt: now.addingTimeInterval(-0.2))
+        let playing = makeSnapshot(id: "mac", isPlaying: true, currentTime: 42.1, updatedAt: now)
+
+        #expect(PlaybackStateBroadcastPolicy.shouldBroadcast(
+            snapshot: playing,
+            previousSnapshot: paused,
+            lastBroadcastAt: now,
+            now: now,
+            localDeviceID: "mac"
+        ) == true)
+    }
+
+    @Test func progressOnlyPlaybackBroadcastIsThrottledInsideMinimumInterval() {
+        let now = Date()
+        let previous = makeSnapshot(id: "mac", isPlaying: true, currentTime: 42, updatedAt: now.addingTimeInterval(-0.5))
+        let progressed = makeSnapshot(id: "mac", isPlaying: true, currentTime: 42.7, updatedAt: now)
+
+        #expect(PlaybackStateBroadcastPolicy.shouldBroadcast(
+            snapshot: progressed,
+            previousSnapshot: previous,
+            lastBroadcastAt: now.addingTimeInterval(-0.5),
+            now: now,
+            localDeviceID: "mac"
+        ) == false)
+    }
+
+    @Test func progressOnlyPlaybackBroadcastPublishesAfterMinimumInterval() {
+        let now = Date()
+        let previous = makeSnapshot(id: "mac", isPlaying: true, currentTime: 42, updatedAt: now.addingTimeInterval(-2))
+        let progressed = makeSnapshot(id: "mac", isPlaying: true, currentTime: 45, updatedAt: now)
+
+        #expect(PlaybackStateBroadcastPolicy.shouldBroadcast(
+            snapshot: progressed,
+            previousSnapshot: previous,
+            lastBroadcastAt: now.addingTimeInterval(-2),
+            now: now,
+            localDeviceID: "mac"
+        ) == true)
+    }
+
+    @Test func forcedPlaybackBroadcastPublishesEvenInsideThrottleWindow() {
+        let now = Date()
+        let previous = makeSnapshot(id: "mac", isPlaying: true, currentTime: 42, updatedAt: now.addingTimeInterval(-0.2))
+        let current = makeSnapshot(id: "mac", isPlaying: true, currentTime: 42.1, updatedAt: now)
+
+        #expect(PlaybackStateBroadcastPolicy.shouldBroadcast(
+            snapshot: current,
+            previousSnapshot: previous,
+            lastBroadcastAt: now,
+            now: now,
+            force: true,
+            localDeviceID: "mac"
+        ) == true)
+    }
+
+    @Test func playbackBroadcastIsSuppressedWhileAnotherDeviceOwnsSharedOutput() {
+        let now = Date()
+        let previous = makeSnapshot(id: "mac", isPlaying: true, currentTime: 42, updatedAt: now.addingTimeInterval(-2))
+        let paused = makeSnapshot(id: "mac", isPlaying: false, currentTime: 42, updatedAt: now)
+
+        #expect(PlaybackStateBroadcastPolicy.shouldBroadcast(
+            snapshot: paused,
+            previousSnapshot: previous,
+            lastBroadcastAt: now.addingTimeInterval(-2),
+            now: now,
+            sharedOutputDeviceID: "iphone",
+            localDeviceID: "mac"
+        ) == false)
+    }
+
+    @Test func remotePauseSnapshotFromMacPublishesOnIPhoneEvenWithTinyTimeDelta() {
+        let now = Date()
+        let current = makeSnapshot(id: "mac", isPlaying: true, currentTime: 42, updatedAt: now.addingTimeInterval(-0.3))
+        let paused = makeSnapshot(id: "mac", isPlaying: false, currentTime: 42.05, updatedAt: now)
+
+        #expect(PlaybackSyncPolicy.isStalePlaybackSnapshot(paused, current: current, now: now) == false)
+        #expect(PlaybackSyncPolicy.shouldPublishRemotePlayback(paused, current: current) == true)
+    }
+
     @Test func newerSessionRevisionWinsOverCurrentSession() {
         let now = Date()
         let current = makeSession(revision: 4, updatedAt: now, updatedByDeviceID: "iphone")

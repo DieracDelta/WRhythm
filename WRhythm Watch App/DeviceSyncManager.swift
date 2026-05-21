@@ -319,6 +319,49 @@ struct PlaybackSessionSyncPolicy: Sendable {
     }
 }
 
+struct PlaybackStateBroadcastPolicy: Sendable {
+    static let minimumProgressBroadcastInterval: TimeInterval = 1.5
+
+    static func shouldBroadcast(
+        snapshot: PlaybackSnapshot,
+        previousSnapshot: PlaybackSnapshot?,
+        lastBroadcastAt: Date?,
+        now: Date = Date(),
+        force: Bool = false,
+        syncModeEnabled: Bool = true,
+        isApplyingRemoteCommand: Bool = false,
+        sharedOutputDeviceID: String? = nil,
+        localDeviceID: String
+    ) -> Bool {
+        guard syncModeEnabled, !isApplyingRemoteCommand else { return false }
+        guard sharedOutputDeviceID == nil || sharedOutputDeviceID == localDeviceID else { return false }
+        if force { return true }
+        guard let previousSnapshot else { return true }
+
+        if shouldBypassProgressThrottle(snapshot: snapshot, previousSnapshot: previousSnapshot) {
+            return true
+        }
+
+        guard let lastBroadcastAt else { return true }
+        return now.timeIntervalSince(lastBroadcastAt) > minimumProgressBroadcastInterval
+    }
+
+    private static func shouldBypassProgressThrottle(
+        snapshot: PlaybackSnapshot,
+        previousSnapshot: PlaybackSnapshot
+    ) -> Bool {
+        if snapshot.song?.id != previousSnapshot.song?.id { return true }
+        if snapshot.isPlaying != previousSnapshot.isPlaying { return true }
+        if (snapshot.isBuffering ?? false) != (previousSnapshot.isBuffering ?? false) { return true }
+        if (snapshot.prebufferedTrackCount ?? 0) != (previousSnapshot.prebufferedTrackCount ?? 0) { return true }
+        if snapshot.currentIndex != previousSnapshot.currentIndex { return true }
+        if snapshot.queue.map(\.id) != previousSnapshot.queue.map(\.id) { return true }
+        if abs((snapshot.volume ?? -1) - (previousSnapshot.volume ?? -1)) > 0.01 { return true }
+        if abs(snapshot.duration - previousSnapshot.duration) > 1 { return true }
+        return false
+    }
+}
+
 struct PlaybackTargetDevice: Identifiable, Equatable, Sendable {
     let id: String
     let name: String
@@ -485,6 +528,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
     private let platformName: String
     private var cancellables = Set<AnyCancellable>()
     private var lastPlaybackBroadcast = Date.distantPast
+    private var lastBroadcastedPlaybackSnapshot: PlaybackSnapshot?
     private var isApplyingRemoteCommand = false
     private var peerInfos: [String: SyncPeerInfo] = [:]
     private var pendingTargetedCommands: [String: PlaybackCommand] = [:]
@@ -1273,12 +1317,23 @@ final class DeviceSyncManager: NSObject, ObservableObject {
     }
 
     private func broadcastPlaybackState(force: Bool = false) {
-        guard syncModeEnabled else { return }
-        guard !isApplyingRemoteCommand else { return }
-        guard sharedSession?.outputDeviceID == nil || sharedSession?.outputDeviceID == localDeviceID else { return }
-        guard force || Date().timeIntervalSince(lastPlaybackBroadcast) > 1.5 else { return }
-        lastPlaybackBroadcast = Date()
-        _ = sendEnvelope(.init(kind: .playbackState, sender: localPeerInfo(), playback: localPlaybackSnapshot(), command: nil, credentials: nil, targetDeviceID: nil))
+        let now = Date()
+        let snapshot = localPlaybackSnapshot()
+        guard PlaybackStateBroadcastPolicy.shouldBroadcast(
+            snapshot: snapshot,
+            previousSnapshot: lastBroadcastedPlaybackSnapshot,
+            lastBroadcastAt: lastPlaybackBroadcast,
+            now: now,
+            force: force,
+            syncModeEnabled: syncModeEnabled,
+            isApplyingRemoteCommand: isApplyingRemoteCommand,
+            sharedOutputDeviceID: sharedSession?.outputDeviceID,
+            localDeviceID: localDeviceID
+        ) else { return }
+
+        lastPlaybackBroadcast = now
+        lastBroadcastedPlaybackSnapshot = snapshot
+        _ = sendEnvelope(.init(kind: .playbackState, sender: localPeerInfo(), playback: snapshot, command: nil, credentials: nil, targetDeviceID: nil))
     }
 
     private func shouldPublishRemotePlayback(_ playback: PlaybackSnapshot) -> Bool {
