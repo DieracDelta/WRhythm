@@ -10,13 +10,13 @@ import Combine
 
 // MARK: - Audio Quality Settings
 
-enum AudioQuality: Int, CaseIterable, Codable {
+enum AudioQuality: Int, CaseIterable, Codable, Sendable {
     case low = 64
     case medium = 128
     case high = 192
     case max = 320
 
-    var label: String {
+    nonisolated var label: String {
         switch self {
         case .low: return "Low"
         case .medium: return "Medium"
@@ -25,7 +25,7 @@ enum AudioQuality: Int, CaseIterable, Codable {
         }
     }
 
-    var description: String {
+    nonisolated var description: String {
         switch self {
         case .low: return "64 kbps - Smallest files"
         case .medium: return "128 kbps - Balanced"
@@ -34,19 +34,19 @@ enum AudioQuality: Int, CaseIterable, Codable {
         }
     }
 
-    var shortDescription: String {
+    nonisolated var shortDescription: String {
         "\(rawValue) kbps"
     }
 }
 
-enum StreamingQuality: Int, CaseIterable, Codable {
+enum StreamingQuality: Int, CaseIterable, Codable, Sendable {
     case original = 0
     case low = 64
     case medium = 128
     case high = 192
     case max = 320
 
-    static var platformDefault: StreamingQuality {
+    nonisolated static var platformDefault: StreamingQuality {
 #if os(watchOS)
         return .medium
 #else
@@ -59,7 +59,7 @@ enum StreamingQuality: Int, CaseIterable, Codable {
         return savedValue.flatMap { StreamingQuality(rawValue: $0) } ?? platformDefault
     }
 
-    var label: String {
+    nonisolated var label: String {
         switch self {
         case .original: return "Original"
         case .low: return "Low"
@@ -69,7 +69,7 @@ enum StreamingQuality: Int, CaseIterable, Codable {
         }
     }
 
-    var description: String {
+    nonisolated var description: String {
         switch self {
         case .original: return "Original stream - FLAC/lossless when the server and device support it"
         case .low: return "64 kbps MP3"
@@ -79,21 +79,21 @@ enum StreamingQuality: Int, CaseIterable, Codable {
         }
     }
 
-    var maxBitRate: Int? {
+    nonisolated var maxBitRate: Int? {
         self == .original ? nil : rawValue
     }
 }
 
 // MARK: - Migration State (for crash recovery during codec change)
 
-struct MigrationState: Codable {
+nonisolated struct MigrationState: Codable, Sendable {
     let inProgress: Bool
     let targetBitRate: Int
     let songsToRedownload: [String]  // song IDs
     let startedAt: Date
 }
 
-struct DownloadedSong: Codable {
+struct DownloadedSong: Codable, Sendable {
     let songId: String
     let title: String
     let artist: String?
@@ -118,7 +118,7 @@ struct DownloadedSong: Codable {
     }
 }
 
-struct CachedPlaylist: Codable {
+struct CachedPlaylist: Codable, Sendable {
     let id: String
     let name: String
     let songCount: Int
@@ -127,7 +127,7 @@ struct CachedPlaylist: Codable {
     let cachedAt: Date
 }
 
-struct RadioPlaylist: Codable, Identifiable {
+struct RadioPlaylist: Codable, Identifiable, Sendable {
     let id: String  // ID of the source song
     let sourceSongTitle: String
     let sourceSongArtist: String?
@@ -511,9 +511,7 @@ class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
 
     private func saveIncompleteDownloads() {
         // Collect all song IDs that are in queue or actively downloading
-        var incompleteIds: [String] = []
-        incompleteIds.append(contentsOf: downloadQueue.map { $0.id })
-        incompleteIds.append(contentsOf: activeDownloads.keys)
+        let incompleteIds = downloadQueue.map(\.id) + Array(activeDownloads.keys)
 
         // Save on background queue to avoid blocking UI
         let url = incompleteDownloadsURL
