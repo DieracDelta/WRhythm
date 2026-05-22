@@ -1829,6 +1829,20 @@ struct PlaybackSyncPolicyTests {
         #expect(visibility.showsRemote == false)
     }
 
+    @Test func displayPolicyShowsPausedLocalOwnerInsteadOfRemoteMirror() {
+        let visibility = PlaybackDisplaySourcePolicy.visibility(
+            hasLocalSong: true,
+            localIsPlaying: false,
+            hasRemotePlayback: true,
+            hasActiveSharedPlayback: false,
+            remoteQueueMatchesLocal: true,
+            localIsPlaybackOutput: true
+        )
+
+        #expect(visibility.showsLocal == true)
+        #expect(visibility.showsRemote == false)
+    }
+
     @Test func displayPolicyCanShowIndependentLocalAndRemotePlaybackRows() {
         let visibility = PlaybackDisplaySourcePolicy.visibility(
             hasLocalSong: true,

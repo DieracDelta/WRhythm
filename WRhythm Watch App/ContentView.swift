@@ -460,7 +460,8 @@ struct MacMiniPlayerBar: View {
             localIsPlaying: player.isPlaying,
             hasRemotePlayback: remotePlayback?.song != nil,
             hasActiveSharedPlayback: deviceSyncManager.activeSharedPlayback != nil,
-            remoteQueueMatchesLocal: remoteQueueMatchesLocal
+            remoteQueueMatchesLocal: remoteQueueMatchesLocal,
+            localIsPlaybackOutput: deviceSyncManager.isLocalPlaybackOutput
         )
     }
 

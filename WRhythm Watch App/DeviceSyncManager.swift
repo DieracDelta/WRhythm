@@ -764,17 +764,20 @@ struct PlaybackDisplaySourcePolicy: Sendable {
         localIsPlaying: Bool,
         hasRemotePlayback: Bool,
         hasActiveSharedPlayback: Bool,
-        remoteQueueMatchesLocal: Bool
+        remoteQueueMatchesLocal: Bool,
+        localIsPlaybackOutput: Bool = false
     ) -> PlaybackDisplayVisibility {
         let showsLocal = hasLocalSong && !shouldHideLocal(
             localIsPlaying: localIsPlaying,
             hasActiveSharedPlayback: hasActiveSharedPlayback,
-            remoteQueueMatchesLocal: remoteQueueMatchesLocal
+            remoteQueueMatchesLocal: remoteQueueMatchesLocal,
+            localIsPlaybackOutput: localIsPlaybackOutput
         )
         let showsRemote = hasRemotePlayback && !shouldHideRemote(
             localIsPlaying: localIsPlaying,
             hasActiveSharedPlayback: hasActiveSharedPlayback,
-            remoteQueueMatchesLocal: remoteQueueMatchesLocal
+            remoteQueueMatchesLocal: remoteQueueMatchesLocal,
+            localIsPlaybackOutput: localIsPlaybackOutput
         )
         return PlaybackDisplayVisibility(showsLocal: showsLocal, showsRemote: showsRemote)
     }
@@ -782,17 +785,25 @@ struct PlaybackDisplaySourcePolicy: Sendable {
     private static func shouldHideLocal(
         localIsPlaying: Bool,
         hasActiveSharedPlayback: Bool,
-        remoteQueueMatchesLocal: Bool
+        remoteQueueMatchesLocal: Bool,
+        localIsPlaybackOutput: Bool
     ) -> Bool {
-        hasActiveSharedPlayback || (remoteQueueMatchesLocal && !localIsPlaying)
+        if localIsPlaybackOutput {
+            return hasActiveSharedPlayback
+        }
+        return hasActiveSharedPlayback || (remoteQueueMatchesLocal && !localIsPlaying)
     }
 
     private static func shouldHideRemote(
         localIsPlaying: Bool,
         hasActiveSharedPlayback: Bool,
-        remoteQueueMatchesLocal: Bool
+        remoteQueueMatchesLocal: Bool,
+        localIsPlaybackOutput: Bool
     ) -> Bool {
-        remoteQueueMatchesLocal && localIsPlaying && !hasActiveSharedPlayback
+        if localIsPlaybackOutput, remoteQueueMatchesLocal {
+            return true
+        }
+        return remoteQueueMatchesLocal && localIsPlaying && !hasActiveSharedPlayback
     }
 }
 
