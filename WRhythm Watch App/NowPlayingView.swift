@@ -1580,6 +1580,7 @@ private struct WatchNowPlayingView: View {
             .padding(.bottom, WRhythmSpacing.xs)
         }
         .wrhythmPageBackground(coverArtId: primaryArtworkCoverArtId)
+        .safeAreaPadding(.top, -22)
         .navigationTitle("")
         .toolbar(.hidden, for: .navigationBar)
         .sheet(item: $presentedSheet) { sheet in
