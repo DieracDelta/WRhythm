@@ -1053,6 +1053,91 @@ struct PlaybackSyncPolicyTests {
         ))
 
         #expect(snapshot.currentTime == 15)
+        #expect(snapshot.updatedAt == now)
+    }
+
+    @Test func playbackSessionSnapshotUsesFreshLiveRemotePauseOverStalePlayingSession() throws {
+        let now = Date()
+        let session = makeSession(
+            outputDeviceID: "mac",
+            isPlaying: true,
+            position: 10,
+            updatedAt: now.addingTimeInterval(-5)
+        )
+        let remotePause = makeSnapshot(
+            id: "mac",
+            isPlaying: false,
+            currentTime: 13,
+            updatedAt: now
+        )
+
+        let snapshot = try #require(PlaybackSessionSnapshotPolicy.snapshot(
+            from: session,
+            deviceName: "Mac",
+            platform: "Mac",
+            remotePlayback: remotePause,
+            now: now
+        ))
+
+        #expect(snapshot.isPlaying == false)
+        #expect(snapshot.currentTime == 13)
+        #expect(snapshot.updatedAt == now)
+    }
+
+    @Test func playbackSessionSnapshotKeepsSessionStateWhenRemotePlaybackIsOlder() throws {
+        let now = Date()
+        let session = makeSession(
+            outputDeviceID: "mac",
+            isPlaying: false,
+            position: 20,
+            updatedAt: now
+        )
+        let staleRemotePlaying = makeSnapshot(
+            id: "mac",
+            isPlaying: true,
+            currentTime: 12,
+            updatedAt: now.addingTimeInterval(-5)
+        )
+
+        let snapshot = try #require(PlaybackSessionSnapshotPolicy.snapshot(
+            from: session,
+            deviceName: "Mac",
+            platform: "Mac",
+            remotePlayback: staleRemotePlaying,
+            now: now
+        ))
+
+        #expect(snapshot.isPlaying == false)
+        #expect(snapshot.currentTime == 20)
+        #expect(snapshot.updatedAt == now)
+    }
+
+    @Test func playbackSessionSnapshotUsesFreshLiveRemotePlayingProgressOverSessionEstimate() throws {
+        let now = Date()
+        let session = makeSession(
+            outputDeviceID: "mac",
+            isPlaying: true,
+            position: 10,
+            updatedAt: now.addingTimeInterval(-5)
+        )
+        let remotePlaying = makeSnapshot(
+            id: "mac",
+            isPlaying: true,
+            currentTime: 13,
+            updatedAt: now.addingTimeInterval(-1)
+        )
+
+        let snapshot = try #require(PlaybackSessionSnapshotPolicy.snapshot(
+            from: session,
+            deviceName: "Mac",
+            platform: "Mac",
+            remotePlayback: remotePlaying,
+            now: now
+        ))
+
+        #expect(snapshot.isPlaying == true)
+        #expect(snapshot.currentTime == 14)
+        #expect(snapshot.updatedAt == now)
     }
 
     @Test func playbackRetryPolicyRejectsRetryAfterUserIntentChanges() {

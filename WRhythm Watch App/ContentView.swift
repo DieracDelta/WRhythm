@@ -249,6 +249,9 @@ struct MacSidebar: View {
     }
 
     private var displayedQueueIsPlaying: Bool {
+        if let sharedPlayback = deviceSyncManager.activeSharedPlayback {
+            return sharedPlayback.isPlaying
+        }
         if let sharedSession = deviceSyncManager.sharedSession {
             return sharedSession.isPlaying
         }

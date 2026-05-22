@@ -882,6 +882,30 @@ struct PlaybackSessionSyncPolicy: Sendable {
 }
 
 struct PlaybackSessionSnapshotPolicy: Sendable {
+    private static func livePlaybackForSession(
+        _ remotePlayback: PlaybackSnapshot?,
+        session: PlaybackSession
+    ) -> PlaybackSnapshot? {
+        guard let remotePlayback,
+              remotePlayback.id == session.outputDeviceID,
+              remotePlayback.updatedAt >= session.updatedAt else {
+            return nil
+        }
+
+        if let currentSong = session.currentSong,
+           let remoteSong = remotePlayback.song,
+           remoteSong.id != currentSong.id {
+            return nil
+        }
+
+        let remoteQueueIDs = remotePlayback.queue.map(\.id)
+        if !remoteQueueIDs.isEmpty, remoteQueueIDs != session.queue.map(\.id) {
+            return nil
+        }
+
+        return remotePlayback
+    }
+
     static func snapshot(
         from session: PlaybackSession,
         deviceName: String,
@@ -890,22 +914,23 @@ struct PlaybackSessionSnapshotPolicy: Sendable {
         now: Date = Date()
     ) -> PlaybackSnapshot? {
         guard let song = session.currentSong else { return nil }
-        let isRemotePlaybackFromSessionOutput = remotePlayback?.id == session.outputDeviceID
+        let livePlayback = livePlaybackForSession(remotePlayback, session: session)
+        let currentTime = livePlayback?.estimatedCurrentTime(at: now) ?? session.estimatedPosition(at: now)
 
         return PlaybackSnapshot(
             id: session.outputDeviceID,
             deviceName: deviceName,
             platform: platform,
             song: song,
-            isPlaying: session.isPlaying,
-            isBuffering: isRemotePlaybackFromSessionOutput ? remotePlayback?.isBuffering : nil,
-            prebufferedTrackCount: isRemotePlaybackFromSessionOutput ? remotePlayback?.prebufferedTrackCount : nil,
-            volume: session.volume,
-            currentTime: session.estimatedPosition(at: now),
-            duration: TimeInterval(song.duration ?? 0),
+            isPlaying: livePlayback?.isPlaying ?? session.isPlaying,
+            isBuffering: livePlayback?.isBuffering,
+            prebufferedTrackCount: livePlayback?.prebufferedTrackCount,
+            volume: livePlayback?.volume ?? session.volume,
+            currentTime: currentTime,
+            duration: livePlayback?.duration ?? TimeInterval(song.duration ?? 0),
             queue: session.queue,
             currentIndex: session.currentIndex,
-            updatedAt: session.updatedAt
+            updatedAt: now
         )
     }
 }
