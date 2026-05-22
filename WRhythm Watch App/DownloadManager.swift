@@ -142,10 +142,9 @@ struct DownloadedSong: Codable, Sendable {
     let filePath: String
     let downloadedAt: Date
     let fileSize: Int64
-    let downloadedBitRate: Int?  // nil = original/legacy download
+    let downloadedBitRate: Int
 
-    // For backwards compatibility with existing downloads.json
-    init(songId: String, title: String, artist: String?, album: String?, coverArt: String?, filePath: String, downloadedAt: Date, fileSize: Int64, downloadedBitRate: Int? = nil) {
+    init(songId: String, title: String, artist: String?, album: String?, coverArt: String?, filePath: String, downloadedAt: Date, fileSize: Int64, downloadedBitRate: Int) {
         self.songId = songId
         self.title = title
         self.artist = artist

@@ -1250,9 +1250,92 @@ struct PlaybackSyncPolicyTests {
         #expect(CredentialSyncPolicy.shouldImport(incomingIssuedAt: freshCredentialIssuedAt, localClearedAt: logoutTime) == true)
     }
 
-    @Test func legacyCredentialsOnlyImportWhenDeviceHasNeverClearedCredentials() {
-        #expect(CredentialSyncPolicy.shouldImport(incomingIssuedAt: nil, localClearedAt: .distantPast) == true)
-        #expect(CredentialSyncPolicy.shouldImport(incomingIssuedAt: nil, localClearedAt: Date()) == false)
+    @MainActor
+    @Test func credentialPayloadRequiresIssuedAt() {
+        let payload = """
+        {
+          "baseURL": "https://example.test",
+          "username": "admin",
+          "password": "secret"
+        }
+        """
+
+        #expect(throws: DecodingError.self) {
+            try JSONDecoder().decode(SyncedCredentials.self, from: Data(payload.utf8))
+        }
+    }
+
+    @MainActor
+    @Test func similarSongsResponseIgnoresLegacySimilarSongsPayload() throws {
+        let payload = """
+        {
+          "status": "ok",
+          "version": "1.16.1",
+          "similarSongs": {
+            "song": [
+              {
+                "id": "legacy-song",
+                "title": "Legacy Song",
+                "album": "Album",
+                "albumId": "album-1",
+                "artist": "Artist",
+                "artistId": "artist-1",
+                "duration": 180
+              }
+            ]
+          }
+        }
+        """
+
+        let response = try JSONDecoder().decode(SimilarSongsResponse.self, from: Data(payload.utf8))
+
+        #expect(response.songs.isEmpty)
+    }
+
+    @MainActor
+    @Test func similarSongsForSongWithoutArtistIdReturnsEmpty() async throws {
+        let song = Song(
+            id: "song-without-artist-id",
+            title: "Track",
+            album: "Album",
+            albumId: "album-1",
+            artist: "Artist",
+            artistId: nil,
+            track: 1,
+            year: 2026,
+            genre: "Genre",
+            coverArt: "cover-1",
+            size: 1024,
+            contentType: "audio/flac",
+            suffix: "flac",
+            duration: 180,
+            bitRate: 900,
+            path: "music/song.flac"
+        )
+
+        let songs = try await NavidromeAPI.shared.getSimilarSongsForSong(song, count: 10)
+
+        #expect(songs.isEmpty)
+    }
+
+    @MainActor
+    @Test func downloadedSongRequiresExplicitBitrate() {
+        let payload = """
+        {
+          "songId": "song-1",
+          "title": "Track",
+          "artist": "Artist",
+          "album": "Album",
+          "coverArt": "cover-1",
+          "filePath": "song-1.mp3",
+          "downloadedAt": 1770000000,
+          "fileSize": 12345
+        }
+        """
+
+        #expect(throws: DecodingError.self) {
+            try JSONDecoder().decode(DownloadedSong.self, from: Data(payload.utf8))
+        }
     }
 
     private func makeSnapshot(

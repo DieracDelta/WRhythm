@@ -156,7 +156,7 @@ final class NavidromeAPI: ObservableObject {
         UserDefaults.standard.set(self.username, forKey: "navidrome_username")
         UserDefaults.standard.set(self.password, forKey: "navidrome_password")
 
-        let issuedAt = credentials.issuedAt ?? Date()
+        let issuedAt = credentials.issuedAt
         self.credentialIssuedAt = issuedAt
         UserDefaults.standard.set(issuedAt, forKey: Self.credentialIssuedAtKey)
 
@@ -258,11 +258,7 @@ final class NavidromeAPI: ObservableObject {
         }
 
         guard CredentialSyncPolicy.shouldImport(incomingIssuedAt: credentials.issuedAt, localClearedAt: credentialClearedAt) else {
-            if credentials.issuedAt == nil {
-                print("🔐 Skipped legacy credential import after local logout")
-            } else {
-                print("🔐 Skipped stale credential import from before local logout")
-            }
+            print("🔐 Skipped stale credential import from before local logout")
             return false
         }
 
@@ -270,7 +266,7 @@ final class NavidromeAPI: ObservableObject {
             baseURL: credentials.baseURL,
             username: credentials.username,
             password: credentials.password,
-            issuedAt: credentials.issuedAt ?? Date()
+            issuedAt: credentials.issuedAt
         ))
         print("🔐 Imported credentials from a trusted nearby WRhythm device")
         return true
@@ -594,37 +590,8 @@ final class NavidromeAPI: ObservableObject {
     }
 
     func getSimilarSongsForSong(_ song: Song, count: Int = 100) async throws -> [Song] {
-        if let artistId = song.artistId {
-            let songs = try await getSimilarSongs2(artistId: artistId, count: count)
-            if !songs.isEmpty {
-                return songs
-            }
-        }
-
-        // Legacy fallback for servers or metadata where the source song has no
-        // ID3 artist ID. Prefer getSimilarSongs2 above for normal Navidrome use.
-        return try await getSimilarSongs(id: song.id, count: count)
-    }
-
-    private func getSimilarSongs(id: String, count: Int = 100) async throws -> [Song] {
-        guard let url = buildURL(endpoint: "getSimilarSongs", additionalParams: [
-            "id": id,
-            "count": String(count)
-        ]) else {
-            throw NavidromeError.invalidURL
-        }
-
-        let (data, _) = try await URLSession.shared.data(from: url)
-        let result = try JSONDecoder().decode(SubsonicResponse<SimilarSongsResponse>.self, from: data)
-
-        guard result.subsonicResponse.status == "ok" else {
-            if let error = result.subsonicResponse.error {
-                throw NavidromeError.apiError(error.message)
-            }
-            throw NavidromeError.unknown
-        }
-
-        return result.subsonicResponse.songs
+        guard let artistId = song.artistId else { return [] }
+        return try await getSimilarSongs2(artistId: artistId, count: count)
     }
 
     func getSimilarSongs2(artistId: String, count: Int = 100) async throws -> [Song] {
@@ -1015,11 +982,10 @@ struct SimilarSongsResponse: Decodable {
     let status: String
     let version: String
     let error: SubsonicError?
-    let similarSongs: SimilarSongs?
     let similarSongs2: SimilarSongs?
 
     var songs: [Song] {
-        similarSongs2?.song ?? similarSongs?.song ?? []
+        similarSongs2?.song ?? []
     }
 }
 

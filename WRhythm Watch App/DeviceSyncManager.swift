@@ -106,9 +106,9 @@ struct SyncedCredentials: Codable, Sendable {
     let baseURL: String
     let username: String
     let password: String
-    let issuedAt: Date?
+    let issuedAt: Date
 
-    init(baseURL: String, username: String, password: String, issuedAt: Date? = nil) {
+    init(baseURL: String, username: String, password: String, issuedAt: Date) {
         self.baseURL = baseURL
         self.username = username
         self.password = password
@@ -280,11 +280,8 @@ struct MultipeerInviteRetryPolicy: Sendable {
 }
 
 struct CredentialSyncPolicy: Sendable {
-    static func shouldImport(incomingIssuedAt: Date?, localClearedAt: Date) -> Bool {
-        if let incomingIssuedAt {
-            return incomingIssuedAt > localClearedAt
-        }
-        return localClearedAt <= .distantPast
+    static func shouldImport(incomingIssuedAt: Date, localClearedAt: Date) -> Bool {
+        incomingIssuedAt > localClearedAt
     }
 }
 
