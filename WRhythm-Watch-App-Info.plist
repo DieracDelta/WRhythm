@@ -20,10 +20,18 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>WKCompanionAppBundleIdentifier</key>
 	<string>com.restivollc.wrhythm</string>
+	<key>WKRunsIndependentlyOfCompanionApp</key>
+	<true/>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
 	</array>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_wrhythm-sync._tcp</string>
+	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>WRhythm uses your local network to find nearby WRhythm devices for optional playback and credential sync.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>

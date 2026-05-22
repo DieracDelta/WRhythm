@@ -909,6 +909,21 @@ struct PlaybackSyncPolicyTests {
         #expect(SyncTransportFailurePolicy.shouldRestartMultipeerDiscoveryAfterSendFailure(hasConnectedPeers: false) == false)
     }
 
+    @Test func supportedSyncGraphKeepsWatchIndependentWithIPhoneBridgeToMac() {
+        #expect(SyncTransportAvailabilityPolicy.canDirectlyDiscover(local: .appleWatch, remote: .iPhone) == true)
+        #expect(SyncTransportAvailabilityPolicy.canDirectlyDiscover(local: .iPhone, remote: .appleWatch) == true)
+        #expect(SyncTransportAvailabilityPolicy.canDirectlyDiscover(local: .iPhone, remote: .mac) == true)
+        #expect(SyncTransportAvailabilityPolicy.canDirectlyDiscover(local: .mac, remote: .iPhone) == true)
+        #expect(SyncTransportAvailabilityPolicy.canDirectlyDiscover(local: .appleWatch, remote: .mac) == false)
+        #expect(SyncTransportAvailabilityPolicy.canDirectlyDiscover(local: .mac, remote: .appleWatch) == false)
+        #expect(SyncBridgeRelayPolicy.shouldRelay(
+            kind: .playbackSession,
+            receivedVia: .watchConnectivity,
+            localPlatform: .iPhone,
+            hasDestinationTransport: true
+        ) == true)
+    }
+
     @Test func watchConnectivityBootstrapsOnlyAfterCleanActivation() {
         #expect(WatchConnectivityActivationPolicy.shouldBootstrapSync(activationSucceeded: true, hasError: false) == true)
         #expect(WatchConnectivityActivationPolicy.shouldBootstrapSync(activationSucceeded: false, hasError: false) == false)
@@ -977,6 +992,36 @@ struct PlaybackSyncPolicyTests {
         ) == false)
         #expect(WatchConnectivityCredentialBootstrapPolicy.shouldRequestCredentialsOnBootstrap(
             credentialSyncEnabled: true,
+            localHasCredentials: true
+        ) == false)
+    }
+
+    @Test func standaloneWatchCredentialFlowDoesNotRequirePeerImportWhenCredentialsExist() {
+        #expect(CredentialSyncBootstrapPolicy.shouldAuthorizeImportOnBootstrap(
+            localCredentialSyncEnabled: true,
+            localHasCredentials: true
+        ) == false)
+        #expect(WatchConnectivityCredentialBootstrapPolicy.shouldRequestCredentialsOnBootstrap(
+            credentialSyncEnabled: true,
+            localHasCredentials: true
+        ) == false)
+        #expect(CredentialSyncBootstrapPolicy.shouldOfferCredentials(
+            localCredentialSyncEnabled: true,
+            localHasCredentials: true
+        ) == true)
+    }
+
+    @Test func standaloneWatchCanDeclineCredentialSyncAndStillUseManualCredentials() {
+        #expect(CredentialSyncBootstrapPolicy.shouldAuthorizeImportOnBootstrap(
+            localCredentialSyncEnabled: false,
+            localHasCredentials: false
+        ) == false)
+        #expect(WatchConnectivityCredentialBootstrapPolicy.shouldRequestCredentialsOnBootstrap(
+            credentialSyncEnabled: false,
+            localHasCredentials: false
+        ) == false)
+        #expect(CredentialSyncBootstrapPolicy.shouldOfferCredentials(
+            localCredentialSyncEnabled: false,
             localHasCredentials: true
         ) == false)
     }
@@ -1866,6 +1911,24 @@ struct PlaybackSyncPolicyTests {
         #expect(throws: DecodingError.self) {
             try JSONDecoder().decode(SyncedCredentials.self, from: Data(payload.utf8))
         }
+    }
+
+    @Test func watchInfoPlistDeclaresIndependentAppAndSyncDiscovery() throws {
+        let plistURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("WRhythm-Watch-App-Info.plist")
+        let data = try Data(contentsOf: plistURL)
+        let plist = try #require(PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any])
+
+        #expect(plist["WKRunsIndependentlyOfCompanionApp"] as? Bool == true)
+        #expect(plist["WKCompanionAppBundleIdentifier"] as? String == "com.restivollc.wrhythm")
+
+        let bonjourServices = try #require(plist["NSBonjourServices"] as? [String])
+        #expect(bonjourServices.contains("_wrhythm-sync._tcp"))
+
+        let localNetworkUsageDescription = try #require(plist["NSLocalNetworkUsageDescription"] as? String)
+        #expect(localNetworkUsageDescription.isEmpty == false)
     }
 
     @MainActor
