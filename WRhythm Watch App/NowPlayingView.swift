@@ -31,6 +31,7 @@ struct NowPlayingView: View {
         )
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .navigationBar)
         .sheet(item: $presentedSheet) { sheet in
             switch sheet {
             case .volume:

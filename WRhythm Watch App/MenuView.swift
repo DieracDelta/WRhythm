@@ -30,6 +30,9 @@ struct MenuView: View {
         }
         .navigationTitle("")
         .platformNavigationBarTitleDisplayModeInline()
+#if os(iOS)
+        .toolbar(.hidden, for: .navigationBar)
+#endif
     }
 
     private func menuGroup<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {

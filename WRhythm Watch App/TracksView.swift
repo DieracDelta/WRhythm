@@ -250,7 +250,11 @@ struct TracksView: View {
                 .wrhythmListSurface()
             }
         }
-        .navigationTitle(offlineMode ? "Offline Search" : "Search")
+        .navigationTitle(navigationTitleText)
+#if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(showsPhoneSearchPrompt ? .hidden : .visible, for: .navigationBar)
+#endif
         .wrhythmPageBackground()
         .toolbar {
             ToolbarItem(placement: .platformTopBarTrailing) {
@@ -324,6 +328,15 @@ struct TracksView: View {
             }
             .buttonStyle(.plain)
         }
+#elseif os(iOS)
+        PhoneSearchPromptView(
+            title: offlineMode ? "Offline Search" : "Search",
+            promptTitle: title,
+            message: message,
+            actionTitle: "Search"
+        ) {
+            presentedSheet = .search
+        }
 #else
         WRhythmEmptyState(
             systemImage: "magnifyingglass",
@@ -394,6 +407,22 @@ struct TracksView: View {
             return "Download songs while online to search offline"
         }
         return "\(downloadedCount) songs available offline"
+    }
+
+    private var navigationTitleText: String {
+#if os(iOS)
+        showsPhoneSearchPrompt ? "" : (offlineMode ? "Offline Search" : "Search")
+#else
+        offlineMode ? "Offline Search" : "Search"
+#endif
+    }
+
+    private var showsPhoneSearchPrompt: Bool {
+#if os(iOS)
+        searchText.isEmpty && !isSearching && errorMessage.isEmpty
+#else
+        false
+#endif
     }
 
     private func performSearch(query: String) {

@@ -202,6 +202,25 @@ struct WRhythmScreen<Content: View>: View {
     }
 
     var body: some View {
+#if os(iOS)
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(spacing: WRhythmVisual.sectionSpacing) {
+                    content
+                }
+                .frame(maxWidth: WRhythmVisual.contentMaxWidth)
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: max(0, proxy.size.height - WRhythmVisual.bottomNavigationClearance), alignment: .top)
+                .padding(.horizontal, horizontalPadding)
+                .padding(.top, WRhythmSpacing.md)
+                .padding(.bottom, WRhythmVisual.bottomNavigationClearance)
+            }
+            .scrollIndicators(.hidden)
+            .safeAreaPadding(.top, WRhythmSpacing.md)
+            .ignoresSafeArea(.container, edges: .top)
+        }
+        .wrhythmPageBackground(coverArtId: coverArtId)
+#else
         ScrollView {
             VStack(spacing: WRhythmVisual.sectionSpacing) {
                 content
@@ -212,6 +231,7 @@ struct WRhythmScreen<Content: View>: View {
             .padding(.vertical, 16)
         }
         .wrhythmPageBackground(coverArtId: coverArtId)
+#endif
     }
 }
 

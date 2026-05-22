@@ -38,6 +38,10 @@ struct ContentView: View {
                     NavigationStack {
                         MenuView()
                     }
+#if os(iOS)
+                    .toolbar(.hidden, for: .navigationBar)
+                    .navigationBarHidden(true)
+#endif
                         .tabItem {
                             Label("Library", systemImage: "square.grid.2x2")
                         }
@@ -46,6 +50,10 @@ struct ContentView: View {
                     NavigationStack {
                         TracksView()
                     }
+#if os(iOS)
+                    .toolbar(.hidden, for: .navigationBar)
+                    .navigationBarHidden(true)
+#endif
                     .tabItem {
                         Label("Search", systemImage: "magnifyingglass")
                     }
@@ -54,6 +62,10 @@ struct ContentView: View {
                     NavigationStack {
                         NowPlayingView()
                     }
+#if os(iOS)
+                    .toolbar(.hidden, for: .navigationBar)
+                    .navigationBarHidden(true)
+#endif
                     .tabItem {
                         Label("Playing", systemImage: "play.circle.fill")
                     }
@@ -62,6 +74,10 @@ struct ContentView: View {
                     NavigationStack {
                         DownloadsView()
                     }
+#if os(iOS)
+                    .toolbar(.hidden, for: .navigationBar)
+                    .navigationBarHidden(true)
+#endif
                     .tabItem {
                         Label("Downloads", systemImage: "arrow.down.circle")
                     }
@@ -70,6 +86,7 @@ struct ContentView: View {
 #if os(iOS)
                 .toolbarBackground(.visible, for: .tabBar)
                 .toolbarBackground(.ultraThinMaterial, for: .tabBar)
+                .ignoresSafeArea(.container, edges: .top)
 #endif
 #endif
             } else {
