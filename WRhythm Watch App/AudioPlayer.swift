@@ -1394,11 +1394,7 @@ class AudioPlayer: NSObject, ObservableObject {
             DeviceSyncManager.shared.toggleSelectedPlaybackTarget()
             return
         }
-        if isPlaying {
-            pause()
-        } else {
-            play()
-        }
+        DeviceSyncManager.shared.setPlaying(!isPlaying, targetDeviceID: DeviceSyncManager.shared.localPlaybackTargetID)
     }
 
     func next() {

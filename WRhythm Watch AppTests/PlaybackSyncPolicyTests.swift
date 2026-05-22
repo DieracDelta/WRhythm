@@ -239,14 +239,38 @@ struct PlaybackSyncPolicyTests {
         #expect(LocalPlaybackOwnershipPolicy.shouldPublishLocalPlayback(
             sharedOutputDeviceID: "mac",
             localDeviceID: "iphone",
+            selectedPlaybackTargetID: "iphone",
+            hasLocalPlayback: true,
             isLocalPlaying: true
         ) == true)
     }
 
-    @Test func localPlaybackOwnershipKeepsPausedDeviceFromPublishingOverRemoteOwner() {
+    @Test func localPlaybackOwnershipKeepsPausedMirrorFromPublishingOverRemoteOwner() {
         #expect(LocalPlaybackOwnershipPolicy.shouldPublishLocalPlayback(
             sharedOutputDeviceID: "mac",
             localDeviceID: "iphone",
+            selectedPlaybackTargetID: "mac",
+            hasLocalPlayback: true,
+            isLocalPlaying: false
+        ) == false)
+    }
+
+    @Test func pausedLocalSelectedTargetCanPublishOverStaleRemoteOwner() {
+        #expect(LocalPlaybackOwnershipPolicy.shouldPublishLocalPlayback(
+            sharedOutputDeviceID: "iphone",
+            localDeviceID: "mac",
+            selectedPlaybackTargetID: "mac",
+            hasLocalPlayback: true,
+            isLocalPlaying: false
+        ) == true)
+    }
+
+    @Test func pausedLocalSelectedTargetWithoutPlaybackDoesNotPublishOverRemoteOwner() {
+        #expect(LocalPlaybackOwnershipPolicy.shouldPublishLocalPlayback(
+            sharedOutputDeviceID: "iphone",
+            localDeviceID: "mac",
+            selectedPlaybackTargetID: "mac",
+            hasLocalPlayback: false,
             isLocalPlaying: false
         ) == false)
     }
@@ -255,6 +279,8 @@ struct PlaybackSyncPolicyTests {
         #expect(LocalPlaybackOwnershipPolicy.shouldPublishLocalPlayback(
             sharedOutputDeviceID: "mac",
             localDeviceID: "iphone",
+            selectedPlaybackTargetID: "iphone",
+            hasLocalPlayback: true,
             isLocalPlaying: false,
             isExplicitLocalPlaybackIntent: true
         ) == true)

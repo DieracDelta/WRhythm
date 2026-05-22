@@ -726,11 +726,16 @@ struct LocalPlaybackOwnershipPolicy: Sendable {
     static func shouldPublishLocalPlayback(
         sharedOutputDeviceID: String?,
         localDeviceID: String,
+        selectedPlaybackTargetID: String,
+        hasLocalPlayback: Bool,
         isLocalPlaying: Bool,
         isExplicitLocalPlaybackIntent: Bool = false
     ) -> Bool {
         guard let sharedOutputDeviceID else { return true }
-        return sharedOutputDeviceID == localDeviceID || isLocalPlaying || isExplicitLocalPlaybackIntent
+        return sharedOutputDeviceID == localDeviceID
+            || isLocalPlaying
+            || isExplicitLocalPlaybackIntent
+            || (selectedPlaybackTargetID == localDeviceID && hasLocalPlayback)
     }
 }
 
@@ -1515,6 +1520,8 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         guard LocalPlaybackOwnershipPolicy.shouldPublishLocalPlayback(
             sharedOutputDeviceID: sharedSession?.outputDeviceID,
             localDeviceID: localDeviceID,
+            selectedPlaybackTargetID: validSelectedPlaybackTargetID,
+            hasLocalPlayback: player.currentSong != nil,
             isLocalPlaying: player.isPlaying,
             isExplicitLocalPlaybackIntent: isExplicitLocalPlaybackIntent
         ) else { return }
