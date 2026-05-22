@@ -31,10 +31,20 @@ struct PlaybackRetryPolicy: Sendable {
         capturedIntentRevision: Int,
         currentIntentRevision: Int,
         capturedShouldAutoplay: Bool,
-        isCurrentlyPlaying: Bool
+        isCurrentlyPlaying: Bool,
+        capturedQueueIDs: [String]? = nil,
+        currentQueueIDs: [String]? = nil,
+        capturedIndex: Int? = nil,
+        currentIndex: Int? = nil
     ) -> Bool {
         guard currentSongID == capturedSongID else { return false }
         guard capturedIntentRevision == currentIntentRevision else { return false }
+        if let capturedQueueIDs {
+            guard currentQueueIDs == capturedQueueIDs else { return false }
+        }
+        if let capturedIndex {
+            guard currentIndex == capturedIndex else { return false }
+        }
         guard capturedShouldAutoplay else { return true }
         return isCurrentlyPlaying
     }
@@ -79,8 +89,20 @@ struct PrebufferRetryPolicy: Sendable {
 }
 
 struct PrebufferPublicationPolicy: Sendable {
-    static func shouldPublishPreparedBuffer(key: String, desiredKeys: Set<String>, activeTaskKeys: Set<String>) -> Bool {
-        desiredKeys.contains(key) && activeTaskKeys.contains(key)
+    static func shouldPublishPreparedBuffer(
+        key: String,
+        desiredKeys: Set<String>,
+        activeTaskKeys: Set<String>,
+        capturedToken: String,
+        activeToken: String?
+    ) -> Bool {
+        desiredKeys.contains(key) && activeTaskKeys.contains(key) && activeToken == capturedToken
+    }
+}
+
+struct AsyncTaskOwnershipPolicy: Sendable {
+    static func isCurrent(capturedToken: String, activeToken: String?) -> Bool {
+        activeToken == capturedToken
     }
 }
 
@@ -173,6 +195,7 @@ class AudioPlayer: NSObject, ObservableObject {
     private let prebufferAheadCount = 8
     private let maxConcurrentPrebuffers = 3
     private var prebufferTasks: [String: Task<Void, Never>] = [:]
+    private var prebufferTaskTokens: [String: String] = [:]
     private var prebufferURLs: [String: URL] = [:]
     private var preparedPrebuffers: [String: PreparedPrebuffer] = [:]
     private var currentPlaybackURL: URL?
@@ -919,6 +942,7 @@ class AudioPlayer: NSObject, ObservableObject {
         guard !queue.isEmpty else {
             prebufferTasks.values.forEach { $0.cancel() }
             prebufferTasks.removeAll()
+            prebufferTaskTokens.removeAll()
             preparedPrebuffers.removeAll()
             clearPrebufferRetryState()
             updatePrebufferedTrackCount()
@@ -929,6 +953,7 @@ class AudioPlayer: NSObject, ObservableObject {
         guard start < queue.count else {
             prebufferTasks.values.forEach { $0.cancel() }
             prebufferTasks.removeAll()
+            prebufferTaskTokens.removeAll()
             preparedPrebuffers.removeAll()
             clearPrebufferRetryState()
             updatePrebufferedTrackCount()
@@ -946,6 +971,7 @@ class AudioPlayer: NSObject, ObservableObject {
         for key in staleKeys {
             prebufferTasks[key]?.cancel()
             prebufferTasks.removeValue(forKey: key)
+            prebufferTaskTokens.removeValue(forKey: key)
         }
 
         for key in Array(preparedPrebuffers.keys) where !desiredKeys.contains(key) {
@@ -981,6 +1007,8 @@ class AudioPlayer: NSObject, ObservableObject {
     private func startPrebuffering(_ song: Song, key: String) {
         guard let url = streamURLForPlayback(song) else { return }
         let destinationURL = prebufferURL(for: song)
+        let taskToken = UUID().uuidString
+        prebufferTaskTokens[key] = taskToken
 
         prebufferTasks[key] = Task { [weak self] in
             do {
@@ -990,17 +1018,21 @@ class AudioPlayer: NSObject, ObservableObject {
                 try? FileManager.default.removeItem(at: destinationURL)
                 try FileManager.default.moveItem(at: temporaryURL, to: destinationURL)
 
-                await self?.prepareDownloadedPrebuffer(song, key: key, url: destinationURL)
+                await self?.prepareDownloadedPrebuffer(song, key: key, url: destinationURL, taskToken: taskToken)
             } catch is CancellationError {
                 await MainActor.run { [weak self] in
                     guard let player = self else { return }
+                    guard AsyncTaskOwnershipPolicy.isCurrent(capturedToken: taskToken, activeToken: player.prebufferTaskTokens[key]) else { return }
                     player.prebufferTasks.removeValue(forKey: key)
+                    player.prebufferTaskTokens.removeValue(forKey: key)
                     player.updatePrebufferedTrackCount()
                 }
             } catch {
                 await MainActor.run { [weak self] in
                     guard let player = self else { return }
+                    guard AsyncTaskOwnershipPolicy.isCurrent(capturedToken: taskToken, activeToken: player.prebufferTaskTokens[key]) else { return }
                     player.prebufferTasks.removeValue(forKey: key)
+                    player.prebufferTaskTokens.removeValue(forKey: key)
                     player.updatePrebufferedTrackCount()
                     print("⚠️ Failed to prebuffer \(song.title): \(error)")
                     player.schedulePrebufferRetry(for: song, key: key)
@@ -1010,12 +1042,14 @@ class AudioPlayer: NSObject, ObservableObject {
     }
 
     private func preparePrebufferedFile(_ song: Song, key: String, url: URL) {
+        let taskToken = UUID().uuidString
+        prebufferTaskTokens[key] = taskToken
         prebufferTasks[key] = Task { [weak self] in
-            await self?.prepareDownloadedPrebuffer(song, key: key, url: url)
+            await self?.prepareDownloadedPrebuffer(song, key: key, url: url, taskToken: taskToken)
         }
     }
 
-    private func prepareDownloadedPrebuffer(_ song: Song, key: String, url: URL) async {
+    private func prepareDownloadedPrebuffer(_ song: Song, key: String, url: URL, taskToken: String) async {
         do {
             let prebuffer = try await Self.preparePrebufferAsset(for: song, url: url)
             try Task.checkCancellation()
@@ -1025,21 +1059,27 @@ class AudioPlayer: NSObject, ObservableObject {
                 guard PrebufferPublicationPolicy.shouldPublishPreparedBuffer(
                     key: key,
                     desiredKeys: player.desiredPrebufferKeys(),
-                    activeTaskKeys: Set(player.prebufferTasks.keys)
+                    activeTaskKeys: Set(player.prebufferTasks.keys),
+                    capturedToken: taskToken,
+                    activeToken: player.prebufferTaskTokens[key]
                 ) else {
-                    player.prebufferTasks.removeValue(forKey: key)
-                    player.preparedPrebuffers.removeValue(forKey: key)
-                    player.prebufferURLs.removeValue(forKey: key)
-                    if player.prebufferURL(for: song) == url {
-                        try? FileManager.default.removeItem(at: url)
+                    if AsyncTaskOwnershipPolicy.isCurrent(capturedToken: taskToken, activeToken: player.prebufferTaskTokens[key]) {
+                        player.prebufferTasks.removeValue(forKey: key)
+                        player.prebufferTaskTokens.removeValue(forKey: key)
+                        player.preparedPrebuffers.removeValue(forKey: key)
+                        player.prebufferURLs.removeValue(forKey: key)
+                        if player.prebufferURL(for: song) == url {
+                            try? FileManager.default.removeItem(at: url)
+                        }
+                        player.updatePrebufferedTrackCount()
                     }
-                    player.updatePrebufferedTrackCount()
                     return
                 }
                 player.prebufferURLs[key] = prebuffer.url
                 player.preparedPrebuffers[key] = prebuffer
                 player.clearPrebufferRetryState(for: key)
                 player.prebufferTasks.removeValue(forKey: key)
+                player.prebufferTaskTokens.removeValue(forKey: key)
                 player.updatePrebufferedTrackCount()
                 print("✅ Prebuffered and prepared next queue item: \(song.title)")
                 player.scheduleQueuePrebuffer()
@@ -1047,16 +1087,22 @@ class AudioPlayer: NSObject, ObservableObject {
         } catch is CancellationError {
             await MainActor.run { [weak self] in
                 guard let player = self else { return }
+                guard AsyncTaskOwnershipPolicy.isCurrent(capturedToken: taskToken, activeToken: player.prebufferTaskTokens[key]) else { return }
                 player.prebufferTasks.removeValue(forKey: key)
+                player.prebufferTaskTokens.removeValue(forKey: key)
                 player.updatePrebufferedTrackCount()
             }
         } catch {
             await MainActor.run { [weak self] in
                 guard let player = self else { return }
+                guard AsyncTaskOwnershipPolicy.isCurrent(capturedToken: taskToken, activeToken: player.prebufferTaskTokens[key]) else { return }
                 player.prebufferTasks.removeValue(forKey: key)
+                player.prebufferTaskTokens.removeValue(forKey: key)
                 player.preparedPrebuffers.removeValue(forKey: key)
                 player.prebufferURLs.removeValue(forKey: key)
-                try? FileManager.default.removeItem(at: url)
+                if player.prebufferURL(for: song) == url {
+                    try? FileManager.default.removeItem(at: url)
+                }
                 player.updatePrebufferedTrackCount()
                 print("⚠️ Failed to prepare prebuffered file for \(song.title): \(error)")
                 player.schedulePrebufferRetry(for: song, key: key)
@@ -1205,6 +1251,7 @@ class AudioPlayer: NSObject, ObservableObject {
         let prebufferKey = prebufferKey(for: song)
         prebufferTasks[prebufferKey]?.cancel()
         prebufferTasks.removeValue(forKey: prebufferKey)
+        prebufferTaskTokens.removeValue(forKey: prebufferKey)
         clearPrebufferRetryState(for: prebufferKey)
 
         if let prebuffer = preparedPrebuffer(for: song) {
@@ -1647,6 +1694,8 @@ class AudioPlayer: NSObject, ObservableObject {
         let retryStartTime = liveCurrentTime
         let shouldAutoplay = isPlaying
         let intentRevision = playbackIntentRevision
+        let retryQueueIDs = queue.map(\.id)
+        let retryIndex = currentIndex
         playbackRetryAttemptsBySongID[song.id] = attempt + 1
         isBuffering = shouldAutoplay
         print("⏳ Retrying playback for \(song.title) in \(Int(delay))s after \(reason) (attempt \(attempt + 1))")
@@ -1665,7 +1714,11 @@ class AudioPlayer: NSObject, ObservableObject {
                 capturedIntentRevision: intentRevision,
                 currentIntentRevision: self.playbackIntentRevision,
                 capturedShouldAutoplay: shouldAutoplay,
-                isCurrentlyPlaying: self.isPlaying
+                isCurrentlyPlaying: self.isPlaying,
+                capturedQueueIDs: retryQueueIDs,
+                currentQueueIDs: self.queue.map(\.id),
+                capturedIndex: retryIndex,
+                currentIndex: self.currentIndex
             ) else {
                 self.isBuffering = false
                 return
@@ -1761,6 +1814,7 @@ class AudioPlayer: NSObject, ObservableObject {
         nowPlayingArtworkTask?.cancel()
 #endif
         prebufferTasks.values.forEach { $0.cancel() }
+        prebufferTaskTokens.removeAll()
         if let observer = timeObserver {
             player.removeTimeObserver(observer)
         }

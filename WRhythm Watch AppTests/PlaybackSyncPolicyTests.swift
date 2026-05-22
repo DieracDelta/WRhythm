@@ -642,6 +642,15 @@ struct PlaybackSyncPolicyTests {
         #expect(SyncTransportFailurePolicy.shouldRequestPlaybackRefresh(kind: .syncRequest) == false)
     }
 
+    @Test func watchConnectivitySendFailuresFallbackOnlyForDurablePayloads() {
+        #expect(WatchConnectivitySendFailurePolicy.shouldFallbackToUserInfo(kind: .credentials(hasPayload: true), canQueuePayload: true) == true)
+        #expect(WatchConnectivitySendFailurePolicy.shouldFallbackToUserInfo(kind: .hello, canQueuePayload: true) == true)
+        #expect(WatchConnectivitySendFailurePolicy.shouldFallbackToUserInfo(kind: .syncRequest, canQueuePayload: true) == true)
+        #expect(WatchConnectivitySendFailurePolicy.shouldFallbackToUserInfo(kind: .playbackState, canQueuePayload: true) == false)
+        #expect(WatchConnectivitySendFailurePolicy.shouldFallbackToUserInfo(kind: .credentials(hasPayload: true), canQueuePayload: false) == false)
+        #expect(WatchConnectivitySendFailurePolicy.shouldFallbackToUserInfo(kind: .credentials(hasPayload: false), canQueuePayload: true) == false)
+    }
+
     @Test func multipeerSendFailuresRestartOnlyWhenSessionHadPeers() {
         #expect(SyncTransportFailurePolicy.shouldRestartMultipeerDiscoveryAfterSendFailure(hasConnectedPeers: true) == true)
         #expect(SyncTransportFailurePolicy.shouldRestartMultipeerDiscoveryAfterSendFailure(hasConnectedPeers: false) == false)
@@ -651,6 +660,38 @@ struct PlaybackSyncPolicyTests {
         #expect(WatchConnectivityActivationPolicy.shouldBootstrapSync(activationSucceeded: true, hasError: false) == true)
         #expect(WatchConnectivityActivationPolicy.shouldBootstrapSync(activationSucceeded: false, hasError: false) == false)
         #expect(WatchConnectivityActivationPolicy.shouldBootstrapSync(activationSucceeded: true, hasError: true) == false)
+    }
+
+    @Test func watchConnectivityActivationRetryUsesBackoffOnlyForRetryableFailures() {
+        #expect(WatchConnectivityActivationRetryPolicy.shouldRetry(activationSucceeded: false, hasError: true, canActivate: true) == true)
+        #expect(WatchConnectivityActivationRetryPolicy.shouldRetry(activationSucceeded: true, hasError: false, canActivate: true) == false)
+        #expect(WatchConnectivityActivationRetryPolicy.shouldRetry(activationSucceeded: false, hasError: true, canActivate: false) == false)
+        #expect(WatchConnectivityActivationRetryPolicy.retryDelay(forAttempt: 0) == 1)
+        #expect(WatchConnectivityActivationRetryPolicy.retryDelay(forAttempt: 1) == 2)
+        #expect(WatchConnectivityActivationRetryPolicy.retryDelay(forAttempt: 20) == 120)
+    }
+
+    @Test func multipeerInviteRetriesUseCurrentDiscoveredPeer() {
+        #expect(MultipeerInviteRetryPolicy.shouldInvite(
+            scheduledPeerDisplayName: "mac-1234",
+            discoveredPeerDisplayName: "mac-1234",
+            isAlreadyConnected: false
+        ) == true)
+        #expect(MultipeerInviteRetryPolicy.shouldInvite(
+            scheduledPeerDisplayName: "mac-1234",
+            discoveredPeerDisplayName: nil,
+            isAlreadyConnected: false
+        ) == false)
+        #expect(MultipeerInviteRetryPolicy.shouldInvite(
+            scheduledPeerDisplayName: "mac-1234",
+            discoveredPeerDisplayName: "iphone-1234",
+            isAlreadyConnected: false
+        ) == false)
+        #expect(MultipeerInviteRetryPolicy.shouldInvite(
+            scheduledPeerDisplayName: "mac-1234",
+            discoveredPeerDisplayName: "mac-1234",
+            isAlreadyConnected: true
+        ) == false)
     }
 
     @Test func pendingCommandRetriesArePinnedToCommandID() {
@@ -663,18 +704,37 @@ struct PlaybackSyncPolicyTests {
         #expect(PrebufferPublicationPolicy.shouldPublishPreparedBuffer(
             key: "song-1|flac",
             desiredKeys: ["song-1|flac"],
-            activeTaskKeys: ["song-1|flac"]
+            activeTaskKeys: ["song-1|flac"],
+            capturedToken: "token-1",
+            activeToken: "token-1"
         ) == true)
         #expect(PrebufferPublicationPolicy.shouldPublishPreparedBuffer(
             key: "song-1|flac",
             desiredKeys: ["song-2|flac"],
-            activeTaskKeys: ["song-1|flac"]
+            activeTaskKeys: ["song-1|flac"],
+            capturedToken: "token-1",
+            activeToken: "token-1"
         ) == false)
         #expect(PrebufferPublicationPolicy.shouldPublishPreparedBuffer(
             key: "song-1|flac",
             desiredKeys: ["song-1|flac"],
-            activeTaskKeys: []
+            activeTaskKeys: [],
+            capturedToken: "token-1",
+            activeToken: "token-1"
         ) == false)
+        #expect(PrebufferPublicationPolicy.shouldPublishPreparedBuffer(
+            key: "song-1|flac",
+            desiredKeys: ["song-1|flac"],
+            activeTaskKeys: ["song-1|flac"],
+            capturedToken: "token-1",
+            activeToken: "token-2"
+        ) == false)
+    }
+
+    @Test func asyncTaskOwnershipRequiresMatchingToken() {
+        #expect(AsyncTaskOwnershipPolicy.isCurrent(capturedToken: "token-1", activeToken: "token-1") == true)
+        #expect(AsyncTaskOwnershipPolicy.isCurrent(capturedToken: "token-1", activeToken: "token-2") == false)
+        #expect(AsyncTaskOwnershipPolicy.isCurrent(capturedToken: "token-1", activeToken: nil) == false)
     }
 
     @Test func remotePauseRoundTripCanApplyAndAcknowledgeAcrossDevices() {
@@ -924,6 +984,33 @@ struct PlaybackSyncPolicyTests {
         ) == true)
     }
 
+    @Test func playbackRetryPolicyRejectsRetryAfterQueueOccurrenceChanges() {
+        #expect(PlaybackRetryPolicy.shouldRunRetry(
+            capturedSongID: "song-1",
+            currentSongID: "song-1",
+            capturedIntentRevision: 2,
+            currentIntentRevision: 2,
+            capturedShouldAutoplay: true,
+            isCurrentlyPlaying: true,
+            capturedQueueIDs: ["song-1", "song-1"],
+            currentQueueIDs: ["song-1", "song-1"],
+            capturedIndex: 0,
+            currentIndex: 1
+        ) == false)
+        #expect(PlaybackRetryPolicy.shouldRunRetry(
+            capturedSongID: "song-1",
+            currentSongID: "song-1",
+            capturedIntentRevision: 2,
+            currentIntentRevision: 2,
+            capturedShouldAutoplay: true,
+            isCurrentlyPlaying: true,
+            capturedQueueIDs: ["song-1", "song-2"],
+            currentQueueIDs: ["song-2", "song-1"],
+            capturedIndex: 0,
+            currentIndex: 0
+        ) == false)
+    }
+
     @Test func prebufferRetryBackoffCapsAtThirtySeconds() {
         #expect(PrebufferRetryPolicy.retryDelay(forAttempt: 0) == 1)
         #expect(PrebufferRetryPolicy.retryDelay(forAttempt: 1) == 2)
@@ -1053,6 +1140,25 @@ struct PlaybackSyncPolicyTests {
         await queue.waitForIdle()
 
         #expect(values == Array(0..<100))
+    }
+
+    @Test @MainActor func syncDelegateEventSubmitterPreservesNonisolatedSubmissionOrder() async {
+        let submitter = SyncDelegateEventSubmitter(label: "WRhythm.Tests.SyncDelegateSubmitter")
+        var values: [Int] = []
+
+        for value in 0..<100 {
+            submitter.enqueue {
+                values.append(value)
+                if value == 49 {
+                    submitter.enqueue {
+                        values.append(100)
+                    }
+                }
+            }
+        }
+        await submitter.waitForIdle()
+
+        #expect(values == Array(0..<100) + [100])
     }
 
     @Test func serialFileWriteQueuePreservesLatestEnqueuedWrite() throws {

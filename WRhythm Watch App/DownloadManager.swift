@@ -179,7 +179,7 @@ struct RadioPlaylist: Codable, Identifiable, Sendable {
 @MainActor
 final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     static let shared = DownloadManager()
-    private nonisolated static let delegateEventQueue = SyncDelegateEventQueue()
+    private nonisolated static let delegateEventSubmitter = SyncDelegateEventSubmitter(label: "WRhythm.DownloadDelegateEvents")
     private nonisolated static let metadataWriteQueue = SerialFileWriteQueue(label: "WRhythm.DownloadMetadataWrites")
 
     @Published var downloadedSongs: [String: DownloadedSong] = [:]
@@ -322,6 +322,10 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
                 self.logDownloadStateForActiveApp()
             }
         }
+    }
+
+    nonisolated private static func enqueueDelegateEvent(_ operation: @escaping @MainActor @Sendable () -> Void) {
+        delegateEventSubmitter.enqueue(operation)
     }
 
     private func logDownloadStateForActiveApp() {
@@ -1090,11 +1094,9 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
 
     nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
         let taskHandle = DownloadTaskHandle(task: downloadTask)
-        Task {
-            await Self.delegateEventQueue.enqueue {
-                guard let downloadTask = taskHandle.task as? URLSessionDownloadTask else { return }
-                DownloadManager.shared.handleDownloadProgress(downloadTask: downloadTask, totalBytesWritten: totalBytesWritten, totalBytesExpectedToWrite: totalBytesExpectedToWrite)
-            }
+        Self.enqueueDelegateEvent {
+            guard let downloadTask = taskHandle.task as? URLSessionDownloadTask else { return }
+            DownloadManager.shared.handleDownloadProgress(downloadTask: downloadTask, totalBytesWritten: totalBytesWritten, totalBytesExpectedToWrite: totalBytesExpectedToWrite)
         }
     }
 
@@ -1172,11 +1174,9 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
 
     nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
         let taskHandle = DownloadTaskHandle(task: downloadTask)
-        Task {
-            await Self.delegateEventQueue.enqueue {
-                guard let downloadTask = taskHandle.task as? URLSessionDownloadTask else { return }
-                DownloadManager.shared.handleDownloadFinished(downloadTask: downloadTask, location: location)
-            }
+        Self.enqueueDelegateEvent {
+            guard let downloadTask = taskHandle.task as? URLSessionDownloadTask else { return }
+            DownloadManager.shared.handleDownloadFinished(downloadTask: downloadTask, location: location)
         }
     }
 
@@ -1271,10 +1271,8 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
 
     nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         let taskHandle = DownloadTaskHandle(task: task)
-        Task {
-            await Self.delegateEventQueue.enqueue {
-                DownloadManager.shared.handleDownloadCompleted(task: taskHandle.task, error: error)
-            }
+        Self.enqueueDelegateEvent {
+            DownloadManager.shared.handleDownloadCompleted(task: taskHandle.task, error: error)
         }
     }
 

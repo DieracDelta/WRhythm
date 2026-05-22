@@ -72,6 +72,36 @@ actor SyncDelegateEventQueue {
     }
 }
 
+final class SyncDelegateEventSubmitter: @unchecked Sendable {
+    private let submissionQueue: DispatchQueue
+    private let eventQueue: SyncDelegateEventQueue
+
+    nonisolated init(label: String, eventQueue: SyncDelegateEventQueue = SyncDelegateEventQueue()) {
+        self.submissionQueue = DispatchQueue(label: label)
+        self.eventQueue = eventQueue
+    }
+
+    nonisolated func enqueue(_ operation: @escaping @MainActor @Sendable () -> Void) {
+        submissionQueue.async { [eventQueue] in
+            let semaphore = DispatchSemaphore(value: 0)
+            Task {
+                await eventQueue.enqueue(operation)
+                semaphore.signal()
+            }
+            semaphore.wait()
+        }
+    }
+
+    nonisolated func waitForIdle() async {
+        await withCheckedContinuation { continuation in
+            submissionQueue.async {
+                continuation.resume()
+            }
+        }
+        await eventQueue.waitForIdle()
+    }
+}
+
 struct PlaybackSnapshotFingerprintPolicy: Sendable {
     static let maxTrackedFingerprints = 500
 
@@ -260,7 +290,7 @@ enum WatchConnectivitySyncPayloadKind: Sendable {
 }
 
 struct WatchConnectivitySyncPolicy: Sendable {
-    static func shouldQueue(_ kind: WatchConnectivitySyncPayloadKind) -> Bool {
+    nonisolated static func shouldQueue(_ kind: WatchConnectivitySyncPayloadKind) -> Bool {
         switch kind {
         case .credentials(let hasPayload):
             return hasPayload
@@ -269,6 +299,12 @@ struct WatchConnectivitySyncPolicy: Sendable {
         case .playbackState, .playbackSession, .playbackCommand:
             return false
         }
+    }
+}
+
+struct WatchConnectivitySendFailurePolicy: Sendable {
+    nonisolated static func shouldFallbackToUserInfo(kind: WatchConnectivitySyncPayloadKind, canQueuePayload: Bool) -> Bool {
+        canQueuePayload && WatchConnectivitySyncPolicy.shouldQueue(kind)
     }
 }
 
@@ -304,6 +340,28 @@ struct SyncTransportFailurePolicy: Sendable {
 struct WatchConnectivityActivationPolicy: Sendable {
     nonisolated static func shouldBootstrapSync(activationSucceeded: Bool, hasError: Bool) -> Bool {
         activationSucceeded && !hasError
+    }
+}
+
+struct WatchConnectivityActivationRetryPolicy: Sendable {
+    nonisolated static let maxRetryDelay: TimeInterval = 120
+
+    nonisolated static func shouldRetry(activationSucceeded: Bool, hasError: Bool, canActivate: Bool) -> Bool {
+        canActivate && !shouldBootstrapSync(activationSucceeded: activationSucceeded, hasError: hasError)
+    }
+
+    nonisolated static func retryDelay(forAttempt attempt: Int) -> TimeInterval {
+        min(pow(2.0, Double(max(0, attempt))), maxRetryDelay)
+    }
+
+    private nonisolated static func shouldBootstrapSync(activationSucceeded: Bool, hasError: Bool) -> Bool {
+        WatchConnectivityActivationPolicy.shouldBootstrapSync(activationSucceeded: activationSucceeded, hasError: hasError)
+    }
+}
+
+struct MultipeerInviteRetryPolicy: Sendable {
+    nonisolated static func shouldInvite(scheduledPeerDisplayName: String, discoveredPeerDisplayName: String?, isAlreadyConnected: Bool) -> Bool {
+        discoveredPeerDisplayName == scheduledPeerDisplayName && !isAlreadyConnected
     }
 }
 
@@ -966,9 +1024,9 @@ private struct SyncEnvelope: Codable, Sendable {
     }
 }
 
-private extension SyncEnvelope.Kind {
+private extension SyncEnvelope {
     var watchConnectivityPayloadKind: WatchConnectivitySyncPayloadKind {
-        switch self {
+        switch kind {
         case .hello:
             return .hello
         case .syncRequest:
@@ -980,7 +1038,7 @@ private extension SyncEnvelope.Kind {
         case .playbackCommand:
             return .playbackCommand
         case .credentials:
-            return .credentials(hasPayload: false)
+            return .credentials(hasPayload: credentials != nil)
         }
     }
 }
@@ -988,7 +1046,7 @@ private extension SyncEnvelope.Kind {
 @MainActor
 final class DeviceSyncManager: NSObject, ObservableObject {
     static let shared = DeviceSyncManager()
-    private nonisolated static let delegateEventQueue = SyncDelegateEventQueue()
+    private nonisolated static let delegateEventSubmitter = SyncDelegateEventSubmitter(label: "WRhythm.DeviceSyncDelegateEvents")
 
     @Published var syncModeEnabled: Bool {
         didSet {
@@ -1052,6 +1110,8 @@ final class DeviceSyncManager: NSObject, ObservableObject {
     private let sharedSessionID: String
 #if os(iOS) || os(watchOS)
     private var watchSession: WCSession?
+    private var watchConnectivityActivationRetryAttempt = 0
+    private var watchConnectivityActivationRetryTask: Task<Void, Never>?
 #endif
 
 #if os(iOS) || os(macOS)
@@ -1137,9 +1197,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
     }
 
     nonisolated private static func enqueueDelegateEvent(_ operation: @escaping @MainActor @Sendable () -> Void) {
-        Task {
-            await delegateEventQueue.enqueue(operation)
-        }
+        delegateEventSubmitter.enqueue(operation)
     }
 
     private func withRemotePlaybackApplication(_ body: () -> Void) {
@@ -1770,6 +1828,8 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             }
             watchSession = session
         } else {
+            watchConnectivityActivationRetryTask?.cancel()
+            watchConnectivityActivationRetryTask = nil
             watchSession = nil
         }
 #elseif os(watchOS)
@@ -1779,6 +1839,8 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             session.activate()
             watchSession = session
         } else {
+            watchConnectivityActivationRetryTask?.cancel()
+            watchConnectivityActivationRetryTask = nil
             watchSession = nil
         }
 #endif
@@ -2063,14 +2125,15 @@ final class DeviceSyncManager: NSObject, ObservableObject {
 #if os(iOS) || os(watchOS)
         if let watchSession {
             if watchSession.activationState == .activated, watchSession.isReachable {
-                let payloadKind = envelope.kind.watchConnectivityPayloadKind
+                let payloadKind = envelope.watchConnectivityPayloadKind
                 watchSession.sendMessageData(data, replyHandler: nil) { error in
                     let errorDescription = String(describing: error)
                     Self.enqueueDelegateEvent {
                         DeviceSyncManager.shared.handleEnvelopeSendFailure(
                             kind: payloadKind,
                             transport: .watchConnectivity,
-                            errorDescription: errorDescription
+                            errorDescription: errorDescription,
+                            fallbackUserInfoPayload: data
                         )
                     }
                 }
@@ -2089,7 +2152,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
                 didSend = true
             } catch {
                 handleEnvelopeSendFailure(
-                    kind: envelope.kind.watchConnectivityPayloadKind,
+                    kind: envelope.watchConnectivityPayloadKind,
                     transport: .multipeer,
                     errorDescription: String(describing: error)
                 )
@@ -2102,9 +2165,23 @@ final class DeviceSyncManager: NSObject, ObservableObject {
     private func handleEnvelopeSendFailure(
         kind: WatchConnectivitySyncPayloadKind,
         transport: SyncTransportKind,
-        errorDescription: String
+        errorDescription: String,
+        fallbackUserInfoPayload: Data? = nil
     ) {
         print("❌ Failed to send \(transport) sync envelope: \(errorDescription)")
+
+#if os(iOS) || os(watchOS)
+        if transport == .watchConnectivity,
+           let fallbackUserInfoPayload,
+           let watchSession,
+           WatchConnectivitySendFailurePolicy.shouldFallbackToUserInfo(
+            kind: kind,
+            canQueuePayload: canQueueWatchConnectivityPayload(watchSession)
+           ) {
+            watchSession.transferUserInfo(["payload": fallbackUserInfoPayload])
+            print("📦 Queued durable WatchConnectivity payload after send failure")
+        }
+#endif
 
         if SyncTransportFailurePolicy.shouldInvalidatePlaybackBroadcastAttempt(kind: kind) {
             lastPlaybackBroadcast = .distantPast
@@ -2454,9 +2531,9 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         case .credentials:
             return WatchConnectivitySyncPolicy.shouldQueue(.credentials(hasPayload: envelope.credentials != nil))
         case .hello, .syncRequest:
-            return WatchConnectivitySyncPolicy.shouldQueue(envelope.kind.watchConnectivityPayloadKind)
+            return WatchConnectivitySyncPolicy.shouldQueue(envelope.watchConnectivityPayloadKind)
         case .playbackState, .playbackSession, .playbackCommand:
-            return WatchConnectivitySyncPolicy.shouldQueue(envelope.kind.watchConnectivityPayloadKind)
+            return WatchConnectivitySyncPolicy.shouldQueue(envelope.watchConnectivityPayloadKind)
         }
     }
 
@@ -2466,6 +2543,33 @@ final class DeviceSyncManager: NSObject, ObservableObject {
 #else
         return session.activationState == .activated
 #endif
+    }
+
+    private func scheduleWatchConnectivityActivationRetry(reason: String) {
+        guard syncModeEnabled || credentialSyncEnabled else { return }
+        guard watchConnectivityActivationRetryTask == nil else { return }
+        guard WCSession.isSupported() else { return }
+
+        let delay = WatchConnectivityActivationRetryPolicy.retryDelay(forAttempt: watchConnectivityActivationRetryAttempt)
+        watchConnectivityActivationRetryAttempt += 1
+        print("⏳ Retrying WatchConnectivity activation in \(Int(delay))s after \(reason)")
+
+        watchConnectivityActivationRetryTask = Task { @MainActor in
+            do {
+                try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            self.watchConnectivityActivationRetryTask = nil
+
+            let session = self.watchSession ?? WCSession.default
+            session.delegate = self
+            self.watchSession = session
+            if session.activationState != .activated {
+                session.activate()
+            }
+        }
     }
 #endif
 
@@ -2569,16 +2673,24 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             self.inviteRetryTasksByPeerDisplayName[key] = nil
             guard self.syncModeEnabled || self.credentialSyncEnabled else { return }
             guard let browser = self.browser, let session = self.session else { return }
-            guard self.discoveredMultipeerPeers[key] != nil else { return }
-            guard !session.connectedPeers.contains(where: { $0.displayName == key }) else {
-                self.resetMultipeerBackoff(for: peerID)
+            let currentPeerID = self.discoveredMultipeerPeers[key]
+            let isAlreadyConnected = session.connectedPeers.contains(where: { $0.displayName == key })
+            guard MultipeerInviteRetryPolicy.shouldInvite(
+                scheduledPeerDisplayName: key,
+                discoveredPeerDisplayName: currentPeerID?.displayName,
+                isAlreadyConnected: isAlreadyConnected
+            ) else {
+                if isAlreadyConnected {
+                    self.resetMultipeerBackoff(for: currentPeerID ?? peerID)
+                }
                 return
             }
+            guard let currentPeerID else { return }
 
             print("📨 Sync peer found, inviting: \(key) (attempt \(attempt + 1))")
-            browser.invitePeer(peerID, to: session, withContext: nil, timeout: self.multipeerInviteTimeout)
+            browser.invitePeer(currentPeerID, to: session, withContext: nil, timeout: self.multipeerInviteTimeout)
             self.inviteAttemptsByPeerDisplayName[key] = attempt + 1
-            self.scheduleInvite(to: peerID)
+            self.scheduleInvite(to: currentPeerID)
         }
     }
 
@@ -2613,11 +2725,22 @@ extension DeviceSyncManager: WCSessionDelegate {
         )
         let activationStateRawValue = activationState.rawValue
         let errorDescription = error.map { String(describing: $0) }
+        let shouldRetry = WatchConnectivityActivationRetryPolicy.shouldRetry(
+            activationSucceeded: activationState == .activated,
+            hasError: error != nil,
+            canActivate: WCSession.isSupported()
+        )
         Self.enqueueDelegateEvent {
             if shouldBootstrap {
+                DeviceSyncManager.shared.watchConnectivityActivationRetryAttempt = 0
+                DeviceSyncManager.shared.watchConnectivityActivationRetryTask?.cancel()
+                DeviceSyncManager.shared.watchConnectivityActivationRetryTask = nil
                 DeviceSyncManager.shared.sendCurrentSyncState(includeHello: true)
             } else {
                 print("⚠️ WatchConnectivity activation did not complete; state=\(activationStateRawValue), error=\(errorDescription ?? "none")")
+                if shouldRetry {
+                    DeviceSyncManager.shared.scheduleWatchConnectivityActivationRetry(reason: "activation failure")
+                }
             }
         }
     }
