@@ -268,8 +268,9 @@ struct TracksView: View {
         .wrhythmPageBackground()
         .toolbar {
             ToolbarItem(placement: .platformTopBarTrailing) {
-                if !searchText.isEmpty {
-                    Button(action: {
+                WRhythmSearchToolbarButton(
+                    hasQuery: !searchText.isEmpty,
+                    clear: {
                         searchText = ""
                         searchTask?.cancel()
                         if !offlineMode {
@@ -278,17 +279,11 @@ struct TracksView: View {
                             artistResults = []
                             isSearching = false
                         }
-                    }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.secondary)
-                    }
-                } else {
-                    Button(action: {
+                    },
+                    search: {
                         presentedSheet = .search
-                    }) {
-                        Image(systemName: "magnifyingglass")
                     }
-                }
+                )
             }
         }
         .sheet(item: $presentedSheet) { sheet in
@@ -445,7 +440,7 @@ private enum TracksSheet: String, Identifiable {
 }
 
 #Preview {
-    NavigationView {
+    NavigationStack {
         TracksView()
     }
 }

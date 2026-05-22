@@ -19,7 +19,7 @@ struct LoginView: View {
     @State private var presentedSheet: LoginSheet?
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             WRhythmScreen(horizontalPadding: WRhythmSpacing.md) {
                 WRhythmFeatureHeader(
                     title: "WRhythm",
@@ -99,7 +99,7 @@ struct LoginView: View {
         .sheet(item: $presentedSheet) { sheet in
             switch sheet {
             case .help:
-            NavigationView {
+            NavigationStack {
                 WRhythmScreen {
                     WRhythmCard {
                         VStack(alignment: .leading, spacing: WRhythmSpacing.sm) {

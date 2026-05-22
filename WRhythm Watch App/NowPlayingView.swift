@@ -22,13 +22,12 @@ struct NowPlayingView: View {
 #if os(watchOS)
         WatchNowPlayingView()
 #else
-        ScrollView {
+        WRhythmScreen(coverArtId: primaryArtworkCoverArtId) {
             if let remote = primaryRemotePlayback {
                 VStack(spacing: WRhythmSpacing.sm) {
                     PlaybackTargetPicker()
                     RemotePlaybackControls(playback: remote, compact: false)
                 }
-                .padding()
             } else if let song = player.currentSong {
                 let localIsPlaying = deviceSyncManager.localPlaybackIsPlayingForDisplay
                 VStack(spacing: WRhythmSpacing.md) {
@@ -77,39 +76,39 @@ struct NowPlayingView: View {
 
                     PlaybackTargetPicker()
 
-                    VStack(spacing: WRhythmSpacing.xs) {
-                        let safeDuration = max(1, player.duration.isFinite ? player.duration : 1)
-                        let liveTime = player.currentTime.isFinite ? player.currentTime : 0
-                        let displayedTime = min(max(scrubTime ?? liveTime, 0), safeDuration)
+                    WRhythmCard(padding: WRhythmSpacing.sm, style: .glass) {
+                        VStack(spacing: WRhythmSpacing.xs) {
+                            let safeDuration = max(1, player.duration.isFinite ? player.duration : 1)
+                            let liveTime = player.currentTime.isFinite ? player.currentTime : 0
+                            let displayedTime = min(max(scrubTime ?? liveTime, 0), safeDuration)
 
-                        Slider(
-                            value: Binding(
-                                get: { displayedTime },
-                                set: { scrubTime = min(max($0, 0), safeDuration) }
-                            ),
-                            in: 0...safeDuration,
-                            onEditingChanged: { isEditing in
-                                guard !isEditing, let scrubTime else { return }
-                                player.seek(to: scrubTime)
-                                self.scrubTime = nil
+                            Slider(
+                                value: Binding(
+                                    get: { displayedTime },
+                                    set: { scrubTime = min(max($0, 0), safeDuration) }
+                                ),
+                                in: 0...safeDuration,
+                                onEditingChanged: { isEditing in
+                                    guard !isEditing, let scrubTime else { return }
+                                    player.seek(to: scrubTime)
+                                    self.scrubTime = nil
+                                }
+                            )
+                            .tint(WRhythmTheme.accent)
+
+                            HStack {
+                                Text(formatTime(displayedTime))
+                                    .font(WRhythmTypography.metadata)
+                                    .monospacedDigit()
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Text("-" + formatTime(max(0, safeDuration - displayedTime)))
+                                    .font(WRhythmTypography.metadata)
+                                    .monospacedDigit()
+                                    .foregroundColor(.secondary)
                             }
-                        )
-                        .tint(WRhythmTheme.accent)
-
-                        HStack {
-                            Text(formatTime(displayedTime))
-                                .font(.caption2)
-                                .monospacedDigit()
-                                .foregroundColor(.secondary)
-                            Spacer()
-                            Text("-" + formatTime(max(0, safeDuration - displayedTime)))
-                                .font(.caption2)
-                                .monospacedDigit()
-                                .foregroundColor(.secondary)
                         }
                     }
-                    .padding(WRhythmSpacing.sm)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous))
 
                     HStack(spacing: WRhythmSpacing.xl) {
                         WRhythmTransportButton(systemImage: "backward.end.fill", action: player.previous)
@@ -213,7 +212,6 @@ struct NowPlayingView: View {
                         RemotePlaybackControls(playback: remote, compact: true)
                     }
                 }
-                .padding()
                 .frame(maxWidth: 520)
                 .frame(maxWidth: .infinity)
                 .id(song.id)
@@ -224,7 +222,6 @@ struct NowPlayingView: View {
                     PlaybackTargetPicker()
                     RemotePlaybackControls(playback: remote, compact: false)
                 }
-                .padding()
             } else {
                 VStack(spacing: 8) {
                     PlaybackTargetPicker()
@@ -236,10 +233,8 @@ struct NowPlayingView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-                .padding()
             }
         }
-        .background(WRhythmArtworkBackdrop(coverArtId: primaryArtworkCoverArtId).ignoresSafeArea())
 #if os(iOS)
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
@@ -424,7 +419,7 @@ private struct NowPlayingArtwork: View, Equatable {
             RoundedRectangle(cornerRadius: WRhythmVisual.cornerRadius, style: .continuous)
                 .strokeBorder(WRhythmTheme.surfaceStroke(for: colorScheme), lineWidth: 1)
         }
-        .shadow(color: Color.black.opacity(0.22), radius: 28, y: 16)
+        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.16 : 0.06), radius: 12, y: 6)
         .frame(maxWidth: .infinity)
     }
 }
@@ -476,122 +471,122 @@ struct RemotePlaybackControls: View {
     @State private var scrubTime: TimeInterval?
 
     var body: some View {
-        VStack(spacing: compact ? WRhythmSpacing.xs : WRhythmSpacing.sm) {
-            HStack(spacing: 8) {
-                Image(systemName: playback.platform == "Mac" ? "desktopcomputer" : playback.platform == "iPhone" ? "iphone" : "applewatch")
-                    .foregroundColor(WRhythmTheme.accent)
-                Text(playback.deviceName)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Spacer()
-                WRhythmStatusPill(
-                    text: playback.isPlaying ? "Playing" : "Paused",
-                    systemImage: playback.isPlaying ? "waveform" : "pause.fill",
-                    tint: playback.isPlaying ? WRhythmTheme.accent : .secondary
-                )
-                if playback.isBuffering == true {
-                    WRhythmStatusPill(text: "Buffering", systemImage: "hourglass", tint: WRhythmTheme.warning)
-                }
-                if let bufferedCount = playback.prebufferedTrackCount,
-                   !playback.queue.isEmpty,
-                   playback.currentIndex < playback.queue.count - 1 {
-                    WRhythmStatusPill(text: "\(bufferedCount) buffered", systemImage: "arrow.down.circle")
-                }
-            }
-
-            if let song = playback.song {
-                if !compact {
-                    NowPlayingArtwork(coverArtId: song.coverArt, maxSize: 320)
-                        .equatable()
-                }
-
-                VStack(spacing: 4) {
-                    Text(song.title)
-                        .font(compact ? .caption : .headline)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.center)
-
-                    if let artist = song.artist {
-                        Text(artist)
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
+        WRhythmCard(padding: compact ? WRhythmSpacing.xs : WRhythmSpacing.md, style: compact ? .grouped : .glass) {
+            VStack(spacing: compact ? WRhythmSpacing.xs : WRhythmSpacing.sm) {
+                HStack(spacing: WRhythmSpacing.xs) {
+                    Image(systemName: playback.platform == "Mac" ? "desktopcomputer" : playback.platform == "iPhone" ? "iphone" : "applewatch")
+                        .foregroundColor(WRhythmTheme.accent)
+                    Text(playback.deviceName)
+                        .font(WRhythmTypography.rowSubtitle)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    WRhythmStatusPill(
+                        text: playback.isPlaying ? "Playing" : "Paused",
+                        systemImage: playback.isPlaying ? "waveform" : "pause.fill",
+                        tint: playback.isPlaying ? WRhythmTheme.accent : .secondary
+                    )
+                    if playback.isBuffering == true {
+                        WRhythmStatusPill(text: "Buffering", systemImage: "hourglass", tint: WRhythmTheme.warning)
+                    }
+                    if let bufferedCount = playback.prebufferedTrackCount,
+                       !playback.queue.isEmpty,
+                       playback.currentIndex < playback.queue.count - 1 {
+                        WRhythmStatusPill(text: "\(bufferedCount) buffered", systemImage: "arrow.down.circle")
                     }
                 }
 
-                if !compact {
-                    TimelineView(.periodic(from: .now, by: 1)) { _ in
-                        let safeDuration = max(1, playback.duration.isFinite ? playback.duration : 1)
-                        let liveTime = playback.estimatedCurrentTime
-                        let currentTime = min(max(scrubTime ?? liveTime, 0), safeDuration)
-                        VStack(spacing: 4) {
-                            Slider(
-                                value: Binding(
-                                    get: { currentTime },
-                                    set: { scrubTime = min(max($0, 0), safeDuration) }
-                                ),
-                                in: 0...safeDuration,
-                                onEditingChanged: { isEditing in
-                                    guard !isEditing, let scrubTime else { return }
-                                    deviceSyncManager.sendSeek(to: scrubTime, targetDeviceID: playback.id)
-                                    self.scrubTime = nil
-                                }
-                            )
-                            .tint(WRhythmTheme.accent)
+                if let song = playback.song {
+                    if !compact {
+                        NowPlayingArtwork(coverArtId: song.coverArt, maxSize: 320)
+                            .equatable()
+                    }
 
-                            HStack {
-                                Text(formatTime(currentTime))
-                                    .font(.caption2)
-                                    .monospacedDigit()
-                                    .foregroundColor(.secondary)
-                                Spacer()
-                                Text("-" + formatTime(max(0, safeDuration - currentTime)))
-                                    .font(.caption2)
-                                    .monospacedDigit()
-                                    .foregroundColor(.secondary)
+                    VStack(spacing: WRhythmSpacing.xxs) {
+                        Text(song.title)
+                            .font(compact ? WRhythmTypography.rowSubtitle : WRhythmTypography.featureTitle)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.center)
+
+                        if let artist = song.artist {
+                            Text(artist)
+                                .font(WRhythmTypography.metadata)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+
+                    if !compact {
+                        TimelineView(.periodic(from: .now, by: 1)) { _ in
+                            let safeDuration = max(1, playback.duration.isFinite ? playback.duration : 1)
+                            let liveTime = playback.estimatedCurrentTime
+                            let currentTime = min(max(scrubTime ?? liveTime, 0), safeDuration)
+                            VStack(spacing: WRhythmSpacing.xxs) {
+                                Slider(
+                                    value: Binding(
+                                        get: { currentTime },
+                                        set: { scrubTime = min(max($0, 0), safeDuration) }
+                                    ),
+                                    in: 0...safeDuration,
+                                    onEditingChanged: { isEditing in
+                                        guard !isEditing, let scrubTime else { return }
+                                        deviceSyncManager.sendSeek(to: scrubTime, targetDeviceID: playback.id)
+                                        self.scrubTime = nil
+                                    }
+                                )
+                                .tint(WRhythmTheme.accent)
+
+                                HStack {
+                                    Text(formatTime(currentTime))
+                                        .font(WRhythmTypography.metadata)
+                                        .monospacedDigit()
+                                        .foregroundColor(.secondary)
+                                    Spacer()
+                                    Text("-" + formatTime(max(0, safeDuration - currentTime)))
+                                        .font(WRhythmTypography.metadata)
+                                        .monospacedDigit()
+                                        .foregroundColor(.secondary)
+                                }
                             }
                         }
                     }
-                }
 
-                HStack(spacing: compact ? 14 : 22) {
-                    WRhythmTransportButton(
-                        systemImage: "backward.end.fill",
-                        size: compact ? .caption : .title2,
-                        action: { deviceSyncManager.sendPrevious(targetDeviceID: playback.id) }
-                    )
+                    HStack(spacing: compact ? WRhythmSpacing.md : WRhythmSpacing.xl) {
+                        WRhythmTransportButton(
+                            systemImage: "backward.end.fill",
+                            size: compact ? .caption : .title2,
+                            action: { deviceSyncManager.sendPrevious(targetDeviceID: playback.id) }
+                        )
 
-                    WRhythmTransportButton(
-                        systemImage: playback.isPlaying ? "pause.fill" : "play.fill",
-                        size: compact ? .title3 : .title,
-                        prominent: !compact,
-                        action: { deviceSyncManager.setPlaying(!playback.isPlaying, targetDeviceID: playback.id) }
-                    )
+                        WRhythmTransportButton(
+                            systemImage: playback.isPlaying ? "pause.fill" : "play.fill",
+                            size: compact ? .title3 : .title,
+                            prominent: !compact,
+                            action: { deviceSyncManager.setPlaying(!playback.isPlaying, targetDeviceID: playback.id) }
+                        )
 
-                    WRhythmTransportButton(
-                        systemImage: "forward.end.fill",
-                        size: compact ? .caption : .title2,
-                        action: { deviceSyncManager.sendNext(targetDeviceID: playback.id) }
-                    )
+                        WRhythmTransportButton(
+                            systemImage: "forward.end.fill",
+                            size: compact ? .caption : .title2,
+                            action: { deviceSyncManager.sendNext(targetDeviceID: playback.id) }
+                        )
 
-                    WRhythmTransportButton(
-                        systemImage: "speaker.wave.2.fill",
-                        size: compact ? .title3 : .title2,
-                        action: deviceSyncManager.takeOverRemotePlayback
-                    )
-                }
-
-                InlineVolumeSlider(volume: Binding(
-                    get: { displayedVolume },
-                    set: { newVolume in
-                        pendingVolume = newVolume
-                        deviceSyncManager.setVolume(newVolume, targetDeviceID: playback.id)
+                        WRhythmTransportButton(
+                            systemImage: "speaker.wave.2.fill",
+                            size: compact ? .title3 : .title2,
+                            action: deviceSyncManager.takeOverRemotePlayback
+                        )
                     }
-                ))
+
+                    InlineVolumeSlider(volume: Binding(
+                        get: { displayedVolume },
+                        set: { newVolume in
+                            pendingVolume = newVolume
+                            deviceSyncManager.setVolume(newVolume, targetDeviceID: playback.id)
+                        }
+                    ))
+                }
             }
         }
-        .padding(compact ? 10 : 16)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: compact ? WRhythmVisual.compactCornerRadius : WRhythmVisual.cornerRadius, style: .continuous))
         .onChange(of: playback.volume ?? -1) { _, _ in
             pendingVolume = nil
         }
@@ -1322,7 +1317,7 @@ private func watchFormatTime(_ seconds: TimeInterval) -> String {
 #endif
 
 #Preview {
-    NavigationView {
+    NavigationStack {
         NowPlayingView()
     }
 }

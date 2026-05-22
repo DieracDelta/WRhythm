@@ -240,7 +240,7 @@ private enum PlaylistsSheet: String, Identifiable {
 }
 
 #Preview {
-    NavigationView {
+    NavigationStack {
         PlaylistsView()
     }
 }

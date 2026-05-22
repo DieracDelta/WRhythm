@@ -49,23 +49,18 @@ struct ArtistsView: View {
             .toolbar {
                 if !offlineMode {
                     ToolbarItem(placement: .platformTopBarTrailing) {
-                        if !searchText.isEmpty {
-                            Button(action: {
+                        WRhythmSearchToolbarButton(
+                            hasQuery: !searchText.isEmpty,
+                            clear: {
                                 searchText = ""
                                 searchTask?.cancel()
                                 searchResults = []
                                 isSearching = false
-                            }) {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundColor(.secondary)
-                            }
-                        } else {
-                            Button(action: {
+                            },
+                            search: {
                                 presentedSheet = .search
-                            }) {
-                                Image(systemName: "magnifyingglass")
                             }
-                        }
+                        )
                     }
                 }
             }
@@ -283,7 +278,7 @@ private enum ArtistsSheet: String, Identifiable {
 }
 
 #Preview {
-    NavigationView {
+    NavigationStack {
         ArtistsView()
     }
 }

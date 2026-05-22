@@ -279,86 +279,72 @@ struct SettingsView: View {
         .sheet(item: $presentedSheet) { sheet in
             switch sheet {
             case .logout:
-            NavigationView {
-                ScrollView {
-                    VStack(spacing: 8) {
-                        // WARNING ICON
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.title2)
-                            .foregroundColor(WRhythmTheme.warning)
-                            .padding(.top, 4)
+                NavigationStack {
+                    WRhythmScreen {
+                        WRhythmFeatureHeader(
+                            title: "Delete Local Data",
+                            subtitle: "Server data is not affected",
+                            systemImage: "exclamationmark.triangle.fill",
+                            tint: WRhythmTheme.danger
+                        )
 
-                        // CLEAR WARNING TEXT
-                        Text("All Local Data Will Be Deleted")
-                            .font(.caption)
-                            .fontWeight(.bold)
-                            .foregroundColor(WRhythmTheme.danger)
-                            .multilineTextAlignment(.center)
+                        WRhythmCard {
+                            VStack(alignment: .leading, spacing: WRhythmSpacing.sm) {
+                                Text("This will permanently delete:")
+                                    .font(WRhythmTypography.rowTitle)
 
-                        Text("This will permanently delete:")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.top, 2)
-
-                        // What gets deleted
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text("• All downloaded music")
-                            Text("• All playlists & metadata")
-                            Text("• All local favorites")
-                            Text("• Active downloads")
-                        }
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-
-                        Text("(Server data is NOT affected)")
-                            .font(.caption2)
-                            .foregroundColor(WRhythmTheme.success)
-                            .italic()
-                            .padding(.top, 2)
-
-                        if let username = UserDefaults.standard.string(forKey: "navidrome_username") {
-                            Text("User: \(username)")
-                                .font(.caption2)
+                                VStack(alignment: .leading, spacing: WRhythmSpacing.xxs) {
+                                    Text("All downloaded music")
+                                    Text("All playlists and metadata")
+                                    Text("All local favorites")
+                                    Text("Active downloads")
+                                }
+                                .font(WRhythmTypography.rowSubtitle)
                                 .foregroundColor(.secondary)
-                                .padding(.top, 2)
+
+                                if let username = UserDefaults.standard.string(forKey: "navidrome_username") {
+                                    Text("User: \(username)")
+                                        .font(WRhythmTypography.metadata)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
                         }
 
-                        Text("Type LOGOUT to confirm")
-                            .font(.caption)
-                            .foregroundColor(WRhythmTheme.danger)
-                            .padding(.top, 6)
+                        WRhythmGlassCard {
+                            VStack(spacing: WRhythmSpacing.sm) {
+                                Text("Type LOGOUT to confirm")
+                                    .font(WRhythmTypography.controlLabel)
+                                    .foregroundColor(WRhythmTheme.danger)
 
-                        TextField("Type LOGOUT", text: $logoutConfirmationText)
-                            .platformAutocapitalizationCharacters()
-                            .padding(.vertical, 6)
+                                TextField("Type LOGOUT", text: $logoutConfirmationText)
+                                    .platformAutocapitalizationCharacters()
+                                    .platformSearchTextFieldStyle()
 
-                        Button(action: {
-                            api.logout()
-                            presentedSheet = nil
-                            logoutConfirmationText = ""
-                        }) {
-                            Text("Delete All Data & Logout")
-                                .font(.caption)
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(WRhythmTheme.danger)
-                        .disabled(logoutConfirmationText != "LOGOUT")
-                        .padding(.bottom, 8)
-                    }
-                    .padding(.horizontal)
-                }
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") {
-                            presentedSheet = nil
-                            logoutConfirmationText = ""
+                                Button(action: {
+                                    api.logout()
+                                    presentedSheet = nil
+                                    logoutConfirmationText = ""
+                                }) {
+                                    Text("Delete All Data & Logout")
+                                        .frame(maxWidth: .infinity)
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .tint(WRhythmTheme.danger)
+                                .disabled(logoutConfirmationText != "LOGOUT")
+                            }
                         }
                     }
+                    .navigationTitle("Confirm Logout")
+                    .platformNavigationBarTitleDisplayModeInline()
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Cancel") {
+                                presentedSheet = nil
+                                logoutConfirmationText = ""
+                            }
+                        }
+                    }
                 }
-            }
             }
         }
     }
@@ -381,9 +367,9 @@ private struct SettingsInfoRow: View {
 
             VStack(alignment: .leading, spacing: WRhythmSpacing.xxs) {
                 Text(title)
-                    .font(.caption.weight(.medium))
+                    .font(WRhythmTypography.controlLabel)
                 Text(value)
-                    .font(.caption2)
+                    .font(WRhythmTypography.metadata)
                     .foregroundColor(.secondary)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -404,9 +390,9 @@ private struct SettingsToggleLabel: View {
 
             VStack(alignment: .leading, spacing: WRhythmSpacing.xxs) {
                 Text(title)
-                    .font(.caption.weight(.medium))
+                    .font(WRhythmTypography.controlLabel)
                 Text(subtitle)
-                    .font(.caption2)
+                    .font(WRhythmTypography.metadata)
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -416,7 +402,7 @@ private struct SettingsToggleLabel: View {
 }
 
 #Preview {
-    NavigationView {
+    NavigationStack {
         SettingsView()
     }
 }

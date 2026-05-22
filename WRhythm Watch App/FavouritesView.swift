@@ -254,7 +254,7 @@ struct FavouritesView: View {
 }
 
 #Preview {
-    NavigationView {
+    NavigationStack {
         FavouritesView()
     }
 }

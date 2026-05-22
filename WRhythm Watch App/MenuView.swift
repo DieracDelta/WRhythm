@@ -9,38 +9,43 @@ import SwiftUI
 
 struct MenuView: View {
     var body: some View {
-        List {
-#if os(watchOS)
-            WRhythmFeatureHeader(
-                title: "WRhythm",
-                subtitle: nil,
-                systemImage: "waveform",
-                tint: WRhythmTheme.accent
-            )
-            .listRowBackground(Color.clear)
-#endif
-
-            Section("Library") {
+        WRhythmScreen {
+            menuGroup("Library") {
                 menuLink("Artists", systemImage: "person.2", tint: WRhythmTheme.secondaryAccent, destination: ArtistsView())
                 menuLink("Albums", systemImage: "square.stack", tint: WRhythmTheme.accent, destination: AlbumsView())
                 menuLink("Playlists", systemImage: "music.note.list", tint: WRhythmTheme.secondaryAccent, destination: PlaylistsView())
                 menuLink("Tracks", systemImage: "magnifyingglass", tint: WRhythmTheme.accent, destination: TracksView())
             }
 
-            Section("Playback") {
+            menuGroup("Playback") {
                 menuLink("Favorites", systemImage: "star.fill", tint: WRhythmTheme.favorite, destination: FavouritesView())
-                menuLink("Playlist Gen", systemImage: "radio", tint: WRhythmTheme.accent, destination: RadioPlaylistsView())
-                menuLink("Spontaneous", systemImage: "shuffle", tint: WRhythmTheme.warning, destination: SpontaneousMusicView())
+                menuLink("Playlist Gen", systemImage: "radio", tint: WRhythmTheme.playlistGen, destination: RadioPlaylistsView())
+                menuLink("Spontaneous", systemImage: "shuffle", tint: WRhythmTheme.spontaneous, destination: SpontaneousMusicView())
             }
 
-            Section("Device") {
-                menuLink("Downloads", systemImage: "arrow.down.circle", tint: WRhythmTheme.success, destination: DownloadsView())
+            menuGroup("Device") {
+                menuLink("Downloads", systemImage: "arrow.down.circle", tint: WRhythmTheme.downloads, destination: DownloadsView())
                 menuLink("Settings", systemImage: "gear", tint: .secondary, destination: SettingsView())
             }
         }
         .navigationTitle("WRhythm")
         .platformNavigationBarTitleDisplayModeInline()
-        .wrhythmListSurface()
+    }
+
+    private func menuGroup<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
+            Text(title)
+                .font(WRhythmTypography.sectionLabel)
+                .foregroundColor(.secondary)
+                .textCase(.uppercase)
+                .padding(.horizontal, WRhythmSpacing.xxs)
+
+            WRhythmCard {
+                VStack(spacing: 0) {
+                    content()
+                }
+            }
+        }
     }
 
     private func menuLink<Destination: View>(_ title: String, systemImage: String, tint: Color, destination: Destination) -> some View {
@@ -52,9 +57,15 @@ struct MenuView: View {
                     .font(WRhythmTypography.rowTitle)
 
                 Spacer(minLength: 6)
+
+                Image(systemName: "chevron.right")
+                    .font(WRhythmTypography.metadata)
+                    .foregroundColor(.secondary)
             }
-            .padding(.vertical, 4)
+            .padding(.vertical, WRhythmSpacing.xs)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
     }
 }
 

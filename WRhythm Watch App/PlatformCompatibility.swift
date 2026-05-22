@@ -93,7 +93,7 @@ struct PlatformSearchSheet<Content: View>: View {
         }
         .frame(width: 420, height: 220)
 #else
-        NavigationView {
+        NavigationStack {
             content
                 .navigationTitle(title)
                 .toolbar {
@@ -158,6 +158,8 @@ enum WRhythmSpacing {
 }
 
 enum WRhythmTypography {
+    static let heroTitle = Font.title3.weight(.semibold)
+    static let featureTitle = Font.headline.weight(.semibold)
     static let sectionLabel = Font.caption.weight(.semibold)
     static let rowTitle = Font.subheadline.weight(.semibold)
     static let rowSubtitle = Font.caption
@@ -300,14 +302,14 @@ struct WRhythmHeroHeader<Actions: View>: View {
 
             VStack(spacing: WRhythmSpacing.xs) {
                 Text(title)
-                    .font(.title3.weight(.semibold))
+                    .font(WRhythmTypography.heroTitle)
                     .multilineTextAlignment(.center)
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
 
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
-                        .font(.subheadline)
+                        .font(WRhythmTypography.rowTitle)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
                         .lineLimit(2)
@@ -315,7 +317,7 @@ struct WRhythmHeroHeader<Actions: View>: View {
 
                 if let detail, !detail.isEmpty {
                     Text(detail)
-                        .font(.caption)
+                        .font(WRhythmTypography.rowSubtitle)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
                         .lineLimit(2)
@@ -341,25 +343,37 @@ struct WRhythmHeroHeader<Actions: View>: View {
                         .aspectRatio(contentMode: .fill)
                 }
             } else {
-                LinearGradient(
-                    colors: [tint.opacity(0.34), WRhythmTheme.secondaryAccent.opacity(0.16)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
+                tint.opacity(colorScheme == .dark ? 0.18 : 0.12)
                 Image(systemName: systemImage)
-                    .font(.system(size: 58, weight: .semibold))
+                    .font(.system(size: heroSymbolSize, weight: .semibold))
                     .symbolRenderingMode(.hierarchical)
                     .foregroundColor(tint)
             }
         }
         .aspectRatio(1, contentMode: .fit)
-        .frame(maxWidth: 300)
+        .frame(maxWidth: heroMaxSize)
         .clipShape(RoundedRectangle(cornerRadius: WRhythmVisual.cornerRadius, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: WRhythmVisual.cornerRadius, style: .continuous)
                 .strokeBorder(WRhythmTheme.surfaceStroke(for: colorScheme), lineWidth: 1)
         }
-        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.32 : 0.12), radius: 24, y: 14)
+        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.16 : 0.06), radius: 12, y: 6)
+    }
+
+    private var heroMaxSize: CGFloat {
+#if os(watchOS)
+        132
+#else
+        260
+#endif
+    }
+
+    private var heroSymbolSize: CGFloat {
+#if os(watchOS)
+        36
+#else
+        50
+#endif
     }
 }
 
@@ -429,32 +443,28 @@ struct WRhythmFeatureHeader: View {
                     }
                     .saturation(1.08)
                 } else {
-                    LinearGradient(
-                        colors: [tint.opacity(0.32), WRhythmTheme.secondaryAccent.opacity(0.12)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
+                    tint.opacity(colorScheme == .dark ? 0.18 : 0.12)
                     Image(systemName: systemImage)
-                        .font(.system(size: 44, weight: .semibold))
+                        .font(.system(size: featureSymbolSize, weight: .semibold))
                         .symbolRenderingMode(.hierarchical)
                         .foregroundColor(tint)
                 }
             }
-            .frame(width: 92, height: 92)
+            .frame(width: featureArtSize, height: featureArtSize)
             .clipShape(RoundedRectangle(cornerRadius: WRhythmVisual.cornerRadius, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: WRhythmVisual.cornerRadius, style: .continuous)
                     .strokeBorder(WRhythmTheme.surfaceStroke(for: colorScheme), lineWidth: 1)
             }
-            .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.24 : 0.10), radius: 20, y: 10)
+            .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.14 : 0.05), radius: 10, y: 5)
 
-            VStack(spacing: 4) {
+            VStack(spacing: WRhythmSpacing.xxs) {
                 Text(title)
-                    .font(.headline)
+                    .font(WRhythmTypography.featureTitle)
                     .multilineTextAlignment(.center)
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
-                        .font(.caption)
+                        .font(WRhythmTypography.rowSubtitle)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
                         .lineLimit(3)
@@ -464,6 +474,22 @@ struct WRhythmFeatureHeader: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 8)
+    }
+
+    private var featureArtSize: CGFloat {
+#if os(watchOS)
+        64
+#else
+        80
+#endif
+    }
+
+    private var featureSymbolSize: CGFloat {
+#if os(watchOS)
+        30
+#else
+        38
+#endif
     }
 }
 
@@ -1004,10 +1030,25 @@ struct WRhythmActionBar<Content: View>: View {
         HStack(spacing: WRhythmSpacing.xs) {
             content
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, WRhythmSpacing.sm)
+        .padding(.vertical, WRhythmSpacing.xs)
         .background(.regularMaterial, in: Capsule())
         .padding(.horizontal)
-        .padding(.vertical, 8)
+        .padding(.vertical, WRhythmSpacing.xs)
+    }
+}
+
+struct WRhythmSearchToolbarButton: View {
+    let hasQuery: Bool
+    let clear: () -> Void
+    let search: () -> Void
+
+    var body: some View {
+        Button(action: hasQuery ? clear : search) {
+            Image(systemName: hasQuery ? "xmark.circle.fill" : "magnifyingglass")
+                .symbolRenderingMode(.hierarchical)
+                .foregroundColor(hasQuery ? .secondary : WRhythmTheme.accent)
+        }
+        .accessibilityLabel(hasQuery ? "Clear search" : "Search")
     }
 }

@@ -213,7 +213,7 @@ struct DownloadsView: View {
     }
 
     private var deleteAllSheet: some View {
-        NavigationView {
+        NavigationStack {
             WRhythmScreen {
                 WRhythmCard {
                     VStack(spacing: WRhythmSpacing.md) {

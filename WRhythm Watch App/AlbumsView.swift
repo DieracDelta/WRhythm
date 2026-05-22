@@ -37,55 +37,28 @@ struct AlbumsView: View {
         }
     }
 
-        var body: some View {
-
-            content
-
-                .navigationTitle("Albums")
-                .wrhythmPageBackground()
-
-                .toolbar {
-
-                    if !offlineMode {
-
-                        ToolbarItem(placement: .platformTopBarTrailing) {
-
-                            if !searchText.isEmpty {
-
-                                Button(action: {
-
-                                    searchText = ""
-                                    searchTask?.cancel()
-
-                                    searchResults = []
-                                    isSearching = false
-
-                                }) {
-
-                                    Image(systemName: "xmark.circle.fill")
-
-                                        .foregroundColor(.secondary)
-
-                                }
-
-                            } else {
-
-                                Button(action: {
-
-                                    presentedSheet = .search
-
-                                }) {
-
-                                    Image(systemName: "magnifyingglass")
-
-                                }
-
+    var body: some View {
+        content
+            .navigationTitle("Albums")
+            .wrhythmPageBackground()
+            .toolbar {
+                if !offlineMode {
+                    ToolbarItem(placement: .platformTopBarTrailing) {
+                        WRhythmSearchToolbarButton(
+                            hasQuery: !searchText.isEmpty,
+                            clear: {
+                                searchText = ""
+                                searchTask?.cancel()
+                                searchResults = []
+                                isSearching = false
+                            },
+                            search: {
+                                presentedSheet = .search
                             }
-
-                        }
-
+                        )
                     }
                 }
+            }
 
                 .sheet(item: $presentedSheet) { sheet in
                     switch sheet {
@@ -351,7 +324,7 @@ private enum AlbumsSheet: String, Identifiable {
 }
 
 #Preview {
-    NavigationView {
+    NavigationStack {
         AlbumsView()
     }
 }
