@@ -224,6 +224,57 @@ struct PlaybackSyncPolicyTests {
         #expect(PlaybackSessionSyncPolicy.shouldApply(newer, over: current) == true)
     }
 
+    @Test func localOwnerPausePublishesNewerAuthoritativeSession() {
+        let now = Date()
+        let current = makeSession(
+            outputDeviceID: "iphone",
+            isPlaying: true,
+            position: 120,
+            revision: 4,
+            updatedAt: now.addingTimeInterval(-1),
+            updatedByDeviceID: "iphone"
+        )
+        let paused = makeSession(
+            outputDeviceID: "iphone",
+            isPlaying: false,
+            position: 123,
+            revision: 5,
+            updatedAt: now,
+            updatedByDeviceID: "iphone"
+        )
+
+        #expect(PlaybackSessionSyncPolicy.shouldApply(paused, over: current, now: now) == true)
+    }
+
+    @Test func remoteDisplayUsesPausedSessionOverLaterPlayingTelemetry() throws {
+        let now = Date()
+        let pausedSession = makeSession(
+            outputDeviceID: "iphone",
+            isPlaying: false,
+            position: 123,
+            revision: 5,
+            updatedAt: now,
+            updatedByDeviceID: "iphone"
+        )
+        let laterPlayingTelemetry = makeSnapshot(
+            id: "iphone",
+            isPlaying: true,
+            currentTime: 124,
+            updatedAt: now.addingTimeInterval(0.5)
+        )
+
+        let snapshot = try #require(PlaybackSessionSnapshotPolicy.snapshot(
+            from: pausedSession,
+            deviceName: "iPhone",
+            platform: "iPhone",
+            remotePlayback: laterPlayingTelemetry,
+            now: now.addingTimeInterval(0.5)
+        ))
+
+        #expect(snapshot.isPlaying == false)
+        #expect(snapshot.currentTime == 123)
+    }
+
     @Test func newerDifferentSessionWinsEvenWhenRevisionIsLower() {
         let now = Date()
         let staleMacSession = makeSession(id: "mac-session", revision: 20, updatedAt: now.addingTimeInterval(-5), updatedByDeviceID: "mac")
@@ -1145,7 +1196,7 @@ struct PlaybackSyncPolicyTests {
         #expect(snapshot.updatedAt == now)
     }
 
-    @Test func playbackSessionSnapshotUsesFreshLiveRemotePauseOverStalePlayingSession() throws {
+    @Test func playbackSessionSnapshotKeepsPlayingSessionOverPauseTelemetry() throws {
         let now = Date()
         let session = makeSession(
             outputDeviceID: "mac",
@@ -1168,8 +1219,8 @@ struct PlaybackSyncPolicyTests {
             now: now
         ))
 
-        #expect(snapshot.isPlaying == false)
-        #expect(snapshot.currentTime == 13)
+        #expect(snapshot.isPlaying == true)
+        #expect(snapshot.currentTime == 15)
         #expect(snapshot.updatedAt == now)
     }
 
@@ -1199,6 +1250,70 @@ struct PlaybackSyncPolicyTests {
         #expect(snapshot.isPlaying == false)
         #expect(snapshot.currentTime == 20)
         #expect(snapshot.updatedAt == now)
+    }
+
+    @Test func stalePlayingTelemetryCannotOverwriteNewerPausedSession() throws {
+        let now = Date()
+        let pausedSession = makeSession(
+            outputDeviceID: "iphone",
+            isPlaying: false,
+            position: 42,
+            revision: 6,
+            updatedAt: now,
+            updatedByDeviceID: "iphone"
+        )
+        let playingTelemetry = makeSnapshot(
+            id: "iphone",
+            isPlaying: true,
+            currentTime: 44,
+            updatedAt: now.addingTimeInterval(2)
+        )
+
+        let snapshot = try #require(PlaybackSessionSnapshotPolicy.snapshot(
+            from: pausedSession,
+            deviceName: "iPhone",
+            platform: "iPhone",
+            remotePlayback: playingTelemetry,
+            now: now.addingTimeInterval(2)
+        ))
+
+        #expect(snapshot.isPlaying == false)
+        #expect(snapshot.currentTime == 42)
+    }
+
+    @Test func remotePauseCommandFinalTruthComesFromOwnerSessionAcknowledgment() throws {
+        let now = Date()
+        let pausedSession = makeSession(
+            outputDeviceID: "iphone",
+            isPlaying: false,
+            position: 120,
+            revision: 7,
+            updatedAt: now,
+            updatedByDeviceID: "iphone"
+        )
+        let olderPlayingTelemetry = makeSnapshot(
+            id: "iphone",
+            isPlaying: true,
+            currentTime: 119,
+            updatedAt: now.addingTimeInterval(-1)
+        )
+
+        #expect(PendingPlaybackSessionAcknowledgmentPolicy.shouldAcceptAcknowledgingSession(
+            pausedSession,
+            action: .pause,
+            now: now
+        ) == true)
+
+        let snapshot = try #require(PlaybackSessionSnapshotPolicy.snapshot(
+            from: pausedSession,
+            deviceName: "iPhone",
+            platform: "iPhone",
+            remotePlayback: olderPlayingTelemetry,
+            now: now
+        ))
+
+        #expect(snapshot.isPlaying == false)
+        #expect(snapshot.currentTime == 120)
     }
 
     @Test func playbackSessionSnapshotUsesFreshLiveRemotePlayingProgressOverSessionEstimate() throws {
@@ -1410,7 +1525,7 @@ struct PlaybackSyncPolicyTests {
         #expect(snapshot.currentTime == 35)
     }
 
-    @Test func playbackSessionSnapshotUsesSameOutputRemotePauseWithSparseQueue() throws {
+    @Test func playbackSessionSnapshotKeepsPlayingSessionOverSameOutputPauseTelemetryWithSparseQueue() throws {
         let now = Date()
         let session = makeSession(
             outputDeviceID: "mac",
@@ -1436,8 +1551,8 @@ struct PlaybackSyncPolicyTests {
         ))
 
         #expect(snapshot.id == "mac")
-        #expect(snapshot.isPlaying == false)
-        #expect(snapshot.currentTime == 13)
+        #expect(snapshot.isPlaying == true)
+        #expect(snapshot.currentTime == 15)
         #expect(snapshot.queue.map(\.id) == ["song-1"])
     }
 

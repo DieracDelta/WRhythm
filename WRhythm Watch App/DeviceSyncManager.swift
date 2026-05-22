@@ -968,14 +968,19 @@ struct PlaybackSessionSnapshotPolicy: Sendable {
         guard let song = session.currentSong else { return nil }
         guard !isSupersededByDifferentLivePlayback(remotePlayback, session: session) else { return nil }
         let livePlayback = livePlaybackForSession(remotePlayback, session: session)
-        let currentTime = livePlayback?.estimatedCurrentTime(at: now) ?? session.estimatedPosition(at: now)
+        let sessionPosition = session.estimatedPosition(at: now)
+        let currentTime = if session.isPlaying, livePlayback?.isPlaying == true {
+            livePlayback?.estimatedCurrentTime(at: now) ?? sessionPosition
+        } else {
+            sessionPosition
+        }
 
         return PlaybackSnapshot(
             id: session.outputDeviceID,
             deviceName: deviceName,
             platform: platform,
             song: song,
-            isPlaying: livePlayback?.isPlaying ?? session.isPlaying,
+            isPlaying: session.isPlaying,
             isBuffering: livePlayback?.isBuffering,
             prebufferedTrackCount: livePlayback?.prebufferedTrackCount,
             volume: livePlayback?.volume ?? session.volume,
