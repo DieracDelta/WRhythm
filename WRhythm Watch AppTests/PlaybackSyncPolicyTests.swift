@@ -55,12 +55,28 @@ struct PlaybackSyncPolicyTests {
         #expect(PlaybackSyncPolicy.shouldPublishRemotePlayback(paused, current: current) == true)
     }
 
-    @Test func smallPlaybackClockDriftDoesNotRepublishNowPlaying() {
+    @Test func smallPlaybackClockDriftDoesNotRepublishImmediately() {
         let now = Date()
         let current = makeSnapshot(currentTime: 42, updatedAt: now)
         let drift = makeSnapshot(currentTime: 43.5, updatedAt: now.addingTimeInterval(0.5))
 
         #expect(PlaybackSyncPolicy.shouldPublishRemotePlayback(drift, current: current) == false)
+    }
+
+    @Test func playingProgressReanchorsAfterShortIntervalEvenWithSmallDrift() {
+        let now = Date()
+        let current = makeSnapshot(currentTime: 42, updatedAt: now)
+        let drift = makeSnapshot(currentTime: 43.5, updatedAt: now.addingTimeInterval(2.1))
+
+        #expect(PlaybackSyncPolicy.shouldPublishRemotePlayback(drift, current: current) == true)
+    }
+
+    @Test func pausedProgressReanchorsOnSubsecondDifference() {
+        let now = Date()
+        let current = makeSnapshot(isPlaying: false, currentTime: 42, updatedAt: now)
+        let correctedPause = makeSnapshot(isPlaying: false, currentTime: 42.5, updatedAt: now.addingTimeInterval(0.5))
+
+        #expect(PlaybackSyncPolicy.shouldPublishRemotePlayback(correctedPause, current: current) == true)
     }
 
     @Test func seekPositionJumpPublishesEvenWhenTrackAndQueueAreUnchanged() {
@@ -729,6 +745,29 @@ struct PlaybackSyncPolicyTests {
         #expect(PendingPlaybackAcknowledgmentPolicy.shouldAcceptAcknowledgingSnapshot(
             pausedAcknowledgment,
             current: optimisticPausedMirror,
+            action: .pause
+        ) == true)
+        #expect(PendingPlaybackSnapshotPolicy.shouldApplySnapshot(
+            hasPendingCommandForDevice: true,
+            isAcknowledgingPendingCommand: true
+        ) == true)
+    }
+
+    @Test func pendingPauseRejectsDelayedPlayingSessionUntilPausedSessionAcknowledges() {
+        let now = Date()
+        let delayedPlayingSession = makeSession(outputDeviceID: "mac", isPlaying: true, position: 122, updatedAt: now)
+        let pausedSession = makeSession(outputDeviceID: "mac", isPlaying: false, position: 120.3, updatedAt: now.addingTimeInterval(0.2))
+
+        #expect(PendingPlaybackSessionAcknowledgmentPolicy.shouldAcceptAcknowledgingSession(
+            delayedPlayingSession,
+            action: .pause
+        ) == false)
+        #expect(PendingPlaybackSnapshotPolicy.shouldApplySnapshot(
+            hasPendingCommandForDevice: true,
+            isAcknowledgingPendingCommand: false
+        ) == false)
+        #expect(PendingPlaybackSessionAcknowledgmentPolicy.shouldAcceptAcknowledgingSession(
+            pausedSession,
             action: .pause
         ) == true)
         #expect(PendingPlaybackSnapshotPolicy.shouldApplySnapshot(

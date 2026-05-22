@@ -230,6 +230,9 @@ extension PlaybackSnapshot {
 struct PlaybackSyncPolicy: Sendable {
     static let defaultMaxRemotePlaybackSnapshotAge: TimeInterval = 30
     static let defaultAllowedFutureClockSkew: TimeInterval = 10
+    static let progressReanchorInterval: TimeInterval = 2
+    static let playingProgressDriftTolerance: TimeInterval = 1.5
+    static let pausedProgressDriftTolerance: TimeInterval = 0.35
 
     static func isStalePlaybackSnapshot(
         _ playback: PlaybackSnapshot,
@@ -265,7 +268,16 @@ struct PlaybackSyncPolicy: Sendable {
         if abs((current.volume ?? -1) - (playback.volume ?? -1)) > 0.01 { return true }
         if current.currentIndex != playback.currentIndex { return true }
         if current.queue.map(\.id) != playback.queue.map(\.id) { return true }
-        return abs(current.estimatedCurrentTime - playback.currentTime) > 4
+        if current.isPlaying && playback.isPlaying,
+           playback.updatedAt.timeIntervalSince(current.updatedAt) >= progressReanchorInterval {
+            return true
+        }
+
+        if !current.isPlaying && !playback.isPlaying {
+            return abs(current.currentTime - playback.currentTime) > pausedProgressDriftTolerance
+        }
+
+        return abs(current.estimatedCurrentTime - playback.currentTime) > playingProgressDriftTolerance
     }
 }
 
@@ -629,6 +641,58 @@ struct PendingPlaybackCommandRetryPolicy: Sendable {
 struct PendingPlaybackSnapshotPolicy: Sendable {
     static func shouldApplySnapshot(hasPendingCommandForDevice: Bool, isAcknowledgingPendingCommand: Bool) -> Bool {
         !hasPendingCommandForDevice || isAcknowledgingPendingCommand
+    }
+}
+
+struct PendingPlaybackSessionAcknowledgmentPolicy: Sendable {
+    static func shouldAcceptAcknowledgingSession(
+        _ session: PlaybackSession,
+        action: PlaybackSyncCommandAction,
+        expectedSongs: [Song]? = nil,
+        expectedIndex: Int? = nil,
+        expectedTime: TimeInterval? = nil,
+        expectedVolume: Double? = nil,
+        now: Date = Date()
+    ) -> Bool {
+        switch action {
+        case .play:
+            return session.isPlaying
+        case .pause:
+            return !session.isPlaying
+        case .seek:
+            guard let expectedTime else { return false }
+            return abs(session.estimatedPosition(at: now) - expectedTime) <= PlaybackCommandSyncPolicy.seekAcknowledgmentTolerance
+        case .setVolume:
+            guard let expectedVolume, let actualVolume = session.volume else { return false }
+            return abs(expectedVolume - actualVolume) < PlaybackCommandSyncPolicy.volumeAcknowledgmentTolerance
+        case .next, .previous:
+            guard let expectedIndex else { return false }
+            return session.currentIndex == expectedIndex
+        case .playQueue, .syncQueue:
+            guard let expectedSongs, !expectedSongs.isEmpty else { return false }
+            let expectedIndex = min(max(expectedIndex ?? 0, 0), expectedSongs.count - 1)
+            return session.queue.map(\.id) == expectedSongs.map(\.id)
+                && session.currentIndex == expectedIndex
+                && session.currentSong?.id == expectedSongs[expectedIndex].id
+        case .enqueue:
+            guard let expectedSongs, !expectedSongs.isEmpty else { return false }
+            return containsContiguousSongIDs(expectedSongs.map(\.id), in: session.queue.map(\.id))
+        case .stop:
+            return !session.isPlaying && session.queue.isEmpty
+        case .toggle:
+            return false
+        }
+    }
+
+    private static func containsContiguousSongIDs(_ needle: [String], in haystack: [String]) -> Bool {
+        guard !needle.isEmpty, needle.count <= haystack.count else { return false }
+        for startIndex in 0...(haystack.count - needle.count) {
+            let slice = haystack[startIndex..<(startIndex + needle.count)]
+            if Array(slice) == needle {
+                return true
+            }
+        }
+        return false
     }
 }
 
@@ -1792,7 +1856,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             .store(in: &cancellables)
 
         player.$currentTime
-            .removeDuplicates { abs($0 - $1) < 5 }
+            .removeDuplicates { abs($0 - $1) < 1 }
             .sink { [weak self] _ in
                 self?.broadcastPlaybackState()
             }
@@ -2272,6 +2336,19 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             guard syncModeEnabled,
                   envelope.sender.syncModeEnabled,
                   let session = envelope.playbackSession else { return }
+            let acknowledgingPendingCommandKey = acknowledgingPendingCommandKey(for: session)
+            let isAcknowledgingSession = acknowledgingPendingCommandKey != nil
+            let hasPendingCommandForDevice = !pendingCommandKeys(for: session.outputDeviceID).isEmpty
+            guard PendingPlaybackSnapshotPolicy.shouldApplySnapshot(
+                hasPendingCommandForDevice: hasPendingCommandForDevice,
+                isAcknowledgingPendingCommand: isAcknowledgingSession
+            ) else {
+                flushPendingCommands(for: envelope.sender.id)
+                return
+            }
+            if let acknowledgingPendingCommandKey {
+                clearPendingCommand(forKey: acknowledgingPendingCommandKey)
+            }
             flushPendingCommands(for: envelope.sender.id)
             applySharedSession(session, applyLocally: true)
 
@@ -2440,6 +2517,25 @@ final class DeviceSyncManager: NSObject, ObservableObject {
                   PendingPlaybackAcknowledgmentPolicy.shouldAcceptAcknowledgingSnapshot(
                     playback,
                     current: remotePlayback,
+                    action: command.action,
+                    expectedSongs: command.songs,
+                    expectedIndex: command.startingIndex,
+                    expectedTime: command.time,
+                    expectedVolume: command.volume
+                  ) else {
+                continue
+            }
+            return key
+        }
+        return nil
+    }
+
+    private func acknowledgingPendingCommandKey(for session: PlaybackSession) -> String? {
+        for key in pendingCommandKeys(for: session.outputDeviceID) {
+            guard let command = pendingTargetedCommands[key],
+                  commandNeedsPlaybackAcknowledgment(command),
+                  PendingPlaybackSessionAcknowledgmentPolicy.shouldAcceptAcknowledgingSession(
+                    session,
                     action: command.action,
                     expectedSongs: command.songs,
                     expectedIndex: command.startingIndex,
