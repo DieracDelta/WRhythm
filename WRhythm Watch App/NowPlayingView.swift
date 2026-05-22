@@ -1576,10 +1576,12 @@ private struct WatchNowPlayingView: View {
                 }
             }
             .padding(.horizontal, 8)
-            .padding(.vertical, WRhythmSpacing.xs)
+            .padding(.top, 0)
+            .padding(.bottom, WRhythmSpacing.xs)
         }
         .wrhythmPageBackground(coverArtId: primaryArtworkCoverArtId)
         .navigationTitle("")
+        .toolbar(.hidden, for: .navigationBar)
         .sheet(item: $presentedSheet) { sheet in
             switch sheet {
             case .volume:
@@ -1628,17 +1630,7 @@ private struct WatchNowPlayingView: View {
     @ViewBuilder
     private func localPlaybackContent(song: Song) -> some View {
         VStack(spacing: 4) {
-            WatchTrackTitleBlock(
-                song: song,
-                status: {
-                    WatchNowPlayingStatusText(
-                        isPlaying: localIsPlaying,
-                        isBuffering: player.isBuffering,
-                        prebufferedTrackCount: player.prebufferedTrackCount,
-                        hasQueuedTracks: player.queue.count > player.currentIndex + 1
-                    )
-                }
-            )
+            WatchTrackTitleBlock(song: song)
 
             NowPlayingArtwork(coverArtId: song.coverArt, maxSize: 52)
                 .equatable()
@@ -1787,17 +1779,7 @@ private struct WatchRemotePlaybackControls: View {
             }
 
             if let song = playback.song {
-                WatchTrackTitleBlock(
-                    song: song,
-                    status: {
-                        WatchNowPlayingStatusText(
-                            isPlaying: playback.isPlaying,
-                            isBuffering: playback.isBuffering == true,
-                            prebufferedTrackCount: playback.prebufferedTrackCount,
-                            hasQueuedTracks: playback.currentIndex < playback.queue.count - 1
-                        )
-                    }
-                )
+                WatchTrackTitleBlock(song: song)
 
                 NowPlayingArtwork(coverArtId: song.coverArt, maxSize: 50)
                     .equatable()
@@ -1873,9 +1855,8 @@ private struct WatchRemotePlaybackControls: View {
     }
 }
 
-private struct WatchTrackTitleBlock<Status: View>: View {
+private struct WatchTrackTitleBlock: View {
     let song: Song
-    @ViewBuilder let status: () -> Status
 
     var body: some View {
         VStack(spacing: 2) {
@@ -1893,46 +1874,8 @@ private struct WatchTrackTitleBlock<Status: View>: View {
                     .lineLimit(1)
                     .frame(maxWidth: .infinity)
             }
-
-            status()
         }
         .frame(maxWidth: .infinity)
-    }
-}
-
-private struct WatchNowPlayingStatusText: View {
-    let isPlaying: Bool
-    let isBuffering: Bool
-    let prebufferedTrackCount: Int?
-    let hasQueuedTracks: Bool
-
-    var body: some View {
-        HStack(spacing: 4) {
-            Image(systemName: isPlaying ? "waveform" : "pause.fill")
-
-            Text(isPlaying ? "Playing" : "Paused")
-
-            if let detail {
-                Text("•")
-                    .foregroundStyle(.tertiary)
-                Text(detail)
-            }
-        }
-        .font(.caption2)
-        .foregroundStyle(.secondary)
-        .lineLimit(1)
-    }
-
-    private var detail: String? {
-        if isBuffering {
-            return "Buffering"
-        }
-
-        if hasQueuedTracks, let prebufferedTrackCount {
-            return "\(prebufferedTrackCount) ready"
-        }
-
-        return nil
     }
 }
 
