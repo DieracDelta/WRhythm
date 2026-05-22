@@ -154,6 +154,15 @@ struct AlbumsView: View {
             } else {
 
                 List {
+#if os(iOS)
+                    PhoneSearchSubmenuHeader(
+                        title: "Offline Albums",
+                        subtitle: "Albums available from downloaded music.",
+                        systemImage: "square.stack",
+                        countText: albumCountText(filteredAlbums.count),
+                        queryText: searchText
+                    )
+#endif
 
                     ForEach(filteredAlbums, id: \.id) { album in
 
@@ -224,6 +233,15 @@ struct AlbumsView: View {
             } else {
 
                 List {
+#if os(iOS)
+                    PhoneSearchSubmenuHeader(
+                        title: "Albums",
+                        subtitle: searchText.isEmpty ? "Browse records across your library." : "Albums matching your search.",
+                        systemImage: "square.stack",
+                        countText: albumCountText(filteredAlbums.count),
+                        queryText: searchText
+                    )
+#endif
 
                     ForEach(filteredAlbums) { album in
 
@@ -273,6 +291,10 @@ struct AlbumsView: View {
             }
 
         }
+
+    private func albumCountText(_ count: Int) -> String {
+        count == 1 ? "1 album" : "\(count) albums"
+    }
 
     private func performSearch(query: String) {
         searchTask?.cancel()

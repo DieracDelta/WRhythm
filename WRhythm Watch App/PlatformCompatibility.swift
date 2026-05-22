@@ -552,6 +552,48 @@ extension WRhythmSectionHeader where Actions == EmptyView {
     }
 }
 
+#if os(iOS)
+struct PhoneSearchSubmenuHeader: View {
+    let title: String
+    let subtitle: String
+    let systemImage: String
+    let countText: String
+    var queryText: String?
+
+    var body: some View {
+        WRhythmCard {
+            HStack(alignment: .center, spacing: WRhythmSpacing.md) {
+                WRhythmIconBadge(systemImage: systemImage, tint: WRhythmTheme.accent, size: 52)
+
+                VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
+                    Text(title)
+                        .font(WRhythmTypography.heroTitle)
+                        .lineLimit(1)
+
+                    Text(subtitle)
+                        .font(WRhythmTypography.rowSubtitle)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+
+                    HStack(spacing: WRhythmSpacing.xs) {
+                        WRhythmStatusPill(text: countText, systemImage: "sparkles", tint: WRhythmTheme.accent)
+
+                        if let queryText, !queryText.isEmpty {
+                            WRhythmStatusPill(text: queryText, systemImage: "magnifyingglass", tint: .secondary)
+                        }
+                    }
+                }
+
+                Spacer(minLength: 0)
+            }
+        }
+        .listRowInsets(EdgeInsets(top: WRhythmSpacing.sm, leading: WRhythmSpacing.md, bottom: WRhythmSpacing.sm, trailing: WRhythmSpacing.md))
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+    }
+}
+#endif
+
 struct WRhythmIconBadge: View {
     @Environment(\.colorScheme) private var colorScheme
     let systemImage: String
@@ -578,6 +620,7 @@ struct WRhythmMediaRow<Trailing: View>: View {
     var detail: String?
     var coverArtId: String?
     var fallbackSystemImage = "music.note"
+    var fallbackTint: Color = WRhythmTheme.accent
     var artworkSize: CGFloat = 46
     var isCurrent = false
     var isPlaying = false
@@ -589,6 +632,7 @@ struct WRhythmMediaRow<Trailing: View>: View {
         detail: String? = nil,
         coverArtId: String? = nil,
         fallbackSystemImage: String = "music.note",
+        fallbackTint: Color = WRhythmTheme.accent,
         artworkSize: CGFloat = 46,
         isCurrent: Bool = false,
         isPlaying: Bool = false,
@@ -599,6 +643,7 @@ struct WRhythmMediaRow<Trailing: View>: View {
         self.detail = detail
         self.coverArtId = coverArtId
         self.fallbackSystemImage = fallbackSystemImage
+        self.fallbackTint = fallbackTint
         self.artworkSize = artworkSize
         self.isCurrent = isCurrent
         self.isPlaying = isPlaying
@@ -607,7 +652,12 @@ struct WRhythmMediaRow<Trailing: View>: View {
 
     var body: some View {
         HStack(spacing: WRhythmSpacing.sm) {
-            WRhythmArtworkThumbnail(coverArtId: coverArtId, fallbackSystemImage: fallbackSystemImage, size: artworkSize)
+            WRhythmArtworkThumbnail(
+                coverArtId: coverArtId,
+                fallbackSystemImage: fallbackSystemImage,
+                tint: fallbackTint,
+                size: artworkSize
+            )
 
             VStack(alignment: .leading, spacing: WRhythmSpacing.xxs) {
                 HStack(spacing: WRhythmSpacing.xs) {
@@ -653,6 +703,7 @@ extension WRhythmMediaRow where Trailing == EmptyView {
         detail: String? = nil,
         coverArtId: String? = nil,
         fallbackSystemImage: String = "music.note",
+        fallbackTint: Color = WRhythmTheme.accent,
         artworkSize: CGFloat = 46,
         isCurrent: Bool = false,
         isPlaying: Bool = false
@@ -663,6 +714,7 @@ extension WRhythmMediaRow where Trailing == EmptyView {
             detail: detail,
             coverArtId: coverArtId,
             fallbackSystemImage: fallbackSystemImage,
+            fallbackTint: fallbackTint,
             artworkSize: artworkSize,
             isCurrent: isCurrent,
             isPlaying: isPlaying
@@ -706,6 +758,7 @@ struct WRhythmCollectionRow<Trailing: View>: View {
             detail: detail,
             coverArtId: coverArtId,
             fallbackSystemImage: fallbackSystemImage,
+            fallbackTint: tint,
             artworkSize: 48
         ) {
             trailing
@@ -915,6 +968,7 @@ struct WRhythmArtworkThumbnail: View {
     @Environment(\.colorScheme) private var colorScheme
     let coverArtId: String?
     var fallbackSystemImage = "music.note"
+    var tint: Color = WRhythmTheme.accent
     var size: CGFloat = 46
 
     var body: some View {
@@ -932,7 +986,7 @@ struct WRhythmArtworkThumbnail: View {
             } else {
                 LinearGradient(
                     colors: [
-                        WRhythmTheme.accent.opacity(colorScheme == .dark ? 0.22 : 0.16),
+                        tint.opacity(colorScheme == .dark ? 0.24 : 0.18),
                         WRhythmTheme.secondaryAccent.opacity(colorScheme == .dark ? 0.16 : 0.12)
                     ],
                     startPoint: .topLeading,
@@ -942,7 +996,7 @@ struct WRhythmArtworkThumbnail: View {
                 Image(systemName: fallbackSystemImage)
                     .font(.system(size: max(16, size * 0.38), weight: .semibold))
                     .symbolRenderingMode(.hierarchical)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(tint)
             }
         }
         .frame(width: size, height: size)

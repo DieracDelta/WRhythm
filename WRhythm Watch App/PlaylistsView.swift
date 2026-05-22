@@ -123,22 +123,34 @@ struct PlaylistsView: View {
                 message: "View playlists while online to cache them"
             )
         } else {
-            List(filteredCachedPlaylists, id: \.id) { playlist in
-                NavigationLink(destination: PlaylistDetailView(playlistId: playlist.id, playlistName: playlist.name)) {
-                    WRhythmCollectionRow(
-                        title: playlist.name,
-                        subtitle: "\(playlist.songCount) songs",
-                        detail: "Cached",
-                        coverArtId: playlist.coverArt,
-                        fallbackSystemImage: "music.note.list",
-                        tint: WRhythmTheme.playlistGen
-                    ) {
-                        Image(systemName: "arrow.down.circle.fill")
-                            .font(.caption2)
-                            .foregroundColor(WRhythmTheme.success)
+            List {
+#if os(iOS)
+                PhoneSearchSubmenuHeader(
+                    title: "Offline Playlists",
+                    subtitle: "Cached playlists ready for offline playback.",
+                    systemImage: "music.note.list",
+                    countText: playlistCountText(filteredCachedPlaylists.count),
+                    queryText: searchText
+                )
+#endif
+
+                ForEach(filteredCachedPlaylists, id: \.id) { playlist in
+                    NavigationLink(destination: PlaylistDetailView(playlistId: playlist.id, playlistName: playlist.name)) {
+                        WRhythmCollectionRow(
+                            title: playlist.name,
+                            subtitle: "\(playlist.songCount) songs",
+                            detail: "Cached",
+                            coverArtId: playlist.coverArt,
+                            fallbackSystemImage: "music.note.list",
+                            tint: WRhythmTheme.playlistGen
+                        ) {
+                            Image(systemName: "arrow.down.circle.fill")
+                                .font(.caption2)
+                                .foregroundColor(WRhythmTheme.success)
+                        }
                     }
+                    .wrhythmPlaylistActions(playlistId: playlist.id, playlistName: playlist.name)
                 }
-                .wrhythmPlaylistActions(playlistId: playlist.id, playlistName: playlist.name)
             }
             .searchable(text: $searchText, prompt: "Search playlists")
             .wrhythmListSurface()
@@ -170,20 +182,36 @@ struct PlaylistsView: View {
                     libraryDataManager.fetchPlaylists(forceRefresh: true)
             }
         } else {
-            List(filteredPlaylists) { playlist in
-                NavigationLink(destination: PlaylistDetailView(playlistId: playlist.id, playlistName: playlist.name)) {
-                    WRhythmCollectionRow(
-                        title: playlist.name,
-                        subtitle: "\(playlist.songCount) songs",
-                        coverArtId: playlist.coverArt,
-                        fallbackSystemImage: "music.note.list",
-                        tint: WRhythmTheme.playlistGen
-                    )
+            List {
+#if os(iOS)
+                PhoneSearchSubmenuHeader(
+                    title: "Playlists",
+                    subtitle: searchText.isEmpty ? "Mixes and saved queues from your library." : "Playlists matching your search.",
+                    systemImage: "music.note.list",
+                    countText: playlistCountText(filteredPlaylists.count),
+                    queryText: searchText
+                )
+#endif
+
+                ForEach(filteredPlaylists) { playlist in
+                    NavigationLink(destination: PlaylistDetailView(playlistId: playlist.id, playlistName: playlist.name)) {
+                        WRhythmCollectionRow(
+                            title: playlist.name,
+                            subtitle: "\(playlist.songCount) songs",
+                            coverArtId: playlist.coverArt,
+                            fallbackSystemImage: "music.note.list",
+                            tint: WRhythmTheme.playlistGen
+                        )
+                    }
+                    .wrhythmPlaylistActions(playlistId: playlist.id, playlistName: playlist.name)
                 }
-                .wrhythmPlaylistActions(playlistId: playlist.id, playlistName: playlist.name)
             }
             .wrhythmListSurface()
         }
+    }
+
+    private func playlistCountText(_ count: Int) -> String {
+        count == 1 ? "1 playlist" : "\(count) playlists"
     }
 
     private func syncAllPlaylists() {

@@ -135,6 +135,16 @@ struct ArtistsView: View {
             )
         } else {
             List {
+#if os(iOS)
+                PhoneSearchSubmenuHeader(
+                    title: "Offline Artists",
+                    subtitle: "Artists available from downloaded music.",
+                    systemImage: "person.2",
+                    countText: artistCountText(filteredArtists.count),
+                    queryText: searchText
+                )
+#endif
+
                 ForEach(Array(filteredArtists.enumerated()), id: \.element.name) { index, artist in
                     let albumCount = downloadManager.getDownloadedAlbums().filter { $0.artist == artist.name }.count
                     NavigationLink(destination: ArtistDetailView(artistId: "offline-\(artist.name)", artistName: artist.name)) {
@@ -187,6 +197,16 @@ struct ArtistsView: View {
             }
         } else {
             List {
+#if os(iOS)
+                PhoneSearchSubmenuHeader(
+                    title: "Artists",
+                    subtitle: searchText.isEmpty ? "Browse performers across your library." : "Artists matching your search.",
+                    systemImage: "person.2",
+                    countText: artistCountText(filteredDisplayedArtists.count),
+                    queryText: searchText
+                )
+#endif
+
                 ForEach(filteredDisplayedArtists) { artist in
                     NavigationLink(destination: ArtistDetailView(artistId: artist.id, artistName: artist.name)) {
                         WRhythmCollectionRow(
@@ -229,6 +249,10 @@ struct ArtistsView: View {
         let nextBatch = artists[loadedCount..<min(loadedCount + batchSize, artists.count)]
         displayedArtists.append(contentsOf: nextBatch)
         loadedCount += nextBatch.count
+    }
+
+    private func artistCountText(_ count: Int) -> String {
+        count == 1 ? "1 artist" : "\(count) artists"
     }
 
     private func performSearch(query: String) {

@@ -113,6 +113,16 @@ struct TracksView: View {
                     )
                 } else {
                     List {
+#if os(iOS)
+                        PhoneSearchSubmenuHeader(
+                            title: "Offline Results",
+                            subtitle: "Downloaded songs, albums, artists, and playlists that match your query.",
+                            systemImage: "magnifyingglass",
+                            countText: resultCountText(displayedSongs.count + offlineAlbumResults.count + offlineArtistResults.count + offlinePlaylistResults.count),
+                            queryText: searchText
+                        )
+#endif
+
                         if !offlinePlaylistResults.isEmpty {
                             Section(header: Text("Playlists")) {
                                 ForEach(offlinePlaylistResults, id: \.id) { playlist in
@@ -204,6 +214,16 @@ struct TracksView: View {
                 )
             } else {
                 List {
+#if os(iOS)
+                    PhoneSearchSubmenuHeader(
+                        title: "Search Results",
+                        subtitle: "Matching songs, albums, and artists from your library.",
+                        systemImage: "magnifyingglass",
+                        countText: resultCountText(searchResults.count + albumResults.count + artistResults.count),
+                        queryText: searchText
+                    )
+#endif
+
                     if !artistResults.isEmpty {
                         Section(header: Text("Artists")) {
                             ForEach(artistResults) { artist in
@@ -407,6 +427,10 @@ struct TracksView: View {
             return "Download songs while online to search offline"
         }
         return "\(downloadedCount) songs available offline"
+    }
+
+    private func resultCountText(_ count: Int) -> String {
+        count == 1 ? "1 result" : "\(count) results"
     }
 
     private var navigationTitleText: String {
