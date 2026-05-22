@@ -8,6 +8,10 @@
 import Foundation
 import Combine
 
+private struct DownloadTaskHandle: @unchecked Sendable {
+    let task: URLSessionTask
+}
+
 // MARK: - Audio Quality Settings
 
 enum AudioQuality: Int, CaseIterable, Codable, Sendable {
@@ -139,6 +143,7 @@ struct RadioPlaylist: Codable, Identifiable, Sendable {
 @MainActor
 final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     static let shared = DownloadManager()
+    private nonisolated static let delegateEventQueue = SyncDelegateEventQueue()
 
     @Published var downloadedSongs: [String: DownloadedSong] = [:]
     @Published var cachedPlaylists: [CachedPlaylist] = []
@@ -1066,8 +1071,12 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
     // MARK: - URLSessionDownloadDelegate
 
     nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
-        Task { @MainActor [weak self] in
-            self?.handleDownloadProgress(downloadTask: downloadTask, totalBytesWritten: totalBytesWritten, totalBytesExpectedToWrite: totalBytesExpectedToWrite)
+        let taskHandle = DownloadTaskHandle(task: downloadTask)
+        Task {
+            await Self.delegateEventQueue.enqueue {
+                guard let downloadTask = taskHandle.task as? URLSessionDownloadTask else { return }
+                DownloadManager.shared.handleDownloadProgress(downloadTask: downloadTask, totalBytesWritten: totalBytesWritten, totalBytesExpectedToWrite: totalBytesExpectedToWrite)
+            }
         }
     }
 
@@ -1144,8 +1153,12 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
     }
 
     nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
-        Task { @MainActor [weak self] in
-            self?.handleDownloadFinished(downloadTask: downloadTask, location: location)
+        let taskHandle = DownloadTaskHandle(task: downloadTask)
+        Task {
+            await Self.delegateEventQueue.enqueue {
+                guard let downloadTask = taskHandle.task as? URLSessionDownloadTask else { return }
+                DownloadManager.shared.handleDownloadFinished(downloadTask: downloadTask, location: location)
+            }
         }
     }
 
@@ -1239,8 +1252,11 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
     }
 
     nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        Task { @MainActor [weak self] in
-            self?.handleDownloadCompleted(task: task, error: error)
+        let taskHandle = DownloadTaskHandle(task: task)
+        Task {
+            await Self.delegateEventQueue.enqueue {
+                DownloadManager.shared.handleDownloadCompleted(task: taskHandle.task, error: error)
+            }
         }
     }
 

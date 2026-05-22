@@ -426,6 +426,27 @@ struct PlaybackSyncPolicyTests {
         #expect(PlaybackCommandSyncPolicy.isAcknowledged(action: .seek, expectedTime: 30, by: stalePosition) == false)
     }
 
+    @Test func seekCommandAcknowledgmentUsesEstimatedPlayingProgress() {
+        let now = Date()
+        let progressedSnapshot = makeSnapshot(
+            isPlaying: true,
+            currentTime: 25,
+            updatedAt: now.addingTimeInterval(-5)
+        )
+
+        #expect(PlaybackCommandSyncPolicy.isAcknowledged(
+            action: .seek,
+            expectedTime: 30,
+            by: progressedSnapshot,
+            now: now
+        ) == true)
+    }
+
+    @Test func toggledPlaybackResolvesToExplicitCommandActions() {
+        #expect(PlaybackCommandSyncPolicy.explicitActionForToggledPlayback(isPlaying: true) == .pause)
+        #expect(PlaybackCommandSyncPolicy.explicitActionForToggledPlayback(isPlaying: false) == .play)
+    }
+
     @Test func volumeCommandUsesToleranceForAcknowledgment() {
         let now = Date()
         let matchingVolume = makeSnapshot(volume: 0.51, updatedAt: now)
@@ -489,6 +510,21 @@ struct PlaybackSyncPolicyTests {
         ) == true)
     }
 
+    @Test func incomingOppositePlaybackCommandSupersedesPendingCommand() {
+        #expect(PendingPlaybackCommandPolicy.shouldIncomingCommandSupersedePendingCommand(
+            pendingAction: .pause,
+            incomingAction: .play
+        ) == true)
+        #expect(PendingPlaybackCommandPolicy.shouldIncomingCommandSupersedePendingCommand(
+            pendingAction: .seek,
+            incomingAction: .seek
+        ) == true)
+        #expect(PendingPlaybackCommandPolicy.shouldIncomingCommandSupersedePendingCommand(
+            pendingAction: .enqueue,
+            incomingAction: .play
+        ) == false)
+    }
+
     @Test func pendingCommandDeadlineDependsOnAcknowledgmentNeed() {
         #expect(PendingPlaybackCommandPolicy.deadlineInterval(needsAcknowledgment: true) == 20)
         #expect(PendingPlaybackCommandPolicy.deadlineInterval(needsAcknowledgment: false) == 6)
@@ -507,6 +543,70 @@ struct PlaybackSyncPolicyTests {
         #expect(trimmed.count == SyncDuplicatePolicy.maxTrackedEnvelopeIDs)
         #expect(trimmed.first == "id-5")
         #expect(trimmed.last == "id-504")
+    }
+
+    @Test func playbackSnapshotFingerprintSuppressesSamePayloadFromSecondTransport() {
+        let snapshot = makeSnapshot(updatedAt: Date())
+        let fingerprint = PlaybackSnapshotFingerprintPolicy.fingerprint(for: snapshot)
+
+        #expect(PlaybackSnapshotFingerprintPolicy.shouldProcess(
+            fingerprint: fingerprint,
+            processedFingerprints: []
+        ) == true)
+        #expect(PlaybackSnapshotFingerprintPolicy.shouldProcess(
+            fingerprint: fingerprint,
+            processedFingerprints: [fingerprint]
+        ) == false)
+    }
+
+    @Test func playbackSnapshotFingerprintKeepsOnlyRecentFingerprints() {
+        let ids = (0..<505).map { "fingerprint-\($0)" }
+        let trimmed = PlaybackSnapshotFingerprintPolicy.trimmedFingerprintOrder(ids)
+
+        #expect(trimmed.count == PlaybackSnapshotFingerprintPolicy.maxTrackedFingerprints)
+        #expect(trimmed.first == "fingerprint-5")
+        #expect(trimmed.last == "fingerprint-504")
+    }
+
+    @Test func playbackRetryPolicyRejectsRetryAfterUserIntentChanges() {
+        #expect(PlaybackRetryPolicy.shouldRunRetry(
+            capturedSongID: "song-1",
+            currentSongID: "song-1",
+            capturedIntentRevision: 2,
+            currentIntentRevision: 3,
+            capturedShouldAutoplay: true,
+            isCurrentlyPlaying: false
+        ) == false)
+    }
+
+    @Test func playbackRetryPolicyAllowsSameIntentRetryWhileStillPlaying() {
+        #expect(PlaybackRetryPolicy.shouldRunRetry(
+            capturedSongID: "song-1",
+            currentSongID: "song-1",
+            capturedIntentRevision: 2,
+            currentIntentRevision: 2,
+            capturedShouldAutoplay: true,
+            isCurrentlyPlaying: true
+        ) == true)
+    }
+
+    @Test func prebufferSchedulingCountsOnlyPreparedTracksAsReady() {
+        #expect(PrebufferSchedulingPolicy.readyCount(
+            upcomingKeys: ["a", "b", "c"],
+            preparedKeys: ["a", "c"]
+        ) == 2)
+    }
+
+    @Test func prebufferSchedulingSkipsFailedPreparedAndActiveKeysToFillSlots() {
+        let scheduled = PrebufferSchedulingPolicy.keysToSchedule(
+            upcomingKeys: ["a", "b", "c", "d"],
+            activeKeys: ["a"],
+            preparedKeys: ["b"],
+            failedKeys: ["c"],
+            maxConcurrentTasks: 3
+        )
+
+        #expect(scheduled == ["d"])
     }
 
     @Test func remotePlaybackApplicationStateIsReferenceCounted() {
@@ -537,6 +637,29 @@ struct PlaybackSyncPolicyTests {
         await queue.waitForIdle()
 
         #expect(values == [1, 2])
+    }
+
+    @Test @MainActor func syncDelegateEventQueueRunsReentrantEventsAfterCurrentEvent() async {
+        let queue = SyncDelegateEventQueue()
+        var values: [Int] = []
+        var enqueueThirdTask: Task<Void, Never>?
+
+        await queue.enqueue {
+            values.append(1)
+            enqueueThirdTask = Task {
+                await queue.enqueue {
+                    values.append(3)
+                }
+            }
+        }
+        await queue.enqueue {
+            values.append(2)
+        }
+        await queue.waitForIdle()
+        await enqueueThirdTask?.value
+        await queue.waitForIdle()
+
+        #expect(values == [1, 2, 3])
     }
 
     @Test func displayPolicyShowsRemoteSharedPlaybackInsteadOfStaleLocalMirror() {
