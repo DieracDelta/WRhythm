@@ -537,6 +537,33 @@ struct PlaybackCommandReceivePolicy: Sendable {
     }
 }
 
+struct PlaybackControlTargetPolicy: Sendable {
+    static func resolvedDefaultRemoteTargetID(
+        selectedTargetID: String,
+        localDeviceID: String,
+        availableTargetIDs: Set<String>,
+        sharedSessionOutputDeviceID: String?,
+        activeSharedPlaybackID: String?,
+        remotePlaybackID: String?
+    ) -> String? {
+        guard selectedTargetID != localDeviceID,
+              availableTargetIDs.contains(selectedTargetID) else {
+            return nil
+        }
+
+        if let remotePlaybackID,
+           remotePlaybackID != localDeviceID,
+           remotePlaybackID != selectedTargetID,
+           availableTargetIDs.contains(remotePlaybackID),
+           selectedTargetID == sharedSessionOutputDeviceID,
+           activeSharedPlaybackID == nil {
+            return remotePlaybackID
+        }
+
+        return selectedTargetID
+    }
+}
+
 struct PendingPlaybackCommandPolicy: Sendable {
     static let acknowledgmentDeadline: TimeInterval = 20
     static let opportunisticDeadline: TimeInterval = 6
@@ -2102,11 +2129,15 @@ final class DeviceSyncManager: NSObject, ObservableObject {
 
     private var selectedRemotePlaybackTargetID: String? {
         validateSelectedPlaybackTarget()
-        guard selectedPlaybackTargetID != localDeviceID,
-              availablePlaybackTargets.contains(where: { $0.id == selectedPlaybackTargetID }) else {
-            return nil
-        }
-        return selectedPlaybackTargetID
+        let availableTargetIDs = Set(availablePlaybackTargets.map(\.id))
+        return PlaybackControlTargetPolicy.resolvedDefaultRemoteTargetID(
+            selectedTargetID: selectedPlaybackTargetID,
+            localDeviceID: localDeviceID,
+            availableTargetIDs: availableTargetIDs,
+            sharedSessionOutputDeviceID: sharedSession?.outputDeviceID,
+            activeSharedPlaybackID: activeSharedPlayback?.id,
+            remotePlaybackID: remotePlayback?.id
+        )
     }
 
     private func playbackPositionForTarget(_ targetDeviceID: String?) -> (queue: [Song], index: Int, time: TimeInterval)? {

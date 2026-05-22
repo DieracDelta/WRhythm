@@ -977,6 +977,69 @@ struct PlaybackSyncPolicyTests {
         ) == false)
     }
 
+    @Test func defaultControlTargetYieldsFromStaleSharedOutputToFreshRemotePlayback() {
+        #expect(PlaybackControlTargetPolicy.resolvedDefaultRemoteTargetID(
+            selectedTargetID: "iphone",
+            localDeviceID: "iphone-local",
+            availableTargetIDs: ["iphone", "mac"],
+            sharedSessionOutputDeviceID: "iphone",
+            activeSharedPlaybackID: nil,
+            remotePlaybackID: "mac"
+        ) == "mac")
+    }
+
+    @Test func defaultControlTargetKeepsSelectedSharedOutputWhenItIsStillActive() {
+        #expect(PlaybackControlTargetPolicy.resolvedDefaultRemoteTargetID(
+            selectedTargetID: "iphone",
+            localDeviceID: "iphone-local",
+            availableTargetIDs: ["iphone", "mac"],
+            sharedSessionOutputDeviceID: "iphone",
+            activeSharedPlaybackID: "iphone",
+            remotePlaybackID: "mac"
+        ) == "iphone")
+    }
+
+    @Test func defaultControlTargetDoesNotYieldToUnavailableRemotePlayback() {
+        #expect(PlaybackControlTargetPolicy.resolvedDefaultRemoteTargetID(
+            selectedTargetID: "iphone",
+            localDeviceID: "iphone-local",
+            availableTargetIDs: ["iphone"],
+            sharedSessionOutputDeviceID: "iphone",
+            activeSharedPlaybackID: nil,
+            remotePlaybackID: "mac"
+        ) == "iphone")
+    }
+
+    @Test func defaultControlTargetKeepsSelectedIndependentRemoteTarget() {
+        #expect(PlaybackControlTargetPolicy.resolvedDefaultRemoteTargetID(
+            selectedTargetID: "watch",
+            localDeviceID: "iphone-local",
+            availableTargetIDs: ["watch", "mac"],
+            sharedSessionOutputDeviceID: "iphone",
+            activeSharedPlaybackID: nil,
+            remotePlaybackID: "mac"
+        ) == "watch")
+    }
+
+    @Test func defaultControlTargetReturnsNilForLocalOrInvalidSelection() {
+        #expect(PlaybackControlTargetPolicy.resolvedDefaultRemoteTargetID(
+            selectedTargetID: "iphone-local",
+            localDeviceID: "iphone-local",
+            availableTargetIDs: ["iphone-local", "mac"],
+            sharedSessionOutputDeviceID: "iphone",
+            activeSharedPlaybackID: nil,
+            remotePlaybackID: "mac"
+        ) == nil)
+        #expect(PlaybackControlTargetPolicy.resolvedDefaultRemoteTargetID(
+            selectedTargetID: "missing",
+            localDeviceID: "iphone-local",
+            availableTargetIDs: ["iphone-local", "mac"],
+            sharedSessionOutputDeviceID: "missing",
+            activeSharedPlaybackID: nil,
+            remotePlaybackID: "mac"
+        ) == nil)
+    }
+
     @Test func duplicatePolicySkipsAlreadyProcessedEnvelopeID() {
         #expect(SyncDuplicatePolicy.shouldProcess(envelopeID: nil, processedEnvelopeIDs: ["seen"]) == true)
         #expect(SyncDuplicatePolicy.shouldProcess(envelopeID: "fresh", processedEnvelopeIDs: ["seen"]) == true)
