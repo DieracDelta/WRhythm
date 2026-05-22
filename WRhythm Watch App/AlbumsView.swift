@@ -13,6 +13,7 @@ struct AlbumsView: View {
     @State private var searchResults: [AlbumSummary] = []
     @State private var isSearching = false
     @State private var presentedSheet: AlbumsSheet?
+    @State private var searchTask: Task<Void, Never>?
     @ObservedObject var downloadManager = DownloadManager.shared
     @AppStorage("offlineMode") private var offlineMode = false
     private let pageSize = 20
@@ -54,8 +55,10 @@ struct AlbumsView: View {
                                 Button(action: {
 
                                     searchText = ""
+                                    searchTask?.cancel()
 
                                     searchResults = []
+                                    isSearching = false
 
                                 }) {
 
@@ -116,6 +119,9 @@ struct AlbumsView: View {
 
                     }
 
+                }
+                .onDisappear {
+                    searchTask?.cancel()
                 }
 
         }
@@ -300,31 +306,43 @@ struct AlbumsView: View {
         }
 
     private func performSearch(query: String) {
+        searchTask?.cancel()
         guard !query.isEmpty else {
             searchResults = []
+            isSearching = false
             return
         }
 
-        Task {
+        searchTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 300_000_000) // 300ms debounce
-            guard query == searchText else { return }
+            guard SearchResultOwnershipPolicy.shouldApply(
+                query: query,
+                currentQuery: searchText,
+                isCancelled: Task.isCancelled
+            ) else { return }
 
             isSearching = true
 
             do {
                 let result = try await NavidromeAPI.shared.search(query: query)
-                await MainActor.run {
-                    self.searchResults = result.album ?? []
-                    self.isSearching = false
-                    print("🔍 Album search results: \(self.searchResults.count) albums")
-                }
+                guard SearchResultOwnershipPolicy.shouldApply(
+                    query: query,
+                    currentQuery: searchText,
+                    isCancelled: Task.isCancelled
+                ) else { return }
+                self.searchResults = result.album ?? []
+                self.isSearching = false
+                print("🔍 Album search results: \(self.searchResults.count) albums")
             }
             catch {
-                await MainActor.run {
-                    self.searchResults = []
-                    self.isSearching = false
-                    print("❌ Album search error: \(error)")
-                }
+                guard SearchResultOwnershipPolicy.shouldApply(
+                    query: query,
+                    currentQuery: searchText,
+                    isCancelled: Task.isCancelled
+                ) else { return }
+                self.searchResults = []
+                self.isSearching = false
+                print("❌ Album search error: \(error)")
             }
         }
     }

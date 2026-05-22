@@ -43,7 +43,7 @@ final class ImageCache {
     static let shared = ImageCache()
 
     private let decodedCache = NSCache<NSURL, PlatformImage>()
-    private var inFlightRequests: [NSURL: [(PlatformImage?) -> Void]] = [:]
+    private var inFlightRequests: [NSURL: [@MainActor (PlatformImage?) -> Void]] = [:]
 
     private init() {
         // Configure URLCache with larger capacity for image caching
@@ -86,7 +86,7 @@ final class ImageCache {
         return nil
     }
 
-    func loadImage(for url: URL, completion: @escaping (PlatformImage?) -> Void) {
+    func loadImage(for url: URL, completion: @escaping @MainActor (PlatformImage?) -> Void) {
         if let image = getImage(for: url) {
             completion(image)
             return
@@ -104,7 +104,7 @@ final class ImageCache {
         URLSession.shared.dataTask(with: request) { data, response, _ in
             let loadedImage = data.flatMap(PlatformImage.init(data:))
 
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 if let data, let loadedImage {
                     self.cacheImage(loadedImage, data: data, response: response, for: url)
                 }

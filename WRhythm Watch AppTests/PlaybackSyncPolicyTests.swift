@@ -700,6 +700,43 @@ struct PlaybackSyncPolicyTests {
         #expect(PendingPlaybackCommandRetryPolicy.shouldRunRetry(pendingCommandID: nil, scheduledCommandID: "command-1") == false)
     }
 
+    @Test func pendingPlaybackCommandDefersConflictingNonAcknowledgingSnapshots() {
+        #expect(PendingPlaybackSnapshotPolicy.shouldApplySnapshot(
+            hasPendingCommandForDevice: true,
+            isAcknowledgingPendingCommand: false
+        ) == false)
+        #expect(PendingPlaybackSnapshotPolicy.shouldApplySnapshot(
+            hasPendingCommandForDevice: true,
+            isAcknowledgingPendingCommand: true
+        ) == true)
+        #expect(PendingPlaybackSnapshotPolicy.shouldApplySnapshot(
+            hasPendingCommandForDevice: false,
+            isAcknowledgingPendingCommand: false
+        ) == true)
+    }
+
+    @Test func pendingPauseKeepsOptimisticPausedMirrorUntilAcknowledgmentArrives() {
+        let now = Date()
+        let optimisticPausedMirror = makeSnapshot(id: "mac", isPlaying: false, currentTime: 120, updatedAt: now)
+        let delayedPlayingSnapshot = makeSnapshot(id: "mac", isPlaying: true, currentTime: 122, updatedAt: now.addingTimeInterval(0.5))
+        let pausedAcknowledgment = makeSnapshot(id: "mac", isPlaying: false, currentTime: 120.3, updatedAt: now.addingTimeInterval(-1))
+
+        #expect(PlaybackSyncPolicy.shouldPublishRemotePlayback(delayedPlayingSnapshot, current: optimisticPausedMirror) == true)
+        #expect(PendingPlaybackSnapshotPolicy.shouldApplySnapshot(
+            hasPendingCommandForDevice: true,
+            isAcknowledgingPendingCommand: false
+        ) == false)
+        #expect(PendingPlaybackAcknowledgmentPolicy.shouldAcceptAcknowledgingSnapshot(
+            pausedAcknowledgment,
+            current: optimisticPausedMirror,
+            action: .pause
+        ) == true)
+        #expect(PendingPlaybackSnapshotPolicy.shouldApplySnapshot(
+            hasPendingCommandForDevice: true,
+            isAcknowledgingPendingCommand: true
+        ) == true)
+    }
+
     @Test func stalePrebufferCompletionsDoNotPublish() {
         #expect(PrebufferPublicationPolicy.shouldPublishPreparedBuffer(
             key: "song-1|flac",
@@ -735,6 +772,23 @@ struct PlaybackSyncPolicyTests {
         #expect(AsyncTaskOwnershipPolicy.isCurrent(capturedToken: "token-1", activeToken: "token-1") == true)
         #expect(AsyncTaskOwnershipPolicy.isCurrent(capturedToken: "token-1", activeToken: "token-2") == false)
         #expect(AsyncTaskOwnershipPolicy.isCurrent(capturedToken: "token-1", activeToken: nil) == false)
+    }
+
+    @Test func playerItemEventsOnlyHandleCurrentItem() {
+        #expect(PlayerItemEventPolicy.shouldHandle(currentItemMatches: true) == true)
+        #expect(PlayerItemEventPolicy.shouldHandle(currentItemMatches: false) == false)
+    }
+
+    @Test func asyncResultOwnershipRequiresCurrentGenerationAndActiveTask() {
+        #expect(AsyncResultOwnershipPolicy.shouldApply(capturedGeneration: 2, currentGeneration: 2, isCancelled: false) == true)
+        #expect(AsyncResultOwnershipPolicy.shouldApply(capturedGeneration: 2, currentGeneration: 3, isCancelled: false) == false)
+        #expect(AsyncResultOwnershipPolicy.shouldApply(capturedGeneration: 2, currentGeneration: 2, isCancelled: true) == false)
+    }
+
+    @Test func searchResultOwnershipRequiresCurrentQueryAndActiveTask() {
+        #expect(SearchResultOwnershipPolicy.shouldApply(query: "queen", currentQuery: "queen", isCancelled: false) == true)
+        #expect(SearchResultOwnershipPolicy.shouldApply(query: "queen", currentQuery: "queen ", isCancelled: false) == false)
+        #expect(SearchResultOwnershipPolicy.shouldApply(query: "queen", currentQuery: "queen", isCancelled: true) == false)
     }
 
     @Test func remotePauseRoundTripCanApplyAndAcknowledgeAcrossDevices() {
@@ -1159,6 +1213,25 @@ struct PlaybackSyncPolicyTests {
         await submitter.waitForIdle()
 
         #expect(values == Array(0..<100) + [100])
+    }
+
+    @Test @MainActor func syncDelegateEventSubmitterPreservesLargeConcurrentBurstOrder() async {
+        let submitter = SyncDelegateEventSubmitter(label: "WRhythm.Tests.SyncDelegateSubmitterLargeBurst")
+        var values: [Int] = []
+
+        await withTaskGroup(of: Void.self) { group in
+            for value in 0..<500 {
+                group.addTask {
+                    submitter.enqueue {
+                        values.append(value)
+                    }
+                }
+            }
+        }
+        await submitter.waitForIdle()
+
+        #expect(values.sorted() == Array(0..<500))
+        #expect(Set(values).count == 500)
     }
 
     @Test func serialFileWriteQueuePreservesLatestEnqueuedWrite() throws {

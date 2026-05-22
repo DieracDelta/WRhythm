@@ -626,6 +626,12 @@ struct PendingPlaybackCommandRetryPolicy: Sendable {
     }
 }
 
+struct PendingPlaybackSnapshotPolicy: Sendable {
+    static func shouldApplySnapshot(hasPendingCommandForDevice: Bool, isAcknowledgingPendingCommand: Bool) -> Bool {
+        !hasPendingCommandForDevice || isAcknowledgingPendingCommand
+    }
+}
+
 struct SyncDuplicatePolicy: Sendable {
     static let maxTrackedEnvelopeIDs = 500
 
@@ -2235,12 +2241,20 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             guard syncModeEnabled, envelope.sender.syncModeEnabled, let playback = envelope.playback else { return }
             let acknowledgingPendingCommandKey = acknowledgingPendingCommandKey(for: playback)
             let isAcknowledgingSnapshot = acknowledgingPendingCommandKey != nil
+            let hasPendingCommandForDevice = !pendingCommandKeys(for: playback.id).isEmpty
             guard PlaybackSnapshotReceivePolicy.shouldAccept(
                 playback,
                 current: remotePlayback,
                 isAcknowledgingPendingCommand: isAcknowledgingSnapshot
             ) else { return }
             guard shouldProcessPlaybackState(playback) || isAcknowledgingSnapshot else { return }
+            guard PendingPlaybackSnapshotPolicy.shouldApplySnapshot(
+                hasPendingCommandForDevice: hasPendingCommandForDevice,
+                isAcknowledgingPendingCommand: isAcknowledgingSnapshot
+            ) else {
+                flushPendingCommands(for: envelope.sender.id)
+                return
+            }
             if let acknowledgingPendingCommandKey {
                 clearPendingCommand(forKey: acknowledgingPendingCommandKey)
             }

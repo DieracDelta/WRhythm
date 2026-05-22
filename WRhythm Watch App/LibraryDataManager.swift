@@ -9,6 +9,18 @@ import Foundation
 import SwiftUI
 import Combine
 
+struct AsyncResultOwnershipPolicy: Sendable {
+    static func shouldApply(capturedGeneration: Int, currentGeneration: Int, isCancelled: Bool) -> Bool {
+        !isCancelled && capturedGeneration == currentGeneration
+    }
+}
+
+struct SearchResultOwnershipPolicy: Sendable {
+    static func shouldApply(query: String, currentQuery: String, isCancelled: Bool) -> Bool {
+        !isCancelled && query == currentQuery
+    }
+}
+
 @MainActor
 final class LibraryDataManager: ObservableObject {
     // MARK: - Artists
@@ -34,6 +46,14 @@ final class LibraryDataManager: ObservableObject {
     @Published var starredErrorMessage = ""
     
     private let pageSize = 20
+    private var artistsFetchTask: Task<Void, Never>?
+    private var playlistsFetchTask: Task<Void, Never>?
+    private var albumsFetchTask: Task<Void, Never>?
+    private var starredFetchTask: Task<Void, Never>?
+    private var artistsFetchGeneration = 0
+    private var playlistsFetchGeneration = 0
+    private var albumsFetchGeneration = 0
+    private var starredFetchGeneration = 0
     
     // MARK: - Artists Methods
     func fetchArtists(forceRefresh: Bool = false) {
@@ -42,19 +62,28 @@ final class LibraryDataManager: ObservableObject {
         
         isLoadingArtists = true
         artistsErrorMessage = ""
+        artistsFetchGeneration += 1
+        let generation = artistsFetchGeneration
+        artistsFetchTask?.cancel()
         
-        Task {
+        artistsFetchTask = Task { @MainActor in
             do {
                 let fetchedArtists = try await NavidromeAPI.shared.getArtists()
-                await MainActor.run {
-                    self.artists = fetchedArtists
-                    self.isLoadingArtists = false
-                }
+                guard AsyncResultOwnershipPolicy.shouldApply(
+                    capturedGeneration: generation,
+                    currentGeneration: self.artistsFetchGeneration,
+                    isCancelled: Task.isCancelled
+                ) else { return }
+                self.artists = fetchedArtists
+                self.isLoadingArtists = false
             } catch {
-                await MainActor.run {
-                    self.artistsErrorMessage = error.localizedDescription
-                    self.isLoadingArtists = false
-                }
+                guard AsyncResultOwnershipPolicy.shouldApply(
+                    capturedGeneration: generation,
+                    currentGeneration: self.artistsFetchGeneration,
+                    isCancelled: Task.isCancelled
+                ) else { return }
+                self.artistsErrorMessage = error.localizedDescription
+                self.isLoadingArtists = false
             }
         }
     }
@@ -66,21 +95,30 @@ final class LibraryDataManager: ObservableObject {
         
         isLoadingPlaylists = true
         playlistsErrorMessage = ""
+        playlistsFetchGeneration += 1
+        let generation = playlistsFetchGeneration
+        playlistsFetchTask?.cancel()
         
-        Task {
+        playlistsFetchTask = Task { @MainActor in
             do {
                 let fetchedPlaylists = try await NavidromeAPI.shared.getPlaylists()
-                await MainActor.run {
-                    self.playlists = fetchedPlaylists
-                    self.isLoadingPlaylists = false
-                    // Also update offline cache
-                    DownloadManager.shared.cachePlaylists(fetchedPlaylists)
-                }
+                guard AsyncResultOwnershipPolicy.shouldApply(
+                    capturedGeneration: generation,
+                    currentGeneration: self.playlistsFetchGeneration,
+                    isCancelled: Task.isCancelled
+                ) else { return }
+                self.playlists = fetchedPlaylists
+                self.isLoadingPlaylists = false
+                // Also update offline cache
+                DownloadManager.shared.cachePlaylists(fetchedPlaylists)
             } catch {
-                await MainActor.run {
-                    self.playlistsErrorMessage = error.localizedDescription
-                    self.isLoadingPlaylists = false
-                }
+                guard AsyncResultOwnershipPolicy.shouldApply(
+                    capturedGeneration: generation,
+                    currentGeneration: self.playlistsFetchGeneration,
+                    isCancelled: Task.isCancelled
+                ) else { return }
+                self.playlistsErrorMessage = error.localizedDescription
+                self.isLoadingPlaylists = false
             }
         }
     }
@@ -94,6 +132,8 @@ final class LibraryDataManager: ObservableObject {
         albumOffset = 0
         hasMoreAlbums = true
         albumsErrorMessage = ""
+        albumsFetchTask?.cancel()
+        albumsFetchGeneration += 1
         
         fetchMoreAlbums()
     }
@@ -102,29 +142,36 @@ final class LibraryDataManager: ObservableObject {
         guard !isLoadingAlbums && hasMoreAlbums else { return }
         
         isLoadingAlbums = true
+        let generation = albumsFetchGeneration
+        let offset = albumOffset
         
-        Task {
+        albumsFetchTask = Task { @MainActor in
             do {
                 let fetchedAlbums = try await NavidromeAPI.shared.getAlbumList(
                     type: "newest",
                     size: pageSize,
-                    offset: albumOffset
+                    offset: offset
                 )
-                
-                await MainActor.run {
-                    if fetchedAlbums.count < self.pageSize {
-                        self.hasMoreAlbums = false
-                    }
-                    
-                    self.albums.append(contentsOf: fetchedAlbums)
-                    self.albumOffset += fetchedAlbums.count
-                    self.isLoadingAlbums = false
+                guard AsyncResultOwnershipPolicy.shouldApply(
+                    capturedGeneration: generation,
+                    currentGeneration: self.albumsFetchGeneration,
+                    isCancelled: Task.isCancelled
+                ), self.albumOffset == offset else { return }
+                if fetchedAlbums.count < self.pageSize {
+                    self.hasMoreAlbums = false
                 }
+
+                self.albums.append(contentsOf: fetchedAlbums)
+                self.albumOffset += fetchedAlbums.count
+                self.isLoadingAlbums = false
             } catch {
-                await MainActor.run {
-                    self.albumsErrorMessage = error.localizedDescription
-                    self.isLoadingAlbums = false
-                }
+                guard AsyncResultOwnershipPolicy.shouldApply(
+                    capturedGeneration: generation,
+                    currentGeneration: self.albumsFetchGeneration,
+                    isCancelled: Task.isCancelled
+                ) else { return }
+                self.albumsErrorMessage = error.localizedDescription
+                self.isLoadingAlbums = false
             }
         }
     }
@@ -136,19 +183,28 @@ final class LibraryDataManager: ObservableObject {
         
         isLoadingStarred = true
         starredErrorMessage = ""
+        starredFetchGeneration += 1
+        let generation = starredFetchGeneration
+        starredFetchTask?.cancel()
         
-        Task {
+        starredFetchTask = Task { @MainActor in
             do {
                 let fetchedStarred = try await NavidromeAPI.shared.getStarred()
-                await MainActor.run {
-                    self.starred = fetchedStarred
-                    self.isLoadingStarred = false
-                }
+                guard AsyncResultOwnershipPolicy.shouldApply(
+                    capturedGeneration: generation,
+                    currentGeneration: self.starredFetchGeneration,
+                    isCancelled: Task.isCancelled
+                ) else { return }
+                self.starred = fetchedStarred
+                self.isLoadingStarred = false
             } catch {
-                await MainActor.run {
-                    self.starredErrorMessage = error.localizedDescription
-                    self.isLoadingStarred = false
-                }
+                guard AsyncResultOwnershipPolicy.shouldApply(
+                    capturedGeneration: generation,
+                    currentGeneration: self.starredFetchGeneration,
+                    isCancelled: Task.isCancelled
+                ) else { return }
+                self.starredErrorMessage = error.localizedDescription
+                self.isLoadingStarred = false
             }
         }
     }

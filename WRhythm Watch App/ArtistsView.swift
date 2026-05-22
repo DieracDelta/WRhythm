@@ -15,6 +15,7 @@ struct ArtistsView: View {
     @State private var searchResults: [Artist] = []
     @State private var isSearching = false
     @State private var presentedSheet: ArtistsSheet?
+    @State private var searchTask: Task<Void, Never>?
     @ObservedObject var downloadManager = DownloadManager.shared
     @AppStorage("offlineMode") private var offlineMode = false
     private let batchSize = 20
@@ -51,7 +52,9 @@ struct ArtistsView: View {
                         if !searchText.isEmpty {
                             Button(action: {
                                 searchText = ""
+                                searchTask?.cancel()
                                 searchResults = []
+                                isSearching = false
                             }) {
                                 Image(systemName: "xmark.circle.fill")
                                     .foregroundColor(.secondary)
@@ -101,6 +104,9 @@ struct ArtistsView: View {
                 if !newArtists.isEmpty && displayedArtists.isEmpty {
                     loadMoreArtists()
                 }
+            }
+            .onDisappear {
+                searchTask?.cancel()
             }
     }
 
@@ -235,28 +241,40 @@ struct ArtistsView: View {
     }
 
     private func performSearch(query: String) {
+        searchTask?.cancel()
         guard !query.isEmpty else {
             searchResults = []
+            isSearching = false
             return
         }
 
-        Task {
+        searchTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 300_000_000) // 300ms debounce
-            guard query == searchText else { return }
+            guard SearchResultOwnershipPolicy.shouldApply(
+                query: query,
+                currentQuery: searchText,
+                isCancelled: Task.isCancelled
+            ) else { return }
 
             isSearching = true
 
             do {
                 let result = try await NavidromeAPI.shared.search(query: query)
-                await MainActor.run {
-                    self.searchResults = result.artist ?? []
-                    self.isSearching = false
-                }
+                guard SearchResultOwnershipPolicy.shouldApply(
+                    query: query,
+                    currentQuery: searchText,
+                    isCancelled: Task.isCancelled
+                ) else { return }
+                self.searchResults = result.artist ?? []
+                self.isSearching = false
             } catch {
-                await MainActor.run {
-                    self.searchResults = []
-                    self.isSearching = false
-                }
+                guard SearchResultOwnershipPolicy.shouldApply(
+                    query: query,
+                    currentQuery: searchText,
+                    isCancelled: Task.isCancelled
+                ) else { return }
+                self.searchResults = []
+                self.isSearching = false
             }
         }
     }

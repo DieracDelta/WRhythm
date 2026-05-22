@@ -15,6 +15,7 @@ struct TracksView: View {
     @State private var isSearching = false
     @State private var errorMessage = ""
     @State private var presentedSheet: TracksSheet?
+    @State private var searchTask: Task<Void, Never>?
     @ObservedObject var downloadManager = DownloadManager.shared
     @ObservedObject var player = AudioPlayer.shared
     @AppStorage("offlineMode") private var offlineMode = false
@@ -280,10 +281,12 @@ struct TracksView: View {
                 if !searchText.isEmpty {
                     Button(action: {
                         searchText = ""
+                        searchTask?.cancel()
                         if !offlineMode {
                             searchResults = []
                             albumResults = []
                             artistResults = []
+                            isSearching = false
                         }
                     }) {
                         Image(systemName: "xmark.circle.fill")
@@ -323,6 +326,9 @@ struct TracksView: View {
                 }
             }
             }
+        }
+        .onDisappear {
+            searchTask?.cancel()
         }
     }
 
@@ -391,38 +397,50 @@ struct TracksView: View {
     }
 
     private func performSearch(query: String) {
+        searchTask?.cancel()
         guard !query.isEmpty else {
             searchResults = []
             albumResults = []
             artistResults = []
+            isSearching = false
             return
         }
 
         // Debounce the search
-        Task {
+        searchTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 300_000_000) // 300ms debounce
 
-            guard query == searchText else { return } // Check if search text changed
+            guard SearchResultOwnershipPolicy.shouldApply(
+                query: query,
+                currentQuery: searchText,
+                isCancelled: Task.isCancelled
+            ) else { return } // Check if search text changed
 
             isSearching = true
             errorMessage = ""
 
             do {
                 let result = try await NavidromeAPI.shared.search(query: query)
-                await MainActor.run {
-                    self.artistResults = result.artist ?? []
-                    self.albumResults = result.album ?? []
-                    self.searchResults = result.song ?? []
-                    self.isSearching = false
+                guard SearchResultOwnershipPolicy.shouldApply(
+                    query: query,
+                    currentQuery: searchText,
+                    isCancelled: Task.isCancelled
+                ) else { return }
+                self.artistResults = result.artist ?? []
+                self.albumResults = result.album ?? []
+                self.searchResults = result.song ?? []
+                self.isSearching = false
 
-                    print("🔍 Search results: \(self.artistResults.count) artists, \(self.albumResults.count) albums, \(self.searchResults.count) songs")
-                }
+                print("🔍 Search results: \(self.artistResults.count) artists, \(self.albumResults.count) albums, \(self.searchResults.count) songs")
             } catch {
-                await MainActor.run {
-                    self.errorMessage = error.localizedDescription
-                    self.isSearching = false
-                    print("❌ Search error: \(error)")
-                }
+                guard SearchResultOwnershipPolicy.shouldApply(
+                    query: query,
+                    currentQuery: searchText,
+                    isCancelled: Task.isCancelled
+                ) else { return }
+                self.errorMessage = error.localizedDescription
+                self.isSearching = false
+                print("❌ Search error: \(error)")
             }
         }
     }

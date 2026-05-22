@@ -113,6 +113,12 @@ struct NowPlayingArtworkLoadPolicy: Sendable {
     }
 }
 
+struct PlayerItemEventPolicy: Sendable {
+    static func shouldHandle(currentItemMatches: Bool) -> Bool {
+        currentItemMatches
+    }
+}
+
 @MainActor
 class AudioPlayer: NSObject, ObservableObject {
     static let shared = AudioPlayer()
@@ -294,6 +300,7 @@ class AudioPlayer: NSObject, ObservableObject {
 
     private func observePlayerBuffering() {
         player.publisher(for: \.timeControlStatus)
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] status in
                 guard let self else { return }
                 self.isBuffering = self.isPlaying && (status == .waitingToPlayAtSpecifiedRate || self.player.currentItem?.isPlaybackBufferEmpty == true)
@@ -1431,9 +1438,15 @@ class AudioPlayer: NSObject, ObservableObject {
         if let currentSong = currentSong, 
            (DownloadManager.shared.getLocalURL(currentSong.id) != nil || currentPlaybackIsLocalFile) {
             let cmTime = CMTime(seconds: time, preferredTimescale: 600)
-            player.seek(to: cmTime, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
+            let seekItemIdentifier = player.currentItem.map(ObjectIdentifier.init)
+            let seekIntentRevision = playbackIntentRevision
+            player.seek(to: cmTime, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self, seekItemIdentifier] _ in
                 Task { @MainActor [weak self] in
                     guard let self else { return }
+                    guard self.playbackIntentRevision == seekIntentRevision,
+                          let seekItemIdentifier,
+                          let currentItem = self.player.currentItem,
+                          ObjectIdentifier(currentItem) == seekItemIdentifier else { return }
                     let actualTime = self.player.currentTime().seconds
                     self.currentTime = actualTime.isFinite ? actualTime : time
                     self.persistPlaybackState()
@@ -1490,7 +1503,12 @@ class AudioPlayer: NSObject, ObservableObject {
     private func observePlayerItem(_ item: AVPlayerItem, requestedStartTime: TimeInterval, autoplay: Bool) {
         // Simple status observer (Submariner approach)
         item.publisher(for: \.status)
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] status in
+                guard let self,
+                      PlayerItemEventPolicy.shouldHandle(currentItemMatches: self.player.currentItem === item) else {
+                    return
+                }
                 print("🎵 Player item status changed: \(status.rawValue) (0=unknown, 1=ready, 2=failed)")
 
                 if status == .readyToPlay {
@@ -1500,16 +1518,16 @@ class AudioPlayer: NSObject, ObservableObject {
 
                     // Always prefer actual stream duration over metadata (metadata can be wrong)
                     if dur.isNumeric && dur.seconds > 0 {
-                        self?.duration = dur.seconds
+                        self.duration = dur.seconds
                         print("✅ Duration set from stream: \(dur.seconds)s")
                     } else {
                         print("⚠️ Stream duration not available (isIndefinite: \(dur.isIndefinite))")
-                        if let currentDuration = self?.duration, currentDuration > 0 {
-                            print("ℹ️ Using song metadata duration: \(currentDuration)s")
+                        if self.duration > 0 {
+                            print("ℹ️ Using song metadata duration: \(self.duration)s")
                         }
                     }
 
-                    self?.finishStartingPlayback(item, requestedStartTime: requestedStartTime, autoplay: autoplay)
+                    self.finishStartingPlayback(item, requestedStartTime: requestedStartTime, autoplay: autoplay)
                 } else if status == .failed {
                     print("❌ Player item failed!")
                     if let error = item.error {
@@ -1545,18 +1563,24 @@ class AudioPlayer: NSObject, ObservableObject {
                     } else {
                         print("❌ Player failed but no error object available")
                     }
-                    self?.schedulePlaybackRetry(reason: "player item failure")
+                    self.schedulePlaybackRetry(reason: "player item failure")
                 }
             }
             .store(in: &playerItemCancellables)
 
         NotificationCenter.default.publisher(for: .AVPlayerItemDidPlayToEndTime, object: item)
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
-                self?.handlePlaybackEnded()
+                guard let self,
+                      PlayerItemEventPolicy.shouldHandle(currentItemMatches: self.player.currentItem === item) else {
+                    return
+                }
+                self.handlePlaybackEnded()
             }
             .store(in: &playerItemCancellables)
 
         item.publisher(for: \.isPlaybackBufferEmpty)
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] isEmpty in
                 guard let self, self.player.currentItem === item else { return }
                 if self.isPlaying {
@@ -1566,6 +1590,7 @@ class AudioPlayer: NSObject, ObservableObject {
             .store(in: &playerItemCancellables)
 
         item.publisher(for: \.isPlaybackLikelyToKeepUp)
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] likelyToKeepUp in
                 guard let self, self.player.currentItem === item else { return }
                 if likelyToKeepUp {
