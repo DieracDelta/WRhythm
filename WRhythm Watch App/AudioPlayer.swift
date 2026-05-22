@@ -119,6 +119,12 @@ struct PlayerItemEventPolicy: Sendable {
     }
 }
 
+struct PlaybackStartupStatePolicy: Sendable {
+    static func isPlayingDuringStartup(autoplay: Bool) -> Bool {
+        autoplay
+    }
+}
+
 @MainActor
 class AudioPlayer: NSObject, ObservableObject {
     static let shared = AudioPlayer()
@@ -1301,6 +1307,7 @@ class AudioPlayer: NSObject, ObservableObject {
         }
 
         print("🎵 Playback URL: \(playURL.absoluteString)")
+        self.isPlaying = PlaybackStartupStatePolicy.isPlayingDuringStartup(autoplay: autoplay)
         currentPlaybackURL = playURL
         currentPlaybackIsLocalFile = playURL.isFileURL
 

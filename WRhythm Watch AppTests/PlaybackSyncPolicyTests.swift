@@ -252,6 +252,21 @@ struct PlaybackSyncPolicyTests {
         ) == true)
     }
 
+    @Test func remotePlayQueuePublishesPlayingIntentBeforePlayerIsReady() {
+        let intendedState = RemoteCommandLocalPublicationPolicy.intendedIsPlaying(after: .playQueue)
+
+        #expect(intendedState == true)
+        #expect(LocalPlaybackPublicationPolicy.publishedIsPlaying(
+            playerIsPlaying: false,
+            intendedIsPlaying: intendedState
+        ) == true)
+    }
+
+    @Test func localPlaybackStartupDisplaysAutoplayIntentBeforePlayerIsReady() {
+        #expect(PlaybackStartupStatePolicy.isPlayingDuringStartup(autoplay: true) == true)
+        #expect(PlaybackStartupStatePolicy.isPlayingDuringStartup(autoplay: false) == false)
+    }
+
     @Test func localPlaybackTelemetryPublishesActualStateWithoutIntentOverride() {
         #expect(LocalPlaybackPublicationPolicy.publishedIsPlaying(
             playerIsPlaying: false,

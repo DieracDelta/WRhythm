@@ -745,6 +745,19 @@ struct LocalPlaybackPublicationPolicy: Sendable {
     }
 }
 
+struct RemoteCommandLocalPublicationPolicy: Sendable {
+    static func intendedIsPlaying(after action: PlaybackSyncCommandAction) -> Bool? {
+        switch action {
+        case .play, .next, .previous, .playQueue:
+            return true
+        case .pause, .stop:
+            return false
+        case .toggle, .seek, .setVolume, .enqueue, .syncQueue:
+            return nil
+        }
+    }
+}
+
 private extension Array {
     subscript(safe index: Index) -> Element? {
         indices.contains(index) ? self[index] : nil
@@ -1985,6 +1998,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
 
     private func apply(_ command: PlaybackCommand) {
         let player = AudioPlayer.shared
+        let intendedIsPlaying = RemoteCommandLocalPublicationPolicy.intendedIsPlaying(after: command.action)
         withRemoteCommandApplication {
             switch command.action {
             case .play:
@@ -2028,7 +2042,10 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         }
 
         if command.action != .syncQueue {
-            broadcastLocalQueueAsShared(isExplicitLocalPlaybackIntent: true)
+            broadcastLocalQueueAsShared(
+                isExplicitLocalPlaybackIntent: true,
+                intendedIsPlaying: intendedIsPlaying
+            )
         }
     }
 
