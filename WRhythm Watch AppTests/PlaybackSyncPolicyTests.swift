@@ -847,9 +847,47 @@ struct PlaybackSyncPolicyTests {
         ) == false)
     }
 
+    @Test func alreadyActivatedWatchConnectivitySessionBootstrapsOnceWhenConfigured() {
+        #expect(WatchConnectivityActivationPolicy.shouldBootstrapConfiguredSession(
+            isActivated: true,
+            activationInProgress: false,
+            hasBootstrapped: false
+        ) == true)
+        #expect(WatchConnectivityActivationPolicy.shouldBootstrapConfiguredSession(
+            isActivated: true,
+            activationInProgress: false,
+            hasBootstrapped: true
+        ) == false)
+        #expect(WatchConnectivityActivationPolicy.shouldBootstrapConfiguredSession(
+            isActivated: false,
+            activationInProgress: false,
+            hasBootstrapped: false
+        ) == false)
+        #expect(WatchConnectivityActivationPolicy.shouldBootstrapConfiguredSession(
+            isActivated: true,
+            activationInProgress: true,
+            hasBootstrapped: false
+        ) == false)
+    }
+
     @Test func watchConnectivityQueuesDurablePayloadsAfterActivationWithoutReachability() {
         #expect(WatchConnectivityPayloadQueuePolicy.canQueueDurablePayload(activationSucceeded: true) == true)
         #expect(WatchConnectivityPayloadQueuePolicy.canQueueDurablePayload(activationSucceeded: false) == false)
+    }
+
+    @Test func credentialBootstrapRequestsCredentialsWhenLocalDeviceIsEmpty() {
+        #expect(WatchConnectivityCredentialBootstrapPolicy.shouldRequestCredentialsOnBootstrap(
+            credentialSyncEnabled: true,
+            localHasCredentials: false
+        ) == true)
+        #expect(WatchConnectivityCredentialBootstrapPolicy.shouldRequestCredentialsOnBootstrap(
+            credentialSyncEnabled: false,
+            localHasCredentials: false
+        ) == false)
+        #expect(WatchConnectivityCredentialBootstrapPolicy.shouldRequestCredentialsOnBootstrap(
+            credentialSyncEnabled: true,
+            localHasCredentials: true
+        ) == false)
     }
 
     @Test func watchConnectivityActivationRetryUsesBackoffOnlyForRetryableFailures() {

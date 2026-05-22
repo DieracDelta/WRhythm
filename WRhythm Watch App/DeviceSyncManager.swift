@@ -361,6 +361,14 @@ struct WatchConnectivityActivationPolicy: Sendable {
         activationSucceeded && !hasError
     }
 
+    nonisolated static func shouldBootstrapConfiguredSession(
+        isActivated: Bool,
+        activationInProgress: Bool,
+        hasBootstrapped: Bool
+    ) -> Bool {
+        isActivated && !activationInProgress && !hasBootstrapped
+    }
+
     nonisolated static func shouldStartActivation(
         isSupported: Bool,
         isNotActivated: Bool,
@@ -373,6 +381,15 @@ struct WatchConnectivityActivationPolicy: Sendable {
 struct WatchConnectivityPayloadQueuePolicy: Sendable {
     nonisolated static func canQueueDurablePayload(activationSucceeded: Bool) -> Bool {
         activationSucceeded
+    }
+}
+
+struct WatchConnectivityCredentialBootstrapPolicy: Sendable {
+    nonisolated static func shouldRequestCredentialsOnBootstrap(
+        credentialSyncEnabled: Bool,
+        localHasCredentials: Bool
+    ) -> Bool {
+        credentialSyncEnabled && !localHasCredentials
     }
 }
 
@@ -1125,6 +1142,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
 #if os(iOS) || os(watchOS)
     private var watchSession: WCSession?
     private var isWatchConnectivityActivationInProgress = false
+    private var hasBootstrappedWatchConnectivitySession = false
     private var watchConnectivityActivationRetryAttempt = 0
     private var watchConnectivityActivationRetryTask: Task<Void, Never>?
 #endif
@@ -1792,6 +1810,32 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         maybeSendCredentialsToInterestedPeers()
     }
 
+#if os(iOS) || os(watchOS)
+    private func bootstrapWatchConnectivitySync() {
+        hasBootstrappedWatchConnectivitySession = true
+        watchConnectivityActivationRetryAttempt = 0
+        watchConnectivityActivationRetryTask?.cancel()
+        watchConnectivityActivationRetryTask = nil
+        sendCurrentSyncState(includeHello: true)
+        maybeSendCredentialsToInterestedPeers()
+        if WatchConnectivityCredentialBootstrapPolicy.shouldRequestCredentialsOnBootstrap(
+            credentialSyncEnabled: credentialSyncEnabled,
+            localHasCredentials: NavidromeAPI.shared.hasCredentials
+        ) {
+            requestCredentialsFromPeers()
+        }
+    }
+
+    private func bootstrapAlreadyActivatedWatchConnectivitySessionIfNeeded(_ session: WCSession) {
+        guard WatchConnectivityActivationPolicy.shouldBootstrapConfiguredSession(
+            isActivated: session.activationState == .activated,
+            activationInProgress: isWatchConnectivityActivationInProgress,
+            hasBootstrapped: hasBootstrappedWatchConnectivitySession
+        ) else { return }
+        bootstrapWatchConnectivitySync()
+    }
+#endif
+
     private func observePlayback() {
         let player = AudioPlayer.shared
 
@@ -1824,12 +1868,15 @@ final class DeviceSyncManager: NSObject, ObservableObject {
                 activationInProgress: isWatchConnectivityActivationInProgress
             ) {
                 isWatchConnectivityActivationInProgress = true
+                hasBootstrappedWatchConnectivitySession = false
                 session.activate()
             }
             watchSession = session
+            bootstrapAlreadyActivatedWatchConnectivitySessionIfNeeded(session)
         } else {
             watchConnectivityActivationRetryTask?.cancel()
             watchConnectivityActivationRetryTask = nil
+            hasBootstrappedWatchConnectivitySession = false
             watchSession = nil
         }
 #elseif os(watchOS)
@@ -1842,12 +1889,15 @@ final class DeviceSyncManager: NSObject, ObservableObject {
                 activationInProgress: isWatchConnectivityActivationInProgress
             ) {
                 isWatchConnectivityActivationInProgress = true
+                hasBootstrappedWatchConnectivitySession = false
                 session.activate()
             }
             watchSession = session
+            bootstrapAlreadyActivatedWatchConnectivitySessionIfNeeded(session)
         } else {
             watchConnectivityActivationRetryTask?.cancel()
             watchConnectivityActivationRetryTask = nil
+            hasBootstrappedWatchConnectivitySession = false
             watchSession = nil
         }
 #endif
@@ -2533,6 +2583,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
                 activationInProgress: self.isWatchConnectivityActivationInProgress
             ) {
                 self.isWatchConnectivityActivationInProgress = true
+                self.hasBootstrappedWatchConnectivitySession = false
                 session.activate()
             }
         }
@@ -2696,11 +2747,7 @@ extension DeviceSyncManager: WCSessionDelegate {
         Self.enqueueDelegateEvent {
             DeviceSyncManager.shared.isWatchConnectivityActivationInProgress = false
             if shouldBootstrap {
-                DeviceSyncManager.shared.watchConnectivityActivationRetryAttempt = 0
-                DeviceSyncManager.shared.watchConnectivityActivationRetryTask?.cancel()
-                DeviceSyncManager.shared.watchConnectivityActivationRetryTask = nil
-                DeviceSyncManager.shared.sendCurrentSyncState(includeHello: true)
-                DeviceSyncManager.shared.maybeSendCredentialsToInterestedPeers()
+                DeviceSyncManager.shared.bootstrapWatchConnectivitySync()
             } else {
                 print("⚠️ WatchConnectivity activation did not complete; state=\(activationStateRawValue), error=\(errorDescription ?? "none")")
                 if shouldRetry {
@@ -2727,6 +2774,10 @@ extension DeviceSyncManager: WCSessionDelegate {
     nonisolated func sessionDidBecomeInactive(_ session: WCSession) {}
 
     nonisolated func sessionDidDeactivate(_ session: WCSession) {
+        Self.enqueueDelegateEvent {
+            DeviceSyncManager.shared.isWatchConnectivityActivationInProgress = true
+            DeviceSyncManager.shared.hasBootstrappedWatchConnectivitySession = false
+        }
         session.activate()
     }
 #endif
