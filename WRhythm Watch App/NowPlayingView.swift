@@ -1580,7 +1580,7 @@ private struct WatchNowPlayingView: View {
             .padding(.bottom, WRhythmSpacing.xs)
         }
         .wrhythmPageBackground(coverArtId: primaryArtworkCoverArtId)
-        .safeAreaPadding(.top, -22)
+        .safeAreaPadding(.top, -34)
         .navigationTitle("")
         .toolbar(.hidden, for: .navigationBar)
         .sheet(item: $presentedSheet) { sheet in
@@ -1636,6 +1636,13 @@ private struct WatchNowPlayingView: View {
             NowPlayingArtwork(coverArtId: song.coverArt, maxSize: 52)
                 .equatable()
 
+            WatchProgressCard(
+                currentTime: player.currentTime,
+                duration: player.duration,
+                scrubTime: $scrubTime,
+                seek: player.seek(to:)
+            )
+
             WatchTransportControls(
                 isPlaying: localIsPlaying,
                 previousDisabled: player.currentIndex == 0 && player.currentTime < 3,
@@ -1650,13 +1657,6 @@ private struct WatchNowPlayingView: View {
                 },
                 seekForward: { seekLocal(by: 15) },
                 next: player.next
-            )
-
-            WatchProgressCard(
-                currentTime: player.currentTime,
-                duration: player.duration,
-                scrubTime: $scrubTime,
-                seek: player.seek(to:)
             )
 
             InlineVolumeSlider(volume: Binding(
@@ -1785,17 +1785,6 @@ private struct WatchRemotePlaybackControls: View {
                 NowPlayingArtwork(coverArtId: song.coverArt, maxSize: 50)
                     .equatable()
 
-                WatchTransportControls(
-                    isPlaying: playback.isPlaying,
-                    previousDisabled: false,
-                    nextDisabled: false,
-                    previous: { deviceSyncManager.sendPrevious(targetDeviceID: playback.id) },
-                    seekBackward: { seekRemote(playback, by: -15) },
-                    togglePlay: { deviceSyncManager.setPlaying(!playback.isPlaying, targetDeviceID: playback.id) },
-                    seekForward: { seekRemote(playback, by: 15) },
-                    next: { deviceSyncManager.sendNext(targetDeviceID: playback.id) }
-                )
-
                 TimelineView(.periodic(from: .now, by: 1)) { _ in
                     WatchProgressCard(
                         currentTime: playback.estimatedCurrentTime,
@@ -1806,6 +1795,17 @@ private struct WatchRemotePlaybackControls: View {
                         }
                     )
                 }
+
+                WatchTransportControls(
+                    isPlaying: playback.isPlaying,
+                    previousDisabled: false,
+                    nextDisabled: false,
+                    previous: { deviceSyncManager.sendPrevious(targetDeviceID: playback.id) },
+                    seekBackward: { seekRemote(playback, by: -15) },
+                    togglePlay: { deviceSyncManager.setPlaying(!playback.isPlaying, targetDeviceID: playback.id) },
+                    seekForward: { seekRemote(playback, by: 15) },
+                    next: { deviceSyncManager.sendNext(targetDeviceID: playback.id) }
+                )
 
                 InlineVolumeSlider(volume: Binding(
                     get: { displayedVolume },
@@ -1891,7 +1891,7 @@ private struct WatchProgressCard: View {
         let liveTime = currentTime.isFinite ? currentTime : 0
         let displayedTime = min(max(scrubTime ?? liveTime, 0), safeDuration)
 
-        HStack(spacing: 5) {
+        HStack(spacing: 4) {
             Text(watchFormatTime(displayedTime))
                 .frame(width: 31, alignment: .leading)
 
@@ -1901,7 +1901,7 @@ private struct WatchProgressCard: View {
                 scrubTime: $scrubTime,
                 seek: seek
             )
-            .frame(height: 16)
+            .frame(height: 12)
 
             Text("-" + watchFormatTime(max(0, safeDuration - displayedTime)))
                 .frame(width: 36, alignment: .trailing)
@@ -1909,8 +1909,8 @@ private struct WatchProgressCard: View {
         .font(.caption2)
         .monospacedDigit()
         .foregroundStyle(.secondary)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
         .background(.thinMaterial, in: Capsule())
     }
 }
