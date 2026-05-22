@@ -360,6 +360,20 @@ struct WatchConnectivityActivationPolicy: Sendable {
     nonisolated static func shouldBootstrapSync(activationSucceeded: Bool, hasError: Bool) -> Bool {
         activationSucceeded && !hasError
     }
+
+    nonisolated static func shouldStartActivation(
+        isSupported: Bool,
+        isNotActivated: Bool,
+        activationInProgress: Bool
+    ) -> Bool {
+        isSupported && isNotActivated && !activationInProgress
+    }
+}
+
+struct WatchConnectivityPayloadQueuePolicy: Sendable {
+    nonisolated static func canQueueDurablePayload(activationSucceeded: Bool) -> Bool {
+        activationSucceeded
+    }
 }
 
 struct WatchConnectivityActivationRetryPolicy: Sendable {
@@ -1110,6 +1124,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
     private let sharedSessionID: String
 #if os(iOS) || os(watchOS)
     private var watchSession: WCSession?
+    private var isWatchConnectivityActivationInProgress = false
     private var watchConnectivityActivationRetryAttempt = 0
     private var watchConnectivityActivationRetryTask: Task<Void, Never>?
 #endif
@@ -1803,7 +1818,12 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         if shouldConnect, WCSession.isSupported() {
             let session = WCSession.default
             session.delegate = self
-            if session.activationState == .notActivated {
+            if WatchConnectivityActivationPolicy.shouldStartActivation(
+                isSupported: true,
+                isNotActivated: session.activationState == .notActivated,
+                activationInProgress: isWatchConnectivityActivationInProgress
+            ) {
+                isWatchConnectivityActivationInProgress = true
                 session.activate()
             }
             watchSession = session
@@ -1816,7 +1836,14 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         if shouldConnect, WCSession.isSupported() {
             let session = WCSession.default
             session.delegate = self
-            session.activate()
+            if WatchConnectivityActivationPolicy.shouldStartActivation(
+                isSupported: true,
+                isNotActivated: session.activationState == .notActivated,
+                activationInProgress: isWatchConnectivityActivationInProgress
+            ) {
+                isWatchConnectivityActivationInProgress = true
+                session.activate()
+            }
             watchSession = session
         } else {
             watchConnectivityActivationRetryTask?.cancel()
@@ -2476,11 +2503,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
     }
 
     private func canQueueWatchConnectivityPayload(_ session: WCSession) -> Bool {
-#if os(iOS)
-        return session.activationState == .activated && session.isPaired && session.isWatchAppInstalled
-#else
-        return session.activationState == .activated
-#endif
+        WatchConnectivityPayloadQueuePolicy.canQueueDurablePayload(activationSucceeded: session.activationState == .activated)
     }
 
     private func scheduleWatchConnectivityActivationRetry(reason: String) {
@@ -2504,7 +2527,12 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             let session = self.watchSession ?? WCSession.default
             session.delegate = self
             self.watchSession = session
-            if session.activationState != .activated {
+            if WatchConnectivityActivationPolicy.shouldStartActivation(
+                isSupported: true,
+                isNotActivated: session.activationState == .notActivated,
+                activationInProgress: self.isWatchConnectivityActivationInProgress
+            ) {
+                self.isWatchConnectivityActivationInProgress = true
                 session.activate()
             }
         }
@@ -2666,6 +2694,7 @@ extension DeviceSyncManager: WCSessionDelegate {
             canActivate: WCSession.isSupported()
         )
         Self.enqueueDelegateEvent {
+            DeviceSyncManager.shared.isWatchConnectivityActivationInProgress = false
             if shouldBootstrap {
                 DeviceSyncManager.shared.watchConnectivityActivationRetryAttempt = 0
                 DeviceSyncManager.shared.watchConnectivityActivationRetryTask?.cancel()

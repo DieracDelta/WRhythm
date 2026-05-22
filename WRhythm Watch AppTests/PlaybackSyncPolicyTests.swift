@@ -824,6 +824,34 @@ struct PlaybackSyncPolicyTests {
         #expect(WatchConnectivityActivationPolicy.shouldBootstrapSync(activationSucceeded: true, hasError: true) == false)
     }
 
+    @Test func watchConnectivityActivationStartsOnlyFromNotActivatedState() {
+        #expect(WatchConnectivityActivationPolicy.shouldStartActivation(
+            isSupported: true,
+            isNotActivated: true,
+            activationInProgress: false
+        ) == true)
+        #expect(WatchConnectivityActivationPolicy.shouldStartActivation(
+            isSupported: true,
+            isNotActivated: false,
+            activationInProgress: false
+        ) == false)
+        #expect(WatchConnectivityActivationPolicy.shouldStartActivation(
+            isSupported: false,
+            isNotActivated: true,
+            activationInProgress: false
+        ) == false)
+        #expect(WatchConnectivityActivationPolicy.shouldStartActivation(
+            isSupported: true,
+            isNotActivated: true,
+            activationInProgress: true
+        ) == false)
+    }
+
+    @Test func watchConnectivityQueuesDurablePayloadsAfterActivationWithoutReachability() {
+        #expect(WatchConnectivityPayloadQueuePolicy.canQueueDurablePayload(activationSucceeded: true) == true)
+        #expect(WatchConnectivityPayloadQueuePolicy.canQueueDurablePayload(activationSucceeded: false) == false)
+    }
+
     @Test func watchConnectivityActivationRetryUsesBackoffOnlyForRetryableFailures() {
         #expect(WatchConnectivityActivationRetryPolicy.shouldRetry(activationSucceeded: false, hasError: true, canActivate: true) == true)
         #expect(WatchConnectivityActivationRetryPolicy.shouldRetry(activationSucceeded: true, hasError: false, canActivate: true) == false)
