@@ -1169,6 +1169,189 @@ struct PlaybackSyncPolicyTests {
         #expect(snapshot == nil)
     }
 
+    @Test func playbackSessionSnapshotYieldsToFreshDifferentRemotePause() {
+        let now = Date()
+        let staleIPhoneSession = makeSession(
+            outputDeviceID: "iphone",
+            isPlaying: true,
+            position: 30,
+            updatedAt: now.addingTimeInterval(-5),
+            updatedByDeviceID: "iphone"
+        )
+        let freshMacPause = makeSnapshot(
+            id: "mac",
+            song: makeSong(id: "song-1"),
+            queue: [makeSong(id: "song-1")],
+            isPlaying: false,
+            currentTime: 35,
+            updatedAt: now
+        )
+
+        let snapshot = PlaybackSessionSnapshotPolicy.snapshot(
+            from: staleIPhoneSession,
+            deviceName: "iPhone",
+            platform: "iPhone",
+            remotePlayback: freshMacPause,
+            now: now
+        )
+
+        #expect(snapshot == nil)
+    }
+
+    @Test func playbackSessionSnapshotYieldsToFreshDifferentRemoteWithSparseQueue() {
+        let now = Date()
+        let staleIPhoneSession = makeSession(
+            outputDeviceID: "iphone",
+            isPlaying: true,
+            position: 30,
+            updatedAt: now.addingTimeInterval(-5),
+            updatedByDeviceID: "iphone"
+        )
+        let freshMacPlayback = makeSnapshot(
+            id: "mac",
+            song: makeSong(id: "song-1"),
+            queue: [],
+            isPlaying: true,
+            currentTime: 35,
+            updatedAt: now
+        )
+
+        let snapshot = PlaybackSessionSnapshotPolicy.snapshot(
+            from: staleIPhoneSession,
+            deviceName: "iPhone",
+            platform: "iPhone",
+            remotePlayback: freshMacPlayback,
+            now: now
+        )
+
+        #expect(snapshot == nil)
+    }
+
+    @Test func playbackSessionSnapshotKeepsSessionWhenDifferentRemotePlaybackIsOlder() throws {
+        let now = Date()
+        let currentIPhoneSession = makeSession(
+            outputDeviceID: "iphone",
+            isPlaying: false,
+            position: 40,
+            updatedAt: now,
+            updatedByDeviceID: "iphone"
+        )
+        let staleMacPlayback = makeSnapshot(
+            id: "mac",
+            song: makeSong(id: "song-1"),
+            queue: [makeSong(id: "song-1")],
+            isPlaying: true,
+            currentTime: 35,
+            updatedAt: now.addingTimeInterval(-5)
+        )
+
+        let snapshot = try #require(PlaybackSessionSnapshotPolicy.snapshot(
+            from: currentIPhoneSession,
+            deviceName: "iPhone",
+            platform: "iPhone",
+            remotePlayback: staleMacPlayback,
+            now: now
+        ))
+
+        #expect(snapshot.id == "iphone")
+        #expect(snapshot.isPlaying == false)
+        #expect(snapshot.currentTime == 40)
+    }
+
+    @Test func playbackSessionSnapshotKeepsSessionWhenDifferentRemoteSongDoesNotMatch() throws {
+        let now = Date()
+        let staleIPhoneSession = makeSession(
+            outputDeviceID: "iphone",
+            isPlaying: true,
+            position: 30,
+            updatedAt: now.addingTimeInterval(-5),
+            updatedByDeviceID: "iphone"
+        )
+        let freshMacPlayback = makeSnapshot(
+            id: "mac",
+            song: makeSong(id: "song-2"),
+            queue: [makeSong(id: "song-2")],
+            isPlaying: true,
+            currentTime: 35,
+            updatedAt: now
+        )
+
+        let snapshot = try #require(PlaybackSessionSnapshotPolicy.snapshot(
+            from: staleIPhoneSession,
+            deviceName: "iPhone",
+            platform: "iPhone",
+            remotePlayback: freshMacPlayback,
+            now: now
+        ))
+
+        #expect(snapshot.id == "iphone")
+        #expect(snapshot.song?.id == "song-1")
+        #expect(snapshot.currentTime == 35)
+    }
+
+    @Test func playbackSessionSnapshotKeepsSessionWhenDifferentRemoteQueueDoesNotMatch() throws {
+        let now = Date()
+        let staleIPhoneSession = makeSession(
+            songs: [makeSong(id: "song-1"), makeSong(id: "song-2")],
+            outputDeviceID: "iphone",
+            isPlaying: true,
+            position: 30,
+            updatedAt: now.addingTimeInterval(-5),
+            updatedByDeviceID: "iphone"
+        )
+        let freshMacPlayback = makeSnapshot(
+            id: "mac",
+            song: makeSong(id: "song-1"),
+            queue: [makeSong(id: "song-1"), makeSong(id: "song-3")],
+            isPlaying: true,
+            currentTime: 35,
+            updatedAt: now
+        )
+
+        let snapshot = try #require(PlaybackSessionSnapshotPolicy.snapshot(
+            from: staleIPhoneSession,
+            deviceName: "iPhone",
+            platform: "iPhone",
+            remotePlayback: freshMacPlayback,
+            now: now
+        ))
+
+        #expect(snapshot.id == "iphone")
+        #expect(snapshot.queue.map(\.id) == ["song-1", "song-2"])
+        #expect(snapshot.currentTime == 35)
+    }
+
+    @Test func playbackSessionSnapshotUsesSameOutputRemotePauseWithSparseQueue() throws {
+        let now = Date()
+        let session = makeSession(
+            outputDeviceID: "mac",
+            isPlaying: true,
+            position: 10,
+            updatedAt: now.addingTimeInterval(-5)
+        )
+        let remotePause = makeSnapshot(
+            id: "mac",
+            song: makeSong(id: "song-1"),
+            queue: [],
+            isPlaying: false,
+            currentTime: 13,
+            updatedAt: now
+        )
+
+        let snapshot = try #require(PlaybackSessionSnapshotPolicy.snapshot(
+            from: session,
+            deviceName: "Mac",
+            platform: "Mac",
+            remotePlayback: remotePause,
+            now: now
+        ))
+
+        #expect(snapshot.id == "mac")
+        #expect(snapshot.isPlaying == false)
+        #expect(snapshot.currentTime == 13)
+        #expect(snapshot.queue.map(\.id) == ["song-1"])
+    }
+
     @Test func playbackRetryPolicyRejectsRetryAfterUserIntentChanges() {
         #expect(PlaybackRetryPolicy.shouldRunRetry(
             capturedSongID: "song-1",
