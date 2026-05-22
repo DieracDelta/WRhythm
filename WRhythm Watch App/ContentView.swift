@@ -21,6 +21,18 @@ struct ContentView: View {
             if api.isAuthenticated {
 #if os(macOS)
                 MacContentLayout(selection: $selectedMacDestination)
+#elseif os(watchOS)
+                TabView(selection: $selectedTab) {
+                    NavigationStack {
+                        NowPlayingView()
+                    }
+                    .tag(0)
+
+                    NavigationStack {
+                        MenuView()
+                    }
+                    .tag(1)
+                }
 #else
                 TabView(selection: $selectedTab) {
                     NavigationStack {
@@ -72,7 +84,11 @@ struct ContentView: View {
 #if !os(macOS)
                 // When app becomes active, go to Now Playing if music is playing
                 if AudioPlayer.shared.isPlaying {
+#if os(watchOS)
+                    selectedTab = 0
+#else
                     selectedTab = 2
+#endif
                 }
 #endif
             case .inactive, .background:
@@ -384,6 +400,7 @@ struct MacMiniPlayerBar: View {
     @Binding var selection: MacDestination?
     @ObservedObject var player = AudioPlayer.shared
     @ObservedObject var deviceSyncManager = DeviceSyncManager.shared
+    @State private var bufferedTracksSheet: BufferedTracksSheetPayload?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -395,7 +412,7 @@ struct MacMiniPlayerBar: View {
                     subtitle: [song.artist, song.album].compactMap { $0 }.joined(separator: " • "),
                     isPlaying: isPlaying,
                     isBuffering: player.isBuffering,
-                    prebufferedTrackCount: player.prebufferedTrackCount,
+                    bufferedSongs: player.prebufferedSongs,
                     queuePosition: player.queue.count > 1 ? "\(localLabel): \(player.currentIndex + 1) of \(player.queue.count)" : localLabel,
                     previous: player.previous,
                     toggle: { deviceSyncManager.setPlaying(!isPlaying, targetDeviceID: deviceSyncManager.localPlaybackTargetID) },
@@ -421,7 +438,7 @@ struct MacMiniPlayerBar: View {
                     subtitle: [song.artist, song.album].compactMap { $0 }.joined(separator: " • "),
                     isPlaying: remote.isPlaying,
                     isBuffering: remote.isBuffering == true,
-                    prebufferedTrackCount: remote.prebufferedTrackCount,
+                    bufferedSongs: bufferedSongs(for: remote),
                     queuePosition: remote.queue.count > 1 ? "\(remote.deviceName): \(remote.currentIndex + 1) of \(remote.queue.count)" : remote.deviceName,
                     previous: { deviceSyncManager.sendPrevious(targetDeviceID: remote.id) },
                     toggle: { deviceSyncManager.setPlaying(!remote.isPlaying, targetDeviceID: remote.id) },
@@ -443,6 +460,9 @@ struct MacMiniPlayerBar: View {
             }
         }
         .background(.bar)
+        .sheet(item: $bufferedTracksSheet) { sheet in
+            BufferedTracksListView(songs: sheet.songs)
+        }
     }
 
     private var remoteQueue: [Song] {
@@ -471,13 +491,21 @@ struct MacMiniPlayerBar: View {
         remoteQueueMatchesLocal ? "Shared Queue" : "Mac"
     }
 
+    private func bufferedSongs(for remote: PlaybackSnapshot) -> [Song] {
+        guard let count = remote.prebufferedTrackCount, count > 0 else { return [] }
+        let queue = remote.queue.isEmpty ? remote.song.map { [$0] } ?? [] : remote.queue
+        let start = remote.currentIndex + 1
+        guard start < queue.count else { return [] }
+        return Array(queue[start..<min(queue.count, start + count)])
+    }
+
     private func miniRow(
         coverArtId: String?,
         title: String,
         subtitle: String,
         isPlaying: Bool,
         isBuffering: Bool,
-        prebufferedTrackCount: Int?,
+        bufferedSongs: [Song],
         queuePosition: String,
         previous: @escaping () -> Void,
         toggle: @escaping () -> Void,
@@ -492,28 +520,37 @@ struct MacMiniPlayerBar: View {
             HStack(spacing: WRhythmSpacing.sm) {
                 MiniPlayerArtwork(coverArtId: coverArtId)
 
-                Button(action: {
-                    selection = .nowPlaying
-                }) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: WRhythmSpacing.xs) {
-                            Text(title)
-                                .font(.headline)
-                                .lineLimit(1)
-                            Text(miniStatusText(queuePosition: queuePosition, isBuffering: isBuffering, prebufferedTrackCount: prebufferedTrackCount))
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: WRhythmSpacing.xs) {
+                        Text(title)
+                            .font(.headline)
+                            .lineLimit(1)
+                        Text(miniStatusText(queuePosition: queuePosition, isBuffering: isBuffering))
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+                    if !subtitle.isEmpty {
+                        Text(subtitle)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+                    if !bufferedSongs.isEmpty {
+                        Button(action: {
+                            bufferedTracksSheet = BufferedTracksSheetPayload(songs: bufferedSongs)
+                        }) {
+                            Label("\(bufferedSongs.count) buffered", systemImage: "arrow.down.circle")
                                 .font(.caption2)
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
                         }
-                        if !subtitle.isEmpty {
-                            Text(subtitle)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
-                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(.secondary)
                     }
                 }
-                .buttonStyle(.plain)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    selection = .nowPlaying
+                }
 
                 Spacer()
 
@@ -545,16 +582,18 @@ struct MacMiniPlayerBar: View {
         .padding(.vertical, WRhythmSpacing.xs)
     }
 
-    private func miniStatusText(queuePosition: String, isBuffering: Bool, prebufferedTrackCount: Int?) -> String {
+    private func miniStatusText(queuePosition: String, isBuffering: Bool) -> String {
         var parts = [queuePosition]
         if isBuffering {
             parts.append("Buffering")
         }
-        if let prebufferedTrackCount {
-            parts.append("\(prebufferedTrackCount) buffered")
-        }
         return parts.joined(separator: " • ")
     }
+}
+
+private struct BufferedTracksSheetPayload: Identifiable {
+    let id = UUID()
+    let songs: [Song]
 }
 
 private struct MiniPlayerArtwork: View {

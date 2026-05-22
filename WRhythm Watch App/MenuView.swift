@@ -28,7 +28,7 @@ struct MenuView: View {
                 menuLink("Settings", systemImage: "gear", tint: .secondary, destination: SettingsView())
             }
         }
-        .navigationTitle("WRhythm")
+        .navigationTitle("")
         .platformNavigationBarTitleDisplayModeInline()
     }
 

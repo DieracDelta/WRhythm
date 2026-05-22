@@ -104,14 +104,7 @@ struct TracksView: View {
             if offlineMode {
                 // Offline mode: search through downloaded content
                 if searchText.isEmpty {
-                    WRhythmEmptyState(
-                        systemImage: "magnifyingglass",
-                        title: "Search offline music",
-                        message: offlineSearchMessage,
-                        actionTitle: "Search"
-                    ) {
-                        presentedSheet = .search
-                    }
+                    searchPrompt(title: "Search Offline", message: offlineSearchMessage)
                 } else if displayedSongs.isEmpty && offlineAlbumResults.isEmpty && offlineArtistResults.isEmpty && offlinePlaylistResults.isEmpty {
                     WRhythmEmptyState(
                         systemImage: "music.note",
@@ -202,14 +195,7 @@ struct TracksView: View {
                     performSearch(query: searchText)
                 }
             } else if searchText.isEmpty {
-                WRhythmEmptyState(
-                    systemImage: "magnifyingglass",
-                    title: "Search music",
-                    message: "Find songs, albums, artists, and playlists",
-                    actionTitle: "Search"
-                ) {
-                    presentedSheet = .search
-                }
+                searchPrompt(title: "Search Music", message: "Find songs, albums, artists, and playlists")
             } else if searchResults.isEmpty && albumResults.isEmpty && artistResults.isEmpty {
                 WRhythmEmptyState(
                     systemImage: "music.note",
@@ -315,6 +301,39 @@ struct TracksView: View {
         .onDisappear {
             searchTask?.cancel()
         }
+    }
+
+    @ViewBuilder
+    private func searchPrompt(title: String, message: String?) -> some View {
+#if os(watchOS)
+        WRhythmScreen {
+            Button(action: {
+                presentedSheet = .search
+            }) {
+                HStack(spacing: WRhythmSpacing.sm) {
+                    WRhythmIconBadge(systemImage: "magnifyingglass", tint: WRhythmTheme.accent, size: 34)
+                    Text("Search")
+                        .font(WRhythmTypography.rowTitle)
+                    Spacer(minLength: WRhythmSpacing.xs)
+                    Image(systemName: "chevron.right")
+                        .font(WRhythmTypography.metadata)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, WRhythmSpacing.xs)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+#else
+        WRhythmEmptyState(
+            systemImage: "magnifyingglass",
+            title: title,
+            message: message,
+            actionTitle: "Search"
+        ) {
+            presentedSheet = .search
+        }
+#endif
     }
 
     @ViewBuilder

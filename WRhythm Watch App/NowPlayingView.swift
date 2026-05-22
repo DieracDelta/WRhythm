@@ -30,13 +30,13 @@ struct NowPlayingView: View {
                 }
             } else if let song = player.currentSong {
                 let localIsPlaying = deviceSyncManager.localPlaybackIsPlayingForDisplay
-                VStack(spacing: WRhythmSpacing.md) {
-                    NowPlayingArtwork(coverArtId: song.coverArt, maxSize: 360)
+                VStack(spacing: WRhythmSpacing.sm) {
+                    NowPlayingArtwork(coverArtId: song.coverArt, maxSize: localArtworkMaxSize)
                         .equatable()
 
-                    VStack(spacing: 8) {
+                    VStack(spacing: WRhythmSpacing.xs) {
                         Text(song.title)
-                            .font(.title2.weight(.semibold))
+                            .font(.title3.weight(.semibold))
                             .lineLimit(2)
                             .multilineTextAlignment(.center)
                             .contentTransition(.opacity)
@@ -64,17 +64,13 @@ struct NowPlayingView: View {
                             if player.isBuffering {
                                 WRhythmStatusPill(text: "Buffering", systemImage: "hourglass", tint: WRhythmTheme.warning)
                             }
-                            if player.queue.count > player.currentIndex + 1 {
-                                WRhythmStatusPill(
-                                    text: bufferedTrackLabel(player.prebufferedTrackCount),
-                                    systemImage: "arrow.down.circle",
-                                    tint: .secondary
-                                )
+                            if !player.prebufferedSongs.isEmpty {
+                                BufferedTracksButton(count: player.prebufferedSongs.count) {
+                                    presentedSheet = .bufferedTracks
+                                }
                             }
                         }
                     }
-
-                    PlaybackTargetPicker()
 
                     WRhythmCard(padding: WRhythmSpacing.sm, style: .glass) {
                         VStack(spacing: WRhythmSpacing.xs) {
@@ -110,14 +106,19 @@ struct NowPlayingView: View {
                         }
                     }
 
-                    HStack(spacing: WRhythmSpacing.xl) {
-                        WRhythmTransportButton(systemImage: "backward.end.fill", action: player.previous)
+                    HStack(spacing: WRhythmSpacing.sm) {
+                        WRhythmTransportButton(systemImage: "backward.end.fill", size: .body, diameter: 38, action: player.previous)
                         .disabled(player.currentIndex == 0 && player.currentTime < 3)
+
+                        WRhythmTransportButton(systemImage: "gobackward.15", size: .body, diameter: 38) {
+                            seekLocal(by: -15)
+                        }
 
                         WRhythmTransportButton(
                             systemImage: localIsPlaying ? "pause.fill" : "play.fill",
-                            size: .title,
+                            size: .title2,
                             prominent: true,
+                            diameter: 56,
                             action: {
                                 deviceSyncManager.setPlaying(
                                     !localIsPlaying,
@@ -126,9 +127,15 @@ struct NowPlayingView: View {
                             }
                         )
 
-                        WRhythmTransportButton(systemImage: "forward.end.fill", action: player.next)
+                        WRhythmTransportButton(systemImage: "goforward.15", size: .body, diameter: 38) {
+                            seekLocal(by: 15)
+                        }
+
+                        WRhythmTransportButton(systemImage: "forward.end.fill", size: .body, diameter: 38, action: player.next)
                         .disabled(player.currentIndex >= player.queue.count - 1)
                     }
+
+                    PlaybackTargetPicker()
 
                     InlineVolumeSlider(volume: Binding(
                         get: { player.volume },
@@ -247,6 +254,8 @@ struct NowPlayingView: View {
                 VolumeControlView()
             case .audioRoute:
                 AudioRouteView()
+            case .bufferedTracks:
+                BufferedTracksListView(songs: player.prebufferedSongs)
             }
         }
         .onAppear {
@@ -266,6 +275,20 @@ struct NowPlayingView: View {
 
     private var primaryRemotePlayback: PlaybackSnapshot? {
         deviceSyncManager.activeSharedPlayback
+    }
+
+    private var localArtworkMaxSize: CGFloat {
+#if os(iOS)
+        220
+#else
+        300
+#endif
+    }
+
+    private func seekLocal(by delta: TimeInterval) {
+        let upperBound = player.duration > 0 && player.duration.isFinite ? player.duration : .greatestFiniteMagnitude
+        let target = min(max(player.currentTime + delta, 0), upperBound)
+        player.seek(to: target)
     }
 
     private func loadStarredSongs() {
@@ -380,8 +403,65 @@ private func bufferedTrackLabel(_ count: Int) -> String {
 private enum NowPlayingSheet: String, Identifiable {
     case volume
     case audioRoute
+    case bufferedTracks
 
     var id: String { rawValue }
+}
+
+private struct BufferedTracksButton: View {
+    let count: Int
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            WRhythmStatusPill(
+                text: bufferedTrackLabel(count),
+                systemImage: "arrow.down.circle",
+                tint: .secondary
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(count) ready buffered \(count == 1 ? "track" : "tracks")")
+    }
+}
+
+struct BufferedTracksListView: View {
+    let songs: [Song]
+
+    var body: some View {
+        NavigationStack {
+            WRhythmScreen {
+                if songs.isEmpty {
+                    WRhythmEmptyState(
+                        systemImage: "arrow.down.circle",
+                        title: "No Ready Tracks",
+                        message: "Tracks appear here after they are fully buffered."
+                    )
+                } else {
+                    WRhythmCard {
+                        VStack(spacing: 0) {
+                            ForEach(songs) { song in
+                                WRhythmMediaRow(
+                                    title: song.title,
+                                    subtitle: song.artist,
+                                    detail: song.album,
+                                    coverArtId: song.coverArt,
+                                    artworkSize: 42
+                                )
+
+                                if song.id != songs.last?.id {
+                                    Divider()
+                                        .padding(.leading, 54)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Ready Tracks")
+            .platformNavigationBarTitleDisplayModeInline()
+        }
+    }
 }
 
 private struct NowPlayingArtwork: View, Equatable {
@@ -550,23 +630,40 @@ struct RemotePlaybackControls: View {
                         }
                     }
 
-                    HStack(spacing: compact ? WRhythmSpacing.md : WRhythmSpacing.xl) {
+                    HStack(spacing: compact ? WRhythmSpacing.xs : WRhythmSpacing.sm) {
                         WRhythmTransportButton(
                             systemImage: "backward.end.fill",
                             size: compact ? .caption : .title2,
+                            diameter: compact ? 32 : 38,
                             action: { deviceSyncManager.sendPrevious(targetDeviceID: playback.id) }
+                        )
+
+                        WRhythmTransportButton(
+                            systemImage: "gobackward.15",
+                            size: compact ? .caption : .body,
+                            diameter: compact ? 32 : 38,
+                            action: { seekRemote(by: -15) }
                         )
 
                         WRhythmTransportButton(
                             systemImage: playback.isPlaying ? "pause.fill" : "play.fill",
                             size: compact ? .title3 : .title,
                             prominent: !compact,
+                            diameter: compact ? 40 : 56,
                             action: { deviceSyncManager.setPlaying(!playback.isPlaying, targetDeviceID: playback.id) }
+                        )
+
+                        WRhythmTransportButton(
+                            systemImage: "goforward.15",
+                            size: compact ? .caption : .body,
+                            diameter: compact ? 32 : 38,
+                            action: { seekRemote(by: 15) }
                         )
 
                         WRhythmTransportButton(
                             systemImage: "forward.end.fill",
                             size: compact ? .caption : .title2,
+                            diameter: compact ? 32 : 38,
                             action: { deviceSyncManager.sendNext(targetDeviceID: playback.id) }
                         )
 
@@ -595,6 +692,12 @@ struct RemotePlaybackControls: View {
     private var displayedVolume: Double {
         let volume = pendingVolume ?? playback.volume ?? player.volume
         return min(max(volume.isFinite ? volume : 1, 0), 1)
+    }
+
+    private func seekRemote(by delta: TimeInterval) {
+        let upperBound = playback.duration > 0 && playback.duration.isFinite ? playback.duration : .greatestFiniteMagnitude
+        let target = min(max(playback.estimatedCurrentTime + delta, 0), upperBound)
+        deviceSyncManager.sendSeek(to: target, targetDeviceID: playback.id)
     }
 
     private func formatTime(_ seconds: TimeInterval) -> String {
@@ -873,13 +976,15 @@ private struct WatchNowPlayingView: View {
             .padding(.vertical, WRhythmSpacing.xs)
         }
         .wrhythmPageBackground(coverArtId: primaryArtworkCoverArtId)
-        .navigationTitle("Playing")
+        .navigationTitle("")
         .sheet(item: $presentedSheet) { sheet in
             switch sheet {
             case .volume:
                 VolumeControlView()
             case .audioRoute:
                 AudioRouteView()
+            case .bufferedTracks:
+                BufferedTracksListView(songs: player.prebufferedSongs)
             }
         }
         .onAppear {
@@ -911,18 +1016,46 @@ private struct WatchNowPlayingView: View {
         deviceSyncManager.localPlaybackIsPlayingForDisplay
     }
 
+    private func seekLocal(by delta: TimeInterval) {
+        let upperBound = player.duration > 0 && player.duration.isFinite ? player.duration : .greatestFiniteMagnitude
+        let target = min(max(player.currentTime + delta, 0), upperBound)
+        player.seek(to: target)
+    }
+
     @ViewBuilder
     private func localPlaybackContent(song: Song) -> some View {
         VStack(spacing: WRhythmSpacing.xs) {
-            NowPlayingArtwork(coverArtId: song.coverArt, maxSize: 124)
+            NowPlayingArtwork(coverArtId: song.coverArt, maxSize: 88)
                 .equatable()
+
+            WatchTransportControls(
+                isPlaying: localIsPlaying,
+                previousDisabled: player.currentIndex == 0 && player.currentTime < 3,
+                nextDisabled: player.currentIndex >= player.queue.count - 1,
+                previous: player.previous,
+                seekBackward: { seekLocal(by: -15) },
+                togglePlay: {
+                    deviceSyncManager.setPlaying(
+                        !localIsPlaying,
+                        targetDeviceID: deviceSyncManager.localPlaybackTargetID
+                    )
+                },
+                seekForward: { seekLocal(by: 15) },
+                next: player.next
+            )
+
+            WatchProgressCard(
+                currentTime: player.currentTime,
+                duration: player.duration,
+                scrubTime: $scrubTime,
+                seek: player.seek(to:)
+            )
 
             VStack(spacing: WRhythmSpacing.xxs) {
                 Text(song.title)
                     .font(.headline)
-                    .lineLimit(2)
+                    .lineLimit(1)
                     .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
 
                 if let artist = song.artist, !artist.isEmpty {
                     Text(artist)
@@ -937,27 +1070,6 @@ private struct WatchNowPlayingView: View {
                 isBuffering: player.isBuffering,
                 prebufferedTrackCount: player.prebufferedTrackCount,
                 hasQueuedTracks: player.queue.count > player.currentIndex + 1
-            )
-
-            WatchProgressCard(
-                currentTime: player.currentTime,
-                duration: player.duration,
-                scrubTime: $scrubTime,
-                seek: player.seek(to:)
-            )
-
-            WatchTransportControls(
-                isPlaying: localIsPlaying,
-                previousDisabled: player.currentIndex == 0 && player.currentTime < 3,
-                nextDisabled: player.currentIndex >= player.queue.count - 1,
-                previous: player.previous,
-                togglePlay: {
-                    deviceSyncManager.setPlaying(
-                        !localIsPlaying,
-                        targetDeviceID: deviceSyncManager.localPlaybackTargetID
-                    )
-                },
-                next: player.next
             )
 
             InlineVolumeSlider(volume: Binding(
@@ -1077,15 +1189,36 @@ private struct WatchRemotePlaybackControls: View {
             }
 
             if let song = playback.song {
-                NowPlayingArtwork(coverArtId: song.coverArt, maxSize: 116)
+                NowPlayingArtwork(coverArtId: song.coverArt, maxSize: 84)
                     .equatable()
+
+                WatchTransportControls(
+                    isPlaying: playback.isPlaying,
+                    previousDisabled: false,
+                    nextDisabled: false,
+                    previous: { deviceSyncManager.sendPrevious(targetDeviceID: playback.id) },
+                    seekBackward: { seekRemote(playback, by: -15) },
+                    togglePlay: { deviceSyncManager.setPlaying(!playback.isPlaying, targetDeviceID: playback.id) },
+                    seekForward: { seekRemote(playback, by: 15) },
+                    next: { deviceSyncManager.sendNext(targetDeviceID: playback.id) }
+                )
+
+                TimelineView(.periodic(from: .now, by: 1)) { _ in
+                    WatchProgressCard(
+                        currentTime: playback.estimatedCurrentTime,
+                        duration: playback.duration,
+                        scrubTime: $scrubTime,
+                        seek: { time in
+                            deviceSyncManager.sendSeek(to: time, targetDeviceID: playback.id)
+                        }
+                    )
+                }
 
                 VStack(spacing: WRhythmSpacing.xxs) {
                     Text(song.title)
                         .font(.headline)
-                        .lineLimit(2)
+                        .lineLimit(1)
                         .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
 
                     if let artist = song.artist, !artist.isEmpty {
                         Text(artist)
@@ -1100,26 +1233,6 @@ private struct WatchRemotePlaybackControls: View {
                     isBuffering: playback.isBuffering == true,
                     prebufferedTrackCount: playback.prebufferedTrackCount,
                     hasQueuedTracks: playback.currentIndex < playback.queue.count - 1
-                )
-
-                TimelineView(.periodic(from: .now, by: 1)) { _ in
-                    WatchProgressCard(
-                        currentTime: playback.estimatedCurrentTime,
-                        duration: playback.duration,
-                        scrubTime: $scrubTime,
-                        seek: { time in
-                            deviceSyncManager.sendSeek(to: time, targetDeviceID: playback.id)
-                        }
-                    )
-                }
-
-                WatchTransportControls(
-                    isPlaying: playback.isPlaying,
-                    previousDisabled: false,
-                    nextDisabled: false,
-                    previous: { deviceSyncManager.sendPrevious(targetDeviceID: playback.id) },
-                    togglePlay: { deviceSyncManager.setPlaying(!playback.isPlaying, targetDeviceID: playback.id) },
-                    next: { deviceSyncManager.sendNext(targetDeviceID: playback.id) }
                 )
 
                 InlineVolumeSlider(volume: Binding(
@@ -1162,6 +1275,12 @@ private struct WatchRemotePlaybackControls: View {
         default:
             return "applewatch"
         }
+    }
+
+    private func seekRemote(_ playback: PlaybackSnapshot, by delta: TimeInterval) {
+        let upperBound = playback.duration > 0 && playback.duration.isFinite ? playback.duration : .greatestFiniteMagnitude
+        let target = min(max(playback.estimatedCurrentTime + delta, 0), upperBound)
+        deviceSyncManager.sendSeek(to: target, targetDeviceID: playback.id)
     }
 }
 
@@ -1234,13 +1353,17 @@ private struct WatchTransportControls: View {
     let previousDisabled: Bool
     let nextDisabled: Bool
     let previous: () -> Void
+    let seekBackward: () -> Void
     let togglePlay: () -> Void
+    let seekForward: () -> Void
     let next: () -> Void
 
     var body: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 4) {
             WatchTransportButton("Previous Track", systemImage: "backward.end.fill", action: previous)
                 .disabled(previousDisabled)
+
+            WatchTransportButton("Back 15 Seconds", systemImage: "gobackward.15", action: seekBackward)
 
             WatchTransportButton(
                 isPlaying ? "Pause" : "Play",
@@ -1248,6 +1371,8 @@ private struct WatchTransportControls: View {
                 prominent: true,
                 action: togglePlay
             )
+
+            WatchTransportButton("Forward 15 Seconds", systemImage: "goforward.15", action: seekForward)
 
             WatchTransportButton("Next Track", systemImage: "forward.end.fill", action: next)
                 .disabled(nextDisabled)
@@ -1271,8 +1396,8 @@ private struct WatchTransportButton: View {
     var body: some View {
         Button(title, systemImage: systemImage, action: action)
             .labelStyle(.iconOnly)
-            .font(prominent ? .title2 : .headline)
-            .frame(width: prominent ? 52 : 38, height: prominent ? 52 : 38)
+            .font(prominent ? .title3 : .subheadline)
+            .frame(width: prominent ? 42 : 30, height: prominent ? 42 : 30)
             .background(prominent ? AnyShapeStyle(WRhythmTheme.accent.gradient) : AnyShapeStyle(.regularMaterial), in: Circle())
             .foregroundStyle(prominent ? AnyShapeStyle(Color.white) : AnyShapeStyle(Color.primary))
             .buttonStyle(.plain)

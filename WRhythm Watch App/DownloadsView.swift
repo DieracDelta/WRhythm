@@ -28,7 +28,7 @@ struct DownloadsView: View {
                 WRhythmEmptyState(
                     systemImage: "arrow.down.circle",
                     title: "No Downloads",
-                    message: "Download songs, albums, or playlists for offline playback"
+                    message: emptyDownloadsMessage
                 )
             } else {
                 downloadedSummaryCard
@@ -258,6 +258,14 @@ struct DownloadsView: View {
                 }
             }
         }
+    }
+
+    private var emptyDownloadsMessage: String? {
+#if os(watchOS)
+        nil
+#else
+        "Download songs, albums, or playlists for offline playback"
+#endif
     }
 
     private func song(from downloadedSong: DownloadedSong) -> Song {

@@ -143,6 +143,7 @@ class AudioPlayer: NSObject, ObservableObject {
     @Published var duration: TimeInterval = 0
     @Published var isBuffering = false
     @Published private(set) var prebufferedTrackCount = 0
+    @Published private(set) var prebufferedSongs: [Song] = []
     @Published var queue: [Song] = []
     @Published var currentIndex: Int = 0
     @Published var playlistGenQueue: [Song] = []
@@ -1178,12 +1179,14 @@ class AudioPlayer: NSObject, ObservableObject {
     private func updatePrebufferedTrackCount() {
         guard !queue.isEmpty else {
             prebufferedTrackCount = 0
+            prebufferedSongs = []
             return
         }
 
         let start = currentIndex + 1
         guard start < queue.count else {
             prebufferedTrackCount = 0
+            prebufferedSongs = []
             return
         }
 
@@ -1193,12 +1196,18 @@ class AudioPlayer: NSObject, ObservableObject {
             prebufferURLs.removeValue(forKey: key)
         }
         let upcomingKeys = queue[start..<end].map(prebufferKey)
+        let readySongs = queue[start..<end].filter { song in
+            preparedPrebuffers[prebufferKey(for: song)] != nil
+        }
         let count = PrebufferSchedulingPolicy.readyCount(
             upcomingKeys: upcomingKeys,
             preparedKeys: Set(preparedPrebuffers.keys)
         )
         if prebufferedTrackCount != count {
             prebufferedTrackCount = count
+        }
+        if prebufferedSongs.map(\.id) != readySongs.map(\.id) {
+            prebufferedSongs = readySongs
         }
     }
 
