@@ -411,9 +411,8 @@ struct NowPlayingView: View {
         guard !seconds.isNaN && !seconds.isInfinite else {
             return "0:00"
         }
-        let minutes = Int(seconds) / 60
-        let remainingSeconds = Int(seconds) % 60
-        return String(format: "%d:%02d", minutes, remainingSeconds)
+        return Duration.seconds(Int(max(0, seconds)))
+            .formatted(.time(pattern: .minuteSecond(padMinuteToLength: 1)))
     }
 }
 
@@ -901,9 +900,8 @@ private func formatPhonePlaybackTime(_ seconds: TimeInterval) -> String {
     guard seconds.isFinite else {
         return "0:00"
     }
-    let minutes = Int(max(0, seconds)) / 60
-    let remainingSeconds = Int(max(0, seconds)) % 60
-    return String(format: "%d:%02d", minutes, remainingSeconds)
+    return Duration.seconds(Int(max(0, seconds)))
+        .formatted(.time(pattern: .minuteSecond(padMinuteToLength: 1)))
 }
 #endif
 
@@ -1233,9 +1231,8 @@ struct RemotePlaybackControls: View {
         guard seconds.isFinite else {
             return "0:00"
         }
-        let minutes = Int(max(0, seconds)) / 60
-        let remainingSeconds = Int(max(0, seconds)) % 60
-        return String(format: "%d:%02d", minutes, remainingSeconds)
+        return Duration.seconds(Int(max(0, seconds)))
+            .formatted(.time(pattern: .minuteSecond(padMinuteToLength: 1)))
     }
 }
 
@@ -2056,10 +2053,8 @@ private func watchFormatTime(_ seconds: TimeInterval) -> String {
     guard seconds.isFinite else {
         return "0:00"
     }
-    let clamped = max(0, seconds)
-    let minutes = Int(clamped) / 60
-    let remainingSeconds = Int(clamped) % 60
-    return String(format: "%d:%02d", minutes, remainingSeconds)
+    return Duration.seconds(Int(max(0, seconds)))
+        .formatted(.time(pattern: .minuteSecond(padMinuteToLength: 1)))
 }
 #endif
 

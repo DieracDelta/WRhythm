@@ -176,9 +176,8 @@ struct SongRowView: View {
     }
 
     private func formatDuration(_ seconds: Int) -> String {
-        let minutes = seconds / 60
-        let remainingSeconds = seconds % 60
-        return String(format: "%d:%02d", minutes, remainingSeconds)
+        Duration.seconds(max(0, seconds))
+            .formatted(.time(pattern: .minuteSecond(padMinuteToLength: 1)))
     }
 }
 
@@ -384,9 +383,8 @@ struct AlbumDetailView: View {
     }
 
     private func formatDuration(_ seconds: Int) -> String {
-        let minutes = seconds / 60
-        let remainingSeconds = seconds % 60
-        return String(format: "%d:%02d", minutes, remainingSeconds)
+        Duration.seconds(max(0, seconds))
+            .formatted(.time(pattern: .minuteSecond(padMinuteToLength: 1)))
     }
 
     private func isAlbumDownloaded(_ album: Album) -> Bool {

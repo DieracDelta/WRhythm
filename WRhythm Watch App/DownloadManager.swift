@@ -328,7 +328,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
     }
 
     private func logDownloadStateForActiveApp() {
-        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let timestamp = Date.now.formatted(.iso8601)
         print("🔔 [\(timestamp)] App became active")
         print("📊 [\(timestamp)] Download state - Active: \(activeDownloads.count), Queue: \(downloadQueue.count)")
         if !activeDownloads.isEmpty {
@@ -1069,7 +1069,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
                 continue
             }
 
-            let timestamp = ISO8601DateFormatter().string(from: Date())
+            let timestamp = Date.now.formatted(.iso8601)
             let limitText = isUnlimited ? "∞" : "\(maxConcurrentDownloads)"
             print("📥 [\(timestamp)] Starting download (\(activeDownloads.count + 1)/\(limitText)): \(song.title) @ \(audioQuality.shortDescription)")
 
@@ -1116,7 +1116,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
             // Log progress at 25%, 50%, 75%, 100% milestones
             let percentage = Int(progress * 100)
             if percentage % 25 == 0 && percentage > 0 {
-                let timestamp = ISO8601DateFormatter().string(from: Date())
+                let timestamp = Date.now.formatted(.iso8601)
                 print("📊 [\(timestamp)] Progress \(percentage)% - \(song.title) - \(totalBytesWritten)/\(totalBytesExpectedToWrite) bytes")
             }
         } else {
@@ -1159,7 +1159,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
             pendingProgressUpdates.removeAll()
 
             // Log status every 10 seconds
-            let timestamp = ISO8601DateFormatter().string(from: Date())
+            let timestamp = Date.now.formatted(.iso8601)
             let activeCount = activeDownloads.count
             let queueCount = downloadQueue.count
             let completedCount = sessionCompletedCount
@@ -1236,7 +1236,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
             saveMetadata()
             saveSongMetadata()
 
-            let timestamp = ISO8601DateFormatter().string(from: Date())
+            let timestamp = Date.now.formatted(.iso8601)
             print("✅ [\(timestamp)] Downloaded: \(song.title) (\(formatBytes(fileSize)))")
             print("📊 [\(timestamp)] Active downloads: \(activeDownloads.count), Queue: \(downloadQueue.count)")
 
@@ -1279,7 +1279,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
         guard let downloadTask = task as? URLSessionDownloadTask,
               let songId = taskToSongId[downloadTask] else {
             if let error = error {
-                let timestamp = ISO8601DateFormatter().string(from: Date())
+                let timestamp = Date.now.formatted(.iso8601)
                 print("❌ [\(timestamp)] Download task completed with error but no song mapping")
                 print("   Error: \(error.localizedDescription)")
             }
@@ -1287,7 +1287,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
         }
 
         if let error = error {
-            let timestamp = ISO8601DateFormatter().string(from: Date())
+            let timestamp = Date.now.formatted(.iso8601)
             let songTitle = self.songMetadata[songId]?.title ?? "Unknown"
             let nsError = error as NSError
 
@@ -1324,7 +1324,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
     nonisolated func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
         Task { @MainActor [weak self] in
             guard let self else { return }
-            let timestamp = ISO8601DateFormatter().string(from: Date())
+            let timestamp = Date.now.formatted(.iso8601)
             print("🎉 [\(timestamp)] Background session finished all events")
             print("📊 [\(timestamp)] Active downloads: \(self.activeDownloads.count), Queue: \(self.downloadQueue.count)")
         }
@@ -1658,8 +1658,6 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
     }
 
     private func formatBytes(_ bytes: Int64) -> String {
-        let formatter = ByteCountFormatter()
-        formatter.countStyle = .file
-        return formatter.string(fromByteCount: bytes)
+        bytes.formatted(.byteCount(style: .file))
     }
 }

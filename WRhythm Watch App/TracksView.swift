@@ -499,9 +499,8 @@ struct TracksView: View {
     }
 
     private func formatDuration(_ seconds: Int) -> String {
-        let minutes = seconds / 60
-        let remainingSeconds = seconds % 60
-        return String(format: "%d:%02d", minutes, remainingSeconds)
+        Duration.seconds(max(0, seconds))
+            .formatted(.time(pattern: .minuteSecond(padMinuteToLength: 1)))
     }
 }
 

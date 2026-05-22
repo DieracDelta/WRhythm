@@ -698,9 +698,8 @@ struct MiniPlayerProgressControl: View {
         guard seconds.isFinite else {
             return "0:00"
         }
-        let minutes = Int(max(0, seconds)) / 60
-        let remainingSeconds = Int(max(0, seconds)) % 60
-        return String(format: "%d:%02d", minutes, remainingSeconds)
+        return Duration.seconds(Int(max(0, seconds)))
+            .formatted(.time(pattern: .minuteSecond(padMinuteToLength: 1)))
     }
 
 }
