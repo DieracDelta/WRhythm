@@ -143,14 +143,14 @@ struct RadioOptionsView: View {
                         AudioPlayer.shared.playGeneratedPlaylist(sourceSong: sourceSong, songs: queue)
                         print("📻 Queue after playQueue: \(AudioPlayer.shared.queue.count) songs")
                     }
-                    dismiss()
+                    dismissAfterStateUpdates()
                 }
             } catch {
                 print("❌ Failed to start radio: \(error)")
                 await MainActor.run {
                     isProcessing = false
                     AudioPlayer.shared.playSong(sourceSong)
-                    dismiss()
+                    dismissAfterStateUpdates()
                 }
             }
         }
@@ -192,15 +192,22 @@ struct RadioOptionsView: View {
                         // Save radio playlist metadata
                         DownloadManager.shared.saveRadioPlaylist(sourceSong: sourceSong, songs: queue)
                     }
-                    dismiss()
+                    dismissAfterStateUpdates()
                 }
             } catch {
                 print("❌ Failed to download radio: \(error)")
                 await MainActor.run {
                     isProcessing = false
-                    dismiss()
+                    dismissAfterStateUpdates()
                 }
             }
+        }
+    }
+
+    private func dismissAfterStateUpdates() {
+        Task { @MainActor in
+            await Task.yield()
+            dismiss()
         }
     }
 }
