@@ -680,6 +680,70 @@ struct PlaybackSyncPolicyTests {
         #expect(WatchConnectivitySendFailurePolicy.shouldFallbackToUserInfo(kind: .credentials(hasPayload: false), canQueuePayload: true) == false)
     }
 
+    @Test func watchAndMacDoNotHaveDirectDiscoveryTransport() {
+        #expect(SyncTransportAvailabilityPolicy.canDirectlyDiscover(local: .appleWatch, remote: .mac) == false)
+        #expect(SyncTransportAvailabilityPolicy.canDirectlyDiscover(local: .mac, remote: .appleWatch) == false)
+    }
+
+    @Test func iPhoneCanBridgeDurablePresenceBetweenWatchConnectivityAndMultipeer() {
+        #expect(SyncBridgeRelayPolicy.shouldRelay(
+            kind: .hello,
+            receivedVia: .watchConnectivity,
+            localPlatform: .iPhone,
+            hasDestinationTransport: true
+        ) == true)
+        #expect(SyncBridgeRelayPolicy.shouldRelay(
+            kind: .credentials(hasPayload: true),
+            receivedVia: .multipeer,
+            localPlatform: .iPhone,
+            hasDestinationTransport: true
+        ) == true)
+        #expect(SyncBridgeRelayPolicy.shouldRelay(
+            kind: .playbackCommand,
+            receivedVia: .watchConnectivity,
+            localPlatform: .iPhone,
+            hasDestinationTransport: true
+        ) == false)
+    }
+
+    @Test func bridgeRequiresIPhoneAndDestinationTransport() {
+        #expect(SyncBridgeRelayPolicy.shouldRelay(
+            kind: .hello,
+            receivedVia: .multipeer,
+            localPlatform: .mac,
+            hasDestinationTransport: true
+        ) == false)
+        #expect(SyncBridgeRelayPolicy.shouldRelay(
+            kind: .hello,
+            receivedVia: .multipeer,
+            localPlatform: .iPhone,
+            hasDestinationTransport: false
+        ) == false)
+    }
+
+    @Test func playbackTargetsOnlyExposeReachableControlPaths() {
+        #expect(PlaybackTargetSelectionPolicy.isSelectable(
+            localPlatform: .iPhone,
+            remotePlatform: .appleWatch,
+            hasDirectMultipeer: false
+        ) == true)
+        #expect(PlaybackTargetSelectionPolicy.isSelectable(
+            localPlatform: .mac,
+            remotePlatform: .appleWatch,
+            hasDirectMultipeer: false
+        ) == false)
+        #expect(PlaybackTargetSelectionPolicy.isSelectable(
+            localPlatform: .appleWatch,
+            remotePlatform: .mac,
+            hasDirectMultipeer: false
+        ) == false)
+        #expect(PlaybackTargetSelectionPolicy.isSelectable(
+            localPlatform: .mac,
+            remotePlatform: .iPhone,
+            hasDirectMultipeer: true
+        ) == true)
+    }
+
     @Test func multipeerSendFailuresRestartOnlyWhenSessionHadPeers() {
         #expect(SyncTransportFailurePolicy.shouldRestartMultipeerDiscoveryAfterSendFailure(hasConnectedPeers: true) == true)
         #expect(SyncTransportFailurePolicy.shouldRestartMultipeerDiscoveryAfterSendFailure(hasConnectedPeers: false) == false)

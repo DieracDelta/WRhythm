@@ -227,6 +227,74 @@ enum SyncTransportKind: Sendable {
     case multipeer
 }
 
+enum SyncPlatformKind: String, Sendable {
+    case iPhone
+    case mac
+    case appleWatch
+    case other
+
+    init(platformName: String) {
+        switch platformName {
+        case "iPhone":
+            self = .iPhone
+        case "Mac":
+            self = .mac
+        case "Apple Watch":
+            self = .appleWatch
+        default:
+            self = .other
+        }
+    }
+}
+
+struct SyncTransportAvailabilityPolicy: Sendable {
+    static func canUseWatchConnectivity(local: SyncPlatformKind, remote: SyncPlatformKind) -> Bool {
+        (local == .iPhone && remote == .appleWatch) || (local == .appleWatch && remote == .iPhone)
+    }
+
+    static func canUseMultipeer(_ platform: SyncPlatformKind) -> Bool {
+        platform == .iPhone || platform == .mac
+    }
+
+    static func canDirectlyDiscover(local: SyncPlatformKind, remote: SyncPlatformKind) -> Bool {
+        canUseWatchConnectivity(local: local, remote: remote) || (canUseMultipeer(local) && canUseMultipeer(remote))
+    }
+}
+
+struct SyncBridgeRelayPolicy: Sendable {
+    static func shouldRelay(
+        kind: WatchConnectivitySyncPayloadKind,
+        receivedVia: SyncTransportKind,
+        localPlatform: SyncPlatformKind,
+        hasDestinationTransport: Bool
+    ) -> Bool {
+        guard localPlatform == .iPhone, hasDestinationTransport else { return false }
+
+        switch kind {
+        case .hello, .syncRequest:
+            return true
+        case .credentials(let hasPayload):
+            return hasPayload
+        case .playbackSession, .playbackCommand:
+            return false
+        }
+    }
+}
+
+struct PlaybackTargetSelectionPolicy: Sendable {
+    static func isSelectable(
+        localPlatform: SyncPlatformKind,
+        remotePlatform: SyncPlatformKind,
+        hasDirectMultipeer: Bool
+    ) -> Bool {
+        if hasDirectMultipeer {
+            return true
+        }
+
+        return SyncTransportAvailabilityPolicy.canUseWatchConnectivity(local: localPlatform, remote: remotePlatform)
+    }
+}
+
 struct SyncTransportFailurePolicy: Sendable {
     static func shouldInvalidatePlaybackBroadcastAttempt(kind: WatchConnectivitySyncPayloadKind) -> Bool {
         switch kind {
@@ -1166,15 +1234,20 @@ final class DeviceSyncManager: NSObject, ObservableObject {
     }
 
     private func isPeerSelectable(_ peer: SyncPeerInfo) -> Bool {
+        let localPlatform = SyncPlatformKind(platformName: platformName)
+        let remotePlatform = SyncPlatformKind(platformName: peer.platform)
 #if os(iOS) || os(macOS)
-        if multipeerDeviceIDs.contains(peer.id) {
-            return true
-        }
-
-        // WatchConnectivity targets do not have Multipeer IDs.
-        return peer.platform == "Apple Watch"
+        return PlaybackTargetSelectionPolicy.isSelectable(
+            localPlatform: localPlatform,
+            remotePlatform: remotePlatform,
+            hasDirectMultipeer: multipeerDeviceIDs.contains(peer.id)
+        )
 #else
-        return true
+        return PlaybackTargetSelectionPolicy.isSelectable(
+            localPlatform: localPlatform,
+            remotePlatform: remotePlatform,
+            hasDirectMultipeer: false
+        )
 #endif
     }
 
@@ -1986,6 +2059,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         guard let envelope = try? decoder.decode(SyncEnvelope.self, from: data) else { return }
         guard envelope.sender.id != localDeviceID else { return }
         guard shouldProcessEnvelope(envelope) else { return }
+        let receivedTransport: SyncTransportKind = peerDisplayName == nil ? .watchConnectivity : .multipeer
 
         peerInfos[envelope.sender.id] = envelope.sender
 #if os(iOS) || os(macOS)
@@ -1995,6 +2069,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         }
 #endif
         connectedDeviceNames = Array(Set(peerInfos.values.map(\.name))).sorted()
+        relayEnvelopeIfNeeded(envelope, receivedVia: receivedTransport)
 
         switch envelope.kind {
         case .hello:
@@ -2074,6 +2149,59 @@ final class DeviceSyncManager: NSObject, ObservableObject {
                 broadcastHello()
             }
         }
+    }
+
+    private func relayEnvelopeIfNeeded(_ envelope: SyncEnvelope, receivedVia receivedTransport: SyncTransportKind) {
+#if os(iOS)
+        let hasDestinationTransport: Bool
+        switch receivedTransport {
+        case .watchConnectivity:
+            hasDestinationTransport = session?.connectedPeers.isEmpty == false
+        case .multipeer:
+            hasDestinationTransport = watchSession.map { $0.isReachable || canQueueWatchConnectivityPayload($0) } ?? false
+        }
+
+        guard SyncBridgeRelayPolicy.shouldRelay(
+            kind: envelope.watchConnectivityPayloadKind,
+            receivedVia: receivedTransport,
+            localPlatform: SyncPlatformKind(platformName: platformName),
+            hasDestinationTransport: hasDestinationTransport
+        ) else { return }
+        guard let data = try? encoder.encode(envelope) else { return }
+
+        switch receivedTransport {
+        case .watchConnectivity:
+            guard let session, !session.connectedPeers.isEmpty else { return }
+            do {
+                try session.send(data, toPeers: session.connectedPeers, with: .reliable)
+            } catch {
+                handleEnvelopeSendFailure(
+                    kind: envelope.watchConnectivityPayloadKind,
+                    transport: .multipeer,
+                    errorDescription: String(describing: error)
+                )
+            }
+
+        case .multipeer:
+            guard let watchSession else { return }
+            if watchSession.activationState == .activated, watchSession.isReachable {
+                let payloadKind = envelope.watchConnectivityPayloadKind
+                watchSession.sendMessageData(data, replyHandler: nil) { error in
+                    let errorDescription = String(describing: error)
+                    Self.enqueueDelegateEvent {
+                        DeviceSyncManager.shared.handleEnvelopeSendFailure(
+                            kind: payloadKind,
+                            transport: .watchConnectivity,
+                            errorDescription: errorDescription,
+                            fallbackUserInfoPayload: data
+                        )
+                    }
+                }
+            } else if shouldQueueWatchConnectivityEnvelope(envelope, for: watchSession) {
+                watchSession.transferUserInfo(["payload": data])
+            }
+        }
+#endif
     }
 
     private func clearConflictingPendingCommandIfNeeded(from deviceID: String, incomingAction: PlaybackSyncCommandAction) {
