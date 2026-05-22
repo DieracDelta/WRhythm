@@ -245,6 +245,24 @@ struct PlaybackSyncPolicyTests {
         ) == true)
     }
 
+    @Test func localPlaybackStartupPublishesIntendedPlayingStateBeforePlayerIsReady() {
+        #expect(LocalPlaybackPublicationPolicy.publishedIsPlaying(
+            playerIsPlaying: false,
+            intendedIsPlaying: true
+        ) == true)
+    }
+
+    @Test func localPlaybackTelemetryPublishesActualStateWithoutIntentOverride() {
+        #expect(LocalPlaybackPublicationPolicy.publishedIsPlaying(
+            playerIsPlaying: false,
+            intendedIsPlaying: nil
+        ) == false)
+        #expect(LocalPlaybackPublicationPolicy.publishedIsPlaying(
+            playerIsPlaying: true,
+            intendedIsPlaying: nil
+        ) == true)
+    }
+
     @Test func localPlaybackOwnershipKeepsPausedMirrorFromPublishingOverRemoteOwner() {
         #expect(LocalPlaybackOwnershipPolicy.shouldPublishLocalPlayback(
             sharedOutputDeviceID: "mac",

@@ -739,6 +739,12 @@ struct LocalPlaybackOwnershipPolicy: Sendable {
     }
 }
 
+struct LocalPlaybackPublicationPolicy: Sendable {
+    static func publishedIsPlaying(playerIsPlaying: Bool, intendedIsPlaying: Bool?) -> Bool {
+        intendedIsPlaying ?? playerIsPlaying
+    }
+}
+
 private extension Array {
     subscript(safe index: Index) -> Element? {
         indices.contains(index) ? self[index] : nil
@@ -1356,7 +1362,10 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             } else {
                 AudioPlayer.shared.pause()
             }
-            broadcastLocalQueueAsShared(isExplicitLocalPlaybackIntent: true)
+            broadcastLocalQueueAsShared(
+                isExplicitLocalPlaybackIntent: true,
+                intendedIsPlaying: isPlaying
+            )
             return
         }
 
@@ -1514,15 +1523,22 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         ))
     }
 
-    func broadcastLocalQueueAsShared(isExplicitLocalPlaybackIntent: Bool = false) {
+    func broadcastLocalQueueAsShared(
+        isExplicitLocalPlaybackIntent: Bool = false,
+        intendedIsPlaying: Bool? = nil
+    ) {
         guard syncModeEnabled, !isApplyingRemoteCommand else { return }
         let player = AudioPlayer.shared
+        let isPlaying = LocalPlaybackPublicationPolicy.publishedIsPlaying(
+            playerIsPlaying: player.isPlaying,
+            intendedIsPlaying: intendedIsPlaying
+        )
         guard LocalPlaybackOwnershipPolicy.shouldPublishLocalPlayback(
             sharedOutputDeviceID: sharedSession?.outputDeviceID,
             localDeviceID: localDeviceID,
             selectedPlaybackTargetID: validSelectedPlaybackTargetID,
             hasLocalPlayback: player.currentSong != nil,
-            isLocalPlaying: player.isPlaying,
+            isLocalPlaying: isPlaying,
             isExplicitLocalPlaybackIntent: isExplicitLocalPlaybackIntent
         ) else { return }
         let queue = player.queue.isEmpty ? player.currentSong.map { [$0] } ?? [] : player.queue
@@ -1531,7 +1547,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             queue: queue,
             currentIndex: min(player.currentIndex, queue.count - 1),
             position: player.liveCurrentTime,
-            isPlaying: player.isPlaying,
+            isPlaying: isPlaying,
             outputDeviceID: localDeviceID,
             volume: player.volume
         ), applyLocally: false)

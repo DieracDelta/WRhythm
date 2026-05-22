@@ -661,7 +661,7 @@ class AudioPlayer: NSObject, ObservableObject {
         self.queue = [song]
         self.currentIndex = 0
         startPlayback(song)
-        DeviceSyncManager.shared.broadcastLocalQueueAsShared()
+        DeviceSyncManager.shared.broadcastLocalQueueAsShared(intendedIsPlaying: true)
     }
 
     func playQueue(_ songs: [Song], startingAt index: Int = 0, startTime: TimeInterval = 0, clearGeneratedPlaylist: Bool = true) {
@@ -679,7 +679,7 @@ class AudioPlayer: NSObject, ObservableObject {
         self.queue = songs
         self.currentIndex = index
         startPlayback(songs[index], startTime: startTime)
-        DeviceSyncManager.shared.broadcastLocalQueueAsShared()
+        DeviceSyncManager.shared.broadcastLocalQueueAsShared(intendedIsPlaying: true)
     }
 
     func playGeneratedPlaylist(sourceSong: Song, songs: [Song], startingAt index: Int = 0) {
@@ -721,7 +721,7 @@ class AudioPlayer: NSObject, ObservableObject {
         self.currentIndex = 0
         print("🔀 Queue set to \(self.queue.count) songs, currentIndex=\(self.currentIndex)")
         startPlayback(shuffled[0])
-        DeviceSyncManager.shared.broadcastLocalQueueAsShared()
+        DeviceSyncManager.shared.broadcastLocalQueueAsShared(intendedIsPlaying: true)
     }
 
     func toggleRepeat() {
@@ -782,7 +782,7 @@ class AudioPlayer: NSObject, ObservableObject {
             currentIndex = appendedStartIndex
             startPlayback(queue[appendedStartIndex])
         }
-        DeviceSyncManager.shared.broadcastLocalQueueAsShared()
+        DeviceSyncManager.shared.broadcastLocalQueueAsShared(intendedIsPlaying: shouldStartAppendedSongs ? true : nil)
     }
 
     func mirrorQueueWithoutPlayback(_ songs: [Song], currentIndex index: Int, currentTime: TimeInterval = 0) {
@@ -1347,12 +1347,12 @@ class AudioPlayer: NSObject, ObservableObject {
         prepareAudioSessionForPlayback()
         if queueFinished, queue.indices.contains(currentIndex) {
             startPlayback(queue[currentIndex])
-            DeviceSyncManager.shared.broadcastLocalQueueAsShared()
+            DeviceSyncManager.shared.broadcastLocalQueueAsShared(intendedIsPlaying: true)
             return
         }
         if player.currentItem == nil, let currentSong {
             startPlayback(currentSong, startTime: currentTime)
-            DeviceSyncManager.shared.broadcastLocalQueueAsShared()
+            DeviceSyncManager.shared.broadcastLocalQueueAsShared(intendedIsPlaying: true)
             return
         }
         player.play()
@@ -1406,6 +1406,7 @@ class AudioPlayer: NSObject, ObservableObject {
         recordQueueIntentChange()
         currentIndex += 1
         startPlayback(queue[currentIndex])
+        DeviceSyncManager.shared.broadcastLocalQueueAsShared(intendedIsPlaying: true)
     }
 
     func previous() {
@@ -1419,6 +1420,7 @@ class AudioPlayer: NSObject, ObservableObject {
             recordQueueIntentChange()
             currentIndex -= 1
             startPlayback(queue[currentIndex])
+            DeviceSyncManager.shared.broadcastLocalQueueAsShared(intendedIsPlaying: true)
         } else {
             seek(to: 0)
         }
@@ -1674,6 +1676,7 @@ class AudioPlayer: NSObject, ObservableObject {
                 if let firstSong = queue.first {
                     currentSong = firstSong
                     startPlayback(firstSong)
+                    DeviceSyncManager.shared.broadcastLocalQueueAsShared(intendedIsPlaying: true)
                 }
             }
         case .off:
