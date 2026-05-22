@@ -19,6 +19,9 @@ struct NowPlayingView: View {
     @AppStorage("offlineMode") private var offlineMode = false
 
     var body: some View {
+#if os(watchOS)
+        WatchNowPlayingView()
+#else
         ScrollView {
             if let remote = primaryRemotePlayback {
                 VStack(spacing: 12) {
@@ -252,6 +255,7 @@ struct NowPlayingView: View {
                 loadStarredSongs()
             }
         }
+#endif
     }
 
     private var primaryArtworkCoverArtId: String? {
@@ -847,6 +851,474 @@ struct AudioRouteView: View {
         }
         .padding()
     }
+}
+#endif
+
+#if os(watchOS)
+private struct WatchNowPlayingView: View {
+    @ObservedObject var player = AudioPlayer.shared
+    @ObservedObject var downloadManager = DownloadManager.shared
+    @ObservedObject var deviceSyncManager = DeviceSyncManager.shared
+    @State private var isStarring = false
+    @State private var hasLoadedStarredSongs = false
+    @State private var presentedSheet: NowPlayingSheet?
+    @State private var scrubTime: TimeInterval?
+    @AppStorage("offlineMode") private var offlineMode = false
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 12) {
+                if let remote = primaryRemotePlayback {
+                    WatchRemotePlaybackControls(playback: remote)
+                } else if let song = player.currentSong {
+                    localPlaybackContent(song: song)
+                } else {
+                    emptyState
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 10)
+        }
+        .wrhythmPageBackground(coverArtId: primaryArtworkCoverArtId)
+        .navigationTitle("Playing")
+        .sheet(item: $presentedSheet) { sheet in
+            switch sheet {
+            case .volume:
+                VolumeControlView()
+            case .audioRoute:
+                AudioRouteView()
+            }
+        }
+        .onAppear {
+            if !hasLoadedStarredSongs {
+                loadStarredSongs()
+            }
+        }
+        .onChange(of: player.currentSong?.id) { _, _ in
+            scrubTime = nil
+        }
+    }
+
+    private var primaryArtworkCoverArtId: String? {
+        if let remote = primaryRemotePlayback {
+            return remote.song?.coverArt
+        }
+        return player.currentSong?.coverArt
+    }
+
+    private var primaryRemotePlayback: PlaybackSnapshot? {
+        guard let remote = deviceSyncManager.activeSharedPlayback,
+              remote.id != deviceSyncManager.localPlaybackTargetID else {
+            return nil
+        }
+        return remote
+    }
+
+    private var localIsPlaying: Bool {
+        deviceSyncManager.localPlaybackIsPlayingForDisplay
+    }
+
+    @ViewBuilder
+    private func localPlaybackContent(song: Song) -> some View {
+        VStack(spacing: 10) {
+            NowPlayingArtwork(coverArtId: song.coverArt, maxSize: 124)
+                .equatable()
+
+            VStack(spacing: 3) {
+                Text(song.title)
+                    .font(.headline)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if let artist = song.artist, !artist.isEmpty {
+                    Text(artist)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+
+            WatchNowPlayingStatusRow(
+                isPlaying: localIsPlaying,
+                isBuffering: player.isBuffering,
+                prebufferedTrackCount: player.prebufferedTrackCount,
+                hasQueuedTracks: player.queue.count > player.currentIndex + 1
+            )
+
+            WatchProgressCard(
+                currentTime: player.currentTime,
+                duration: player.duration,
+                scrubTime: $scrubTime,
+                seek: player.seek(to:)
+            )
+
+            WatchTransportControls(
+                isPlaying: localIsPlaying,
+                previousDisabled: player.currentIndex == 0 && player.currentTime < 3,
+                nextDisabled: player.currentIndex >= player.queue.count - 1,
+                previous: player.previous,
+                togglePlay: {
+                    deviceSyncManager.setPlaying(
+                        !localIsPlaying,
+                        targetDeviceID: deviceSyncManager.localPlaybackTargetID
+                    )
+                },
+                next: player.next
+            )
+
+            InlineVolumeSlider(volume: Binding(
+                get: { player.volume },
+                set: { player.volume = $0 }
+            ))
+
+            WatchNowPlayingActions(
+                isStarred: downloadManager.starredSongIds.contains(song.id),
+                isStarring: isStarring,
+                song: song,
+                showVolume: { presentedSheet = .volume },
+                showAudioRoute: { presentedSheet = .audioRoute },
+                toggleFavorite: { toggleFavorite(song: song) }
+            )
+
+            if player.queue.count > 1 {
+                Text("\(player.currentIndex + 1) of \(player.queue.count)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+
+            PlaybackTargetPicker()
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 10) {
+            PlaybackTargetPicker()
+
+            Image(systemName: "music.note")
+                .font(.title)
+                .foregroundStyle(.secondary)
+
+            Text("No song playing")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 24)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius))
+    }
+
+    private func loadStarredSongs() {
+        Task {
+            do {
+                let starred = try await NavidromeAPI.shared.getStarred()
+                let songIds = Set(starred.song?.map { $0.id } ?? [])
+                await MainActor.run {
+                    downloadManager.cacheStarredSongs(songIds)
+                    hasLoadedStarredSongs = true
+                }
+            } catch {
+                print("❌ Failed to load starred songs: \(error)")
+            }
+        }
+    }
+
+    private func toggleFavorite(song: Song) {
+        isStarring = true
+        let isCurrentlyStarred = downloadManager.starredSongIds.contains(song.id)
+
+        if offlineMode {
+            if isCurrentlyStarred {
+                downloadManager.unstarSong(song.id, isOffline: true)
+            } else {
+                downloadManager.starSong(song.id, isOffline: true)
+            }
+            isStarring = false
+            return
+        }
+
+        Task {
+            do {
+                if isCurrentlyStarred {
+                    try await NavidromeAPI.shared.unstar(songId: song.id)
+                    await MainActor.run {
+                        downloadManager.unstarSong(song.id, isOffline: false)
+                        isStarring = false
+                    }
+                } else {
+                    try await NavidromeAPI.shared.star(songId: song.id)
+                    await MainActor.run {
+                        downloadManager.starSong(song.id, isOffline: false)
+                        isStarring = false
+                    }
+                }
+            } catch {
+                print("❌ Failed to toggle favorite: \(error)")
+                await MainActor.run {
+                    isStarring = false
+                }
+            }
+        }
+    }
+}
+
+private struct WatchRemotePlaybackControls: View {
+    let playback: PlaybackSnapshot
+    @ObservedObject var deviceSyncManager = DeviceSyncManager.shared
+    @ObservedObject var player = AudioPlayer.shared
+    @State private var pendingVolume: Double?
+    @State private var scrubTime: TimeInterval?
+
+    var body: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: platformIconName)
+                    .foregroundStyle(Color.accentColor)
+                Text(playback.deviceName)
+                    .font(.caption)
+                    .lineLimit(1)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let song = playback.song {
+                NowPlayingArtwork(coverArtId: song.coverArt, maxSize: 116)
+                    .equatable()
+
+                VStack(spacing: 3) {
+                    Text(song.title)
+                        .font(.headline)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if let artist = song.artist, !artist.isEmpty {
+                        Text(artist)
+                            .font(.caption)
+                            .lineLimit(1)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                WatchNowPlayingStatusRow(
+                    isPlaying: playback.isPlaying,
+                    isBuffering: playback.isBuffering == true,
+                    prebufferedTrackCount: playback.prebufferedTrackCount,
+                    hasQueuedTracks: playback.currentIndex < playback.queue.count - 1
+                )
+
+                TimelineView(.periodic(from: .now, by: 1)) { _ in
+                    WatchProgressCard(
+                        currentTime: playback.estimatedCurrentTime,
+                        duration: playback.duration,
+                        scrubTime: $scrubTime,
+                        seek: { time in
+                            deviceSyncManager.sendSeek(to: time, targetDeviceID: playback.id)
+                        }
+                    )
+                }
+
+                WatchTransportControls(
+                    isPlaying: playback.isPlaying,
+                    previousDisabled: false,
+                    nextDisabled: false,
+                    previous: { deviceSyncManager.sendPrevious(targetDeviceID: playback.id) },
+                    togglePlay: { deviceSyncManager.setPlaying(!playback.isPlaying, targetDeviceID: playback.id) },
+                    next: { deviceSyncManager.sendNext(targetDeviceID: playback.id) }
+                )
+
+                InlineVolumeSlider(volume: Binding(
+                    get: { displayedVolume },
+                    set: { newVolume in
+                        pendingVolume = newVolume
+                        deviceSyncManager.setVolume(newVolume, targetDeviceID: playback.id)
+                    }
+                ))
+
+                Button("Play Here", systemImage: "speaker.wave.2.fill", action: deviceSyncManager.takeOverRemotePlayback)
+                    .font(.caption)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius))
+        .overlay {
+            RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius)
+                .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
+        }
+        .onChange(of: playback.volume ?? -1) { _, _ in
+            pendingVolume = nil
+        }
+    }
+
+    private var displayedVolume: Double {
+        let volume = pendingVolume ?? playback.volume ?? player.volume
+        return min(max(volume.isFinite ? volume : 1, 0), 1)
+    }
+
+    private var platformIconName: String {
+        switch playback.platform {
+        case "Mac":
+            return "desktopcomputer"
+        case "iPhone":
+            return "iphone"
+        default:
+            return "applewatch"
+        }
+    }
+}
+
+private struct WatchNowPlayingStatusRow: View {
+    let isPlaying: Bool
+    let isBuffering: Bool
+    let prebufferedTrackCount: Int?
+    let hasQueuedTracks: Bool
+
+    var body: some View {
+        HStack(spacing: 5) {
+            WRhythmStatusPill(
+                text: isPlaying ? "Playing" : "Paused",
+                systemImage: isPlaying ? "waveform" : "pause.fill",
+                tint: isPlaying ? .accentColor : .secondary
+            )
+
+            if isBuffering {
+                WRhythmStatusPill(text: "Buffering", systemImage: "hourglass", tint: .orange)
+            } else if hasQueuedTracks, let prebufferedTrackCount {
+                WRhythmStatusPill(text: "\(prebufferedTrackCount) ready", systemImage: "arrow.down.circle")
+            }
+        }
+    }
+}
+
+private struct WatchProgressCard: View {
+    let currentTime: TimeInterval
+    let duration: TimeInterval
+    @Binding var scrubTime: TimeInterval?
+    let seek: (TimeInterval) -> Void
+
+    var body: some View {
+        let safeDuration = max(1, duration.isFinite ? duration : 1)
+        let liveTime = currentTime.isFinite ? currentTime : 0
+        let displayedTime = min(max(scrubTime ?? liveTime, 0), safeDuration)
+
+        VStack(spacing: 5) {
+            Slider(
+                value: Binding(
+                    get: { displayedTime },
+                    set: { scrubTime = min(max($0, 0), safeDuration) }
+                ),
+                in: 0...safeDuration,
+                onEditingChanged: { isEditing in
+                    guard !isEditing, let scrubTime else { return }
+                    seek(scrubTime)
+                    self.scrubTime = nil
+                }
+            )
+            .tint(.accentColor)
+
+            HStack {
+                Text(watchFormatTime(displayedTime))
+                Spacer()
+                Text("-" + watchFormatTime(max(0, safeDuration - displayedTime)))
+            }
+            .font(.caption)
+            .monospacedDigit()
+            .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius))
+    }
+}
+
+private struct WatchTransportControls: View {
+    let isPlaying: Bool
+    let previousDisabled: Bool
+    let nextDisabled: Bool
+    let previous: () -> Void
+    let togglePlay: () -> Void
+    let next: () -> Void
+
+    var body: some View {
+        HStack(spacing: 16) {
+            WatchTransportButton("Previous Track", systemImage: "backward.end.fill", action: previous)
+                .disabled(previousDisabled)
+
+            WatchTransportButton(
+                isPlaying ? "Pause" : "Play",
+                systemImage: isPlaying ? "pause.fill" : "play.fill",
+                prominent: true,
+                action: togglePlay
+            )
+
+            WatchTransportButton("Next Track", systemImage: "forward.end.fill", action: next)
+                .disabled(nextDisabled)
+        }
+    }
+}
+
+private struct WatchTransportButton: View {
+    let title: String
+    let systemImage: String
+    var prominent = false
+    let action: () -> Void
+
+    init(_ title: String, systemImage: String, prominent: Bool = false, action: @escaping () -> Void) {
+        self.title = title
+        self.systemImage = systemImage
+        self.prominent = prominent
+        self.action = action
+    }
+
+    var body: some View {
+        Button(title, systemImage: systemImage, action: action)
+            .labelStyle(.iconOnly)
+            .font(prominent ? .title2 : .headline)
+            .frame(width: prominent ? 52 : 38, height: prominent ? 52 : 38)
+            .background(prominent ? AnyShapeStyle(Color.accentColor.gradient) : AnyShapeStyle(.regularMaterial), in: Circle())
+            .foregroundStyle(prominent ? AnyShapeStyle(Color.white) : AnyShapeStyle(Color.primary))
+            .buttonStyle(.plain)
+            .shadow(color: Color.black.opacity(prominent ? 0.20 : 0.08), radius: prominent ? 12 : 6, y: prominent ? 6 : 3)
+    }
+}
+
+private struct WatchNowPlayingActions: View {
+    let isStarred: Bool
+    let isStarring: Bool
+    let song: Song
+    let showVolume: () -> Void
+    let showAudioRoute: () -> Void
+    let toggleFavorite: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button("Volume", systemImage: "speaker.wave.3.fill", action: showVolume)
+            Button("Output", systemImage: "airpodsmax", action: showAudioRoute)
+            NavigationLink(destination: RadioOptionsView(sourceSong: song, sourceTitle: song.title, sourceType: .song)) {
+                Label("Radio", systemImage: "music.note.list")
+            }
+            Button(isStarred ? "Unfavorite" : "Favorite", systemImage: isStarred ? "heart.fill" : "heart", action: toggleFavorite)
+                .disabled(isStarring)
+        }
+        .labelStyle(.iconOnly)
+        .font(.caption)
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+    }
+}
+
+private func watchFormatTime(_ seconds: TimeInterval) -> String {
+    guard seconds.isFinite else {
+        return "0:00"
+    }
+    let clamped = max(0, seconds)
+    let minutes = Int(clamped) / 60
+    let remainingSeconds = Int(clamped) % 60
+    return String(format: "%d:%02d", minutes, remainingSeconds)
 }
 #endif
 
