@@ -745,6 +745,35 @@ struct LocalPlaybackPublicationPolicy: Sendable {
     }
 }
 
+struct LocalPlaybackPublicationPositionPolicy: Sendable {
+    static let liveTimeTolerance: TimeInterval = 1
+
+    static func publishedPosition(
+        playerLiveTime: TimeInterval,
+        logicalCurrentTime: TimeInterval,
+        previousSession: PlaybackSession?,
+        queueIDs: [String],
+        currentSongID: String?,
+        currentIndex: Int
+    ) -> TimeInterval {
+        let liveTime = sanitized(playerLiveTime)
+        let logicalTime = sanitized(logicalCurrentTime)
+
+        guard let previousSession,
+              previousSession.queue.map(\.id) == queueIDs,
+              previousSession.currentSong?.id == currentSongID,
+              previousSession.currentIndex == currentIndex else {
+            return logicalTime
+        }
+
+        return abs(liveTime - logicalTime) <= liveTimeTolerance ? liveTime : logicalTime
+    }
+
+    private static func sanitized(_ time: TimeInterval) -> TimeInterval {
+        max(0, time.isFinite ? time : 0)
+    }
+}
+
 struct LocalPlaybackDisplayStatePolicy: Sendable {
     static func effectiveIsPlaying(
         playerIsPlaying: Bool,
@@ -1590,10 +1619,18 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         ) else { return }
         let queue = player.queue.isEmpty ? player.currentSong.map { [$0] } ?? [] : player.queue
         guard !queue.isEmpty else { return }
+        let position = LocalPlaybackPublicationPositionPolicy.publishedPosition(
+            playerLiveTime: player.liveCurrentTime,
+            logicalCurrentTime: player.currentTime,
+            previousSession: sharedSession,
+            queueIDs: queue.map(\.id),
+            currentSongID: player.currentSong?.id,
+            currentIndex: min(player.currentIndex, queue.count - 1)
+        )
         publishSharedSession(makeSession(
             queue: queue,
             currentIndex: min(player.currentIndex, queue.count - 1),
-            position: player.liveCurrentTime,
+            position: position,
             isPlaying: isPlaying,
             outputDeviceID: localDeviceID,
             volume: player.volume

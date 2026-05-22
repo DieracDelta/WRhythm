@@ -305,6 +305,114 @@ struct PlaybackSyncPolicyTests {
         ) == false)
     }
 
+    @Test func localPlaybackPublicationUsesLogicalTimeWhenQueuePositionChanges() {
+        let oldSong = makeSong(id: "song-1")
+        let newSong = makeSong(id: "song-2")
+        let previousSession = makeSession(
+            songs: [oldSong, newSong],
+            currentIndex: 0,
+            outputDeviceID: "mac",
+            isPlaying: true,
+            position: 93,
+            updatedAt: Date()
+        )
+
+        #expect(LocalPlaybackPublicationPositionPolicy.publishedPosition(
+            playerLiveTime: 93,
+            logicalCurrentTime: 0,
+            previousSession: previousSession,
+            queueIDs: [oldSong.id, newSong.id],
+            currentSongID: newSong.id,
+            currentIndex: 1
+        ) == 0)
+    }
+
+    @Test func localPlaybackPublicationUsesLogicalTimeWhenQueuePositionChangesBackwards() {
+        let firstSong = makeSong(id: "song-1")
+        let oldSong = makeSong(id: "song-2")
+        let previousSession = makeSession(
+            songs: [firstSong, oldSong],
+            currentIndex: 1,
+            outputDeviceID: "mac",
+            isPlaying: true,
+            position: 93,
+            updatedAt: Date()
+        )
+
+        #expect(LocalPlaybackPublicationPositionPolicy.publishedPosition(
+            playerLiveTime: 93,
+            logicalCurrentTime: 0,
+            previousSession: previousSession,
+            queueIDs: [firstSong.id, oldSong.id],
+            currentSongID: firstSong.id,
+            currentIndex: 0
+        ) == 0)
+    }
+
+    @Test func localPlaybackPublicationPositionPolicyIsDeviceAgnostic() {
+        let oldSong = makeSong(id: "song-1")
+        let newSong = makeSong(id: "song-2")
+        let previousSession = makeSession(
+            songs: [oldSong, newSong],
+            currentIndex: 0,
+            outputDeviceID: "iphone",
+            isPlaying: true,
+            position: 93,
+            updatedAt: Date()
+        )
+
+        #expect(LocalPlaybackPublicationPositionPolicy.publishedPosition(
+            playerLiveTime: 93,
+            logicalCurrentTime: 0,
+            previousSession: previousSession,
+            queueIDs: [oldSong.id, newSong.id],
+            currentSongID: newSong.id,
+            currentIndex: 1
+        ) == 0)
+    }
+
+    @Test func localPlaybackPublicationUsesLiveTimeWhenQueuePositionMatches() {
+        let song = makeSong(id: "song-1")
+        let previousSession = makeSession(
+            songs: [song],
+            currentIndex: 0,
+            outputDeviceID: "mac",
+            isPlaying: true,
+            position: 90,
+            updatedAt: Date()
+        )
+
+        #expect(LocalPlaybackPublicationPositionPolicy.publishedPosition(
+            playerLiveTime: 93,
+            logicalCurrentTime: 92.8,
+            previousSession: previousSession,
+            queueIDs: [song.id],
+            currentSongID: song.id,
+            currentIndex: 0
+        ) == 93)
+    }
+
+    @Test func localPlaybackPublicationUsesLogicalTimeWhenSameTrackSeekIsPending() {
+        let song = makeSong(id: "song-1")
+        let previousSession = makeSession(
+            songs: [song],
+            currentIndex: 0,
+            outputDeviceID: "mac",
+            isPlaying: true,
+            position: 20,
+            updatedAt: Date()
+        )
+
+        #expect(LocalPlaybackPublicationPositionPolicy.publishedPosition(
+            playerLiveTime: 20,
+            logicalCurrentTime: 93,
+            previousSession: previousSession,
+            queueIDs: [song.id],
+            currentSongID: song.id,
+            currentIndex: 0
+        ) == 93)
+    }
+
     @Test func localPlaybackTelemetryPublishesActualStateWithoutIntentOverride() {
         #expect(LocalPlaybackPublicationPolicy.publishedIsPlaying(
             playerIsPlaying: false,
