@@ -12,7 +12,7 @@ struct MenuView: View {
         List {
             WRhythmFeatureHeader(
                 title: "WRhythm",
-                subtitle: "Library, sync, downloads, and playback",
+                subtitle: nil,
                 systemImage: "waveform",
                 tint: .accentColor
             )
