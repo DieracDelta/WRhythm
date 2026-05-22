@@ -53,7 +53,16 @@ actor SyncDelegateEventQueue {
     }
 
     func waitForIdle() async {
-        await previousTask?.value
+        while true {
+            if let task = previousTask {
+                await task.value
+                continue
+            }
+            await Task.yield()
+            if previousTask == nil {
+                return
+            }
+        }
     }
 
     private func finish(_ taskID: Int) {
@@ -260,6 +269,41 @@ struct WatchConnectivitySyncPolicy: Sendable {
         case .playbackState, .playbackSession, .playbackCommand:
             return false
         }
+    }
+}
+
+enum SyncTransportKind: Sendable {
+    case watchConnectivity
+    case multipeer
+}
+
+struct SyncTransportFailurePolicy: Sendable {
+    static func shouldInvalidatePlaybackBroadcastAttempt(kind: WatchConnectivitySyncPayloadKind) -> Bool {
+        switch kind {
+        case .playbackState, .playbackSession, .playbackCommand:
+            return true
+        case .hello, .syncRequest, .credentials:
+            return false
+        }
+    }
+
+    static func shouldRequestPlaybackRefresh(kind: WatchConnectivitySyncPayloadKind) -> Bool {
+        switch kind {
+        case .playbackState, .playbackSession, .playbackCommand:
+            return true
+        case .hello, .syncRequest, .credentials:
+            return false
+        }
+    }
+
+    static func shouldRestartMultipeerDiscoveryAfterSendFailure(hasConnectedPeers: Bool) -> Bool {
+        hasConnectedPeers
+    }
+}
+
+struct WatchConnectivityActivationPolicy: Sendable {
+    nonisolated static func shouldBootstrapSync(activationSucceeded: Bool, hasError: Bool) -> Bool {
+        activationSucceeded && !hasError
     }
 }
 
@@ -515,6 +559,12 @@ struct PendingPlaybackAcknowledgmentPolicy: Sendable {
 struct PendingPlaybackCommandExpiryPolicy: Sendable {
     static func shouldInvalidateOptimisticRemotePlayback(remotePlaybackID: String?, expiredDeviceID: String) -> Bool {
         remotePlaybackID == expiredDeviceID
+    }
+}
+
+struct PendingPlaybackCommandRetryPolicy: Sendable {
+    static func shouldRunRetry(pendingCommandID: String?, scheduledCommandID: String?) -> Bool {
+        pendingCommandID == scheduledCommandID
     }
 }
 
@@ -998,6 +1048,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
     private var processedEnvelopeIDOrder: [String] = []
     private var processedPlaybackSnapshotFingerprints = Set<String>()
     private var processedPlaybackSnapshotFingerprintOrder: [String] = []
+    private var isHandlingSyncTransportFailure = false
     private let sharedSessionID: String
 #if os(iOS) || os(watchOS)
     private var watchSession: WCSession?
@@ -2012,8 +2063,16 @@ final class DeviceSyncManager: NSObject, ObservableObject {
 #if os(iOS) || os(watchOS)
         if let watchSession {
             if watchSession.activationState == .activated, watchSession.isReachable {
+                let payloadKind = envelope.kind.watchConnectivityPayloadKind
                 watchSession.sendMessageData(data, replyHandler: nil) { error in
-                    print("❌ Failed to send WatchConnectivity sync envelope \(envelope.kind.rawValue): \(error)")
+                    let errorDescription = String(describing: error)
+                    Self.enqueueDelegateEvent {
+                        DeviceSyncManager.shared.handleEnvelopeSendFailure(
+                            kind: payloadKind,
+                            transport: .watchConnectivity,
+                            errorDescription: errorDescription
+                        )
+                    }
                 }
                 didSend = true
             } else if shouldQueueWatchConnectivityEnvelope(envelope, for: watchSession) {
@@ -2029,11 +2088,41 @@ final class DeviceSyncManager: NSObject, ObservableObject {
                 try session.send(data, toPeers: session.connectedPeers, with: .reliable)
                 didSend = true
             } catch {
-                print("❌ Failed to send sync envelope: \(error)")
+                handleEnvelopeSendFailure(
+                    kind: envelope.kind.watchConnectivityPayloadKind,
+                    transport: .multipeer,
+                    errorDescription: String(describing: error)
+                )
             }
         }
 #endif
         return didSend
+    }
+
+    private func handleEnvelopeSendFailure(
+        kind: WatchConnectivitySyncPayloadKind,
+        transport: SyncTransportKind,
+        errorDescription: String
+    ) {
+        print("❌ Failed to send \(transport) sync envelope: \(errorDescription)")
+
+        if SyncTransportFailurePolicy.shouldInvalidatePlaybackBroadcastAttempt(kind: kind) {
+            lastPlaybackBroadcast = .distantPast
+            lastBroadcastedPlaybackSnapshot = nil
+        }
+
+#if os(iOS) || os(macOS)
+        if transport == .multipeer,
+           SyncTransportFailurePolicy.shouldRestartMultipeerDiscoveryAfterSendFailure(hasConnectedPeers: session?.connectedPeers.isEmpty == false) {
+            scheduleMultipeerDiscoveryRestart(reason: "send failure")
+        }
+#endif
+
+        if SyncTransportFailurePolicy.shouldRequestPlaybackRefresh(kind: kind), !isHandlingSyncTransportFailure {
+            isHandlingSyncTransportFailure = true
+            defer { isHandlingSyncTransportFailure = false }
+            requestPlaybackSyncRefresh()
+        }
     }
 
     private func handleEnvelopeData(_ data: Data, fromPeerDisplayName peerDisplayName: String? = nil) {
@@ -2335,6 +2424,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
     private func schedulePendingCommandRetry(for deviceID: String, action: PlaybackSyncCommandAction) {
         let key = pendingCommandKey(for: deviceID, action: action)
         guard pendingTargetedCommandRetryTasks[key] == nil else { return }
+        let scheduledCommandID = pendingTargetedCommands[key]?.commandID
 
         let attempt = pendingTargetedCommandRetryAttempts[key, default: 0]
         let delay = PlaybackCommandSyncPolicy.retryDelay(forAttempt: attempt)
@@ -2348,7 +2438,10 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             }
             guard !Task.isCancelled else { return }
             self.pendingTargetedCommandRetryTasks[key] = nil
-            guard self.pendingTargetedCommands[key] != nil else { return }
+            guard PendingPlaybackCommandRetryPolicy.shouldRunRetry(
+                pendingCommandID: self.pendingTargetedCommands[key]?.commandID,
+                scheduledCommandID: scheduledCommandID
+            ) else { return }
             self.flushPendingCommand(forKey: key)
         }
     }
@@ -2514,8 +2607,18 @@ final class DeviceSyncManager: NSObject, ObservableObject {
 #if os(iOS) || os(watchOS)
 extension DeviceSyncManager: WCSessionDelegate {
     nonisolated func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
+        let shouldBootstrap = WatchConnectivityActivationPolicy.shouldBootstrapSync(
+            activationSucceeded: activationState == .activated,
+            hasError: error != nil
+        )
+        let activationStateRawValue = activationState.rawValue
+        let errorDescription = error.map { String(describing: $0) }
         Self.enqueueDelegateEvent {
-            DeviceSyncManager.shared.sendCurrentSyncState(includeHello: true)
+            if shouldBootstrap {
+                DeviceSyncManager.shared.sendCurrentSyncState(includeHello: true)
+            } else {
+                print("⚠️ WatchConnectivity activation did not complete; state=\(activationStateRawValue), error=\(errorDescription ?? "none")")
+            }
         }
     }
 

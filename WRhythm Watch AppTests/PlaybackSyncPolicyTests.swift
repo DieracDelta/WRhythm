@@ -633,6 +633,86 @@ struct PlaybackSyncPolicyTests {
         #expect(PlaybackTelemetryBroadcastPolicy.shouldBroadcast(lastBroadcastAt: now.addingTimeInterval(-2), now: now) == true)
     }
 
+    @Test func transportFailuresInvalidatePlaybackButNotDurablePayloads() {
+        #expect(SyncTransportFailurePolicy.shouldInvalidatePlaybackBroadcastAttempt(kind: .playbackState) == true)
+        #expect(SyncTransportFailurePolicy.shouldInvalidatePlaybackBroadcastAttempt(kind: .playbackCommand) == true)
+        #expect(SyncTransportFailurePolicy.shouldInvalidatePlaybackBroadcastAttempt(kind: .hello) == false)
+        #expect(SyncTransportFailurePolicy.shouldInvalidatePlaybackBroadcastAttempt(kind: .credentials(hasPayload: true)) == false)
+        #expect(SyncTransportFailurePolicy.shouldRequestPlaybackRefresh(kind: .playbackSession) == true)
+        #expect(SyncTransportFailurePolicy.shouldRequestPlaybackRefresh(kind: .syncRequest) == false)
+    }
+
+    @Test func multipeerSendFailuresRestartOnlyWhenSessionHadPeers() {
+        #expect(SyncTransportFailurePolicy.shouldRestartMultipeerDiscoveryAfterSendFailure(hasConnectedPeers: true) == true)
+        #expect(SyncTransportFailurePolicy.shouldRestartMultipeerDiscoveryAfterSendFailure(hasConnectedPeers: false) == false)
+    }
+
+    @Test func watchConnectivityBootstrapsOnlyAfterCleanActivation() {
+        #expect(WatchConnectivityActivationPolicy.shouldBootstrapSync(activationSucceeded: true, hasError: false) == true)
+        #expect(WatchConnectivityActivationPolicy.shouldBootstrapSync(activationSucceeded: false, hasError: false) == false)
+        #expect(WatchConnectivityActivationPolicy.shouldBootstrapSync(activationSucceeded: true, hasError: true) == false)
+    }
+
+    @Test func pendingCommandRetriesArePinnedToCommandID() {
+        #expect(PendingPlaybackCommandRetryPolicy.shouldRunRetry(pendingCommandID: "command-1", scheduledCommandID: "command-1") == true)
+        #expect(PendingPlaybackCommandRetryPolicy.shouldRunRetry(pendingCommandID: "command-2", scheduledCommandID: "command-1") == false)
+        #expect(PendingPlaybackCommandRetryPolicy.shouldRunRetry(pendingCommandID: nil, scheduledCommandID: "command-1") == false)
+    }
+
+    @Test func stalePrebufferCompletionsDoNotPublish() {
+        #expect(PrebufferPublicationPolicy.shouldPublishPreparedBuffer(
+            key: "song-1|flac",
+            desiredKeys: ["song-1|flac"],
+            activeTaskKeys: ["song-1|flac"]
+        ) == true)
+        #expect(PrebufferPublicationPolicy.shouldPublishPreparedBuffer(
+            key: "song-1|flac",
+            desiredKeys: ["song-2|flac"],
+            activeTaskKeys: ["song-1|flac"]
+        ) == false)
+        #expect(PrebufferPublicationPolicy.shouldPublishPreparedBuffer(
+            key: "song-1|flac",
+            desiredKeys: ["song-1|flac"],
+            activeTaskKeys: []
+        ) == false)
+    }
+
+    @Test func remotePauseRoundTripCanApplyAndAcknowledgeAcrossDevices() {
+        let now = Date()
+        let optimisticMirror = makeSnapshot(id: "mac", isPlaying: true, currentTime: 120, updatedAt: now)
+        let macPausedAck = makeSnapshot(id: "mac", isPlaying: false, currentTime: 120.2, updatedAt: now.addingTimeInterval(-2))
+
+        #expect(PlaybackCommandReceivePolicy.shouldApplyNormalCommand(
+            action: .pause,
+            targetDeviceID: "mac",
+            localDeviceID: "mac"
+        ) == true)
+        #expect(PlaybackSyncPolicy.shouldPublishRemotePlayback(macPausedAck, current: optimisticMirror) == false)
+        #expect(PendingPlaybackAcknowledgmentPolicy.shouldAcceptAcknowledgingSnapshot(
+            macPausedAck,
+            current: optimisticMirror,
+            action: .pause
+        ) == true)
+    }
+
+    @Test func remoteSeekRoundTripCanApplyAndAcknowledgeAcrossDevices() {
+        let now = Date()
+        let optimisticMirror = makeSnapshot(id: "mac", currentTime: 2, updatedAt: now)
+        let macSeekAck = makeSnapshot(id: "mac", currentTime: 30.5, updatedAt: now.addingTimeInterval(-2))
+
+        #expect(PlaybackCommandReceivePolicy.shouldApplyNormalCommand(
+            action: .seek,
+            targetDeviceID: "mac",
+            localDeviceID: "mac"
+        ) == true)
+        #expect(PendingPlaybackAcknowledgmentPolicy.shouldAcceptAcknowledgingSnapshot(
+            macSeekAck,
+            current: optimisticMirror,
+            action: .seek,
+            expectedTime: 30
+        ) == true)
+    }
+
     @Test func stalePlaybackSnapshotIsRejectedBeforeFingerprintingUnlessItAcknowledgesPendingCommand() {
         let now = Date()
         let current = makeSnapshot(id: "mac", updatedAt: now)
@@ -939,6 +1019,40 @@ struct PlaybackSyncPolicyTests {
         await queue.waitForIdle()
 
         #expect(values == [1, 2, 3])
+    }
+
+    @Test @MainActor func syncDelegateEventQueueWaitForIdleIncludesReentrantEvents() async {
+        let queue = SyncDelegateEventQueue()
+        var values: [Int] = []
+
+        await queue.enqueue {
+            values.append(1)
+            Task {
+                await queue.enqueue {
+                    values.append(3)
+                }
+            }
+        }
+        await queue.enqueue {
+            values.append(2)
+        }
+        await queue.waitForIdle()
+
+        #expect(values == [1, 2, 3])
+    }
+
+    @Test @MainActor func syncDelegateEventQueuePreservesLargeDelegateBurstOrder() async {
+        let queue = SyncDelegateEventQueue()
+        var values: [Int] = []
+
+        for value in 0..<100 {
+            await queue.enqueue {
+                values.append(value)
+            }
+        }
+        await queue.waitForIdle()
+
+        #expect(values == Array(0..<100))
     }
 
     @Test func serialFileWriteQueuePreservesLatestEnqueuedWrite() throws {

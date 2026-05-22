@@ -78,6 +78,12 @@ struct PrebufferRetryPolicy: Sendable {
     }
 }
 
+struct PrebufferPublicationPolicy: Sendable {
+    static func shouldPublishPreparedBuffer(key: String, desiredKeys: Set<String>, activeTaskKeys: Set<String>) -> Bool {
+        desiredKeys.contains(key) && activeTaskKeys.contains(key)
+    }
+}
+
 struct NowPlayingArtworkLoadPolicy: Sendable {
     static func shouldStartLoad(songID: String, inFlightSongID: String?, cachedSongIDs: Set<String>) -> Bool {
         guard !cachedSongIDs.contains(songID) else { return false }
@@ -1016,6 +1022,20 @@ class AudioPlayer: NSObject, ObservableObject {
 
             await MainActor.run { [weak self] in
                 guard let player = self else { return }
+                guard PrebufferPublicationPolicy.shouldPublishPreparedBuffer(
+                    key: key,
+                    desiredKeys: player.desiredPrebufferKeys(),
+                    activeTaskKeys: Set(player.prebufferTasks.keys)
+                ) else {
+                    player.prebufferTasks.removeValue(forKey: key)
+                    player.preparedPrebuffers.removeValue(forKey: key)
+                    player.prebufferURLs.removeValue(forKey: key)
+                    if player.prebufferURL(for: song) == url {
+                        try? FileManager.default.removeItem(at: url)
+                    }
+                    player.updatePrebufferedTrackCount()
+                    return
+                }
                 player.prebufferURLs[key] = prebuffer.url
                 player.preparedPrebuffers[key] = prebuffer
                 player.clearPrebufferRetryState(for: key)
@@ -1042,6 +1062,13 @@ class AudioPlayer: NSObject, ObservableObject {
                 player.schedulePrebufferRetry(for: song, key: key)
             }
         }
+    }
+
+    private func desiredPrebufferKeys() -> Set<String> {
+        let start = currentIndex + 1
+        guard start < queue.count else { return [] }
+        let end = min(queue.count, start + prebufferAheadCount)
+        return Set(queue[start..<end].map(prebufferKey))
     }
 
     private func schedulePrebufferRetry(for song: Song, key: String) {
