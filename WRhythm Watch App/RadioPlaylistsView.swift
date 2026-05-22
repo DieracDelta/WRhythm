@@ -12,8 +12,19 @@ struct RadioPlaylistsView: View {
     @ObservedObject var player = AudioPlayer.shared
 
     var body: some View {
-        List {
-            if player.playlistGenQueue.isEmpty && downloadManager.radioPlaylists.isEmpty {
+        if player.playlistGenQueue.isEmpty && downloadManager.radioPlaylists.isEmpty {
+#if os(iOS)
+            WRhythmScreen {
+                PhoneDetailHeader(title: "Playlist Gen")
+
+                PhonePlaylistGenEmptyView()
+                    .padding(.top, WRhythmSpacing.lg)
+            }
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .navigationBar)
+#else
+            List {
                 WRhythmEmptyState(
                     systemImage: "music.note.list",
                     title: "No Playlist Gen",
@@ -21,29 +32,34 @@ struct RadioPlaylistsView: View {
                 )
                 .listRowBackground(Color.clear)
             }
+            .navigationTitle("Playlist Gen")
+            .wrhythmListSurface()
+#endif
+        } else {
+            List {
+                if !player.playlistGenQueue.isEmpty {
+                    Section("Current Playlist Gen") {
+                        CurrentPlaylistGenSummary()
 
-            if !player.playlistGenQueue.isEmpty {
-                Section("Current Playlist Gen") {
-                    CurrentPlaylistGenSummary()
+                        ForEach(Array(player.playlistGenQueue.enumerated()), id: \.element.id) { index, song in
+                            TrackRowView(song: song, player: player, downloadManager: downloadManager, offlineMode: false) {
+                                player.playQueue(player.playlistGenQueue, startingAt: index, clearGeneratedPlaylist: false)
+                            }
+                        }
+                    }
+                }
 
-                    ForEach(Array(player.playlistGenQueue.enumerated()), id: \.element.id) { index, song in
-                        TrackRowView(song: song, player: player, downloadManager: downloadManager, offlineMode: false) {
-                            player.playQueue(player.playlistGenQueue, startingAt: index, clearGeneratedPlaylist: false)
+                if !downloadManager.radioPlaylists.isEmpty {
+                    Section("Downloaded Playlist Gen") {
+                        ForEach(downloadManager.radioPlaylists) { radio in
+                            RadioPlaylistRow(radio: radio)
                         }
                     }
                 }
             }
-
-            if !downloadManager.radioPlaylists.isEmpty {
-                Section("Downloaded Playlist Gen") {
-                    ForEach(downloadManager.radioPlaylists) { radio in
-                        RadioPlaylistRow(radio: radio)
-                    }
-                }
-            }
+            .navigationTitle("Playlist Gen")
+            .wrhythmListSurface()
         }
-        .navigationTitle("Playlist Gen")
-        .wrhythmListSurface()
     }
 }
 

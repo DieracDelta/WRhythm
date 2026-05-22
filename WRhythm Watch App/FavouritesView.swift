@@ -48,8 +48,22 @@ struct FavouritesView: View {
     }
 
     var body: some View {
+#if os(iOS)
+        VStack(spacing: 0) {
+            PhoneDetailHeader(title: "Favourites")
+                .padding(.horizontal, WRhythmSpacing.md)
+                .padding(.top, WRhythmSpacing.xxl)
+                .padding(.bottom, WRhythmSpacing.xs)
+
+            content
+        }
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .navigationBar)
+#else
         content
             .navigationTitle("Favourites")
+#endif
             .wrhythmPageBackground()
             .onAppear {
                 if !offlineMode && libraryDataManager.starred == nil && !libraryDataManager.isLoadingStarred {
@@ -110,7 +124,14 @@ struct FavouritesView: View {
                     }
                 }
                 .padding()
+#if os(iOS)
+                .padding(.top, WRhythmSpacing.md)
+                .padding(.bottom, WRhythmVisual.bottomNavigationClearance)
+#endif
             }
+#if os(iOS)
+            .scrollIndicators(.hidden)
+#endif
         }
     }
 
@@ -240,7 +261,14 @@ struct FavouritesView: View {
                         }
                     }
                     .padding()
+#if os(iOS)
+                    .padding(.top, WRhythmSpacing.md)
+                    .padding(.bottom, WRhythmVisual.bottomNavigationClearance)
+#endif
                 }
+#if os(iOS)
+                .scrollIndicators(.hidden)
+#endif
             }
         } else {
             // Fallback state - shouldn't normally reach here

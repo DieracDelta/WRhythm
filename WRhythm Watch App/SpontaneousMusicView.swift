@@ -17,6 +17,12 @@ struct SpontaneousMusicView: View {
 
     var body: some View {
         WRhythmScreen {
+#if os(iOS)
+            PhoneDetailHeader()
+                .padding(.top, WRhythmSpacing.xxl)
+                .padding(.bottom, WRhythmSpacing.md)
+#endif
+
             WRhythmFeatureHeader(
                 title: "Spontaneous Music",
                 subtitle: offlineMode ? "Shuffle downloaded songs" : "Shuffle all songs",
@@ -77,7 +83,13 @@ struct SpontaneousMusicView: View {
                 }
             }
         }
+#if os(iOS)
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .navigationBar)
+#else
         .navigationTitle("Spontaneous")
+#endif
     }
 
     private func shuffleAll() {
