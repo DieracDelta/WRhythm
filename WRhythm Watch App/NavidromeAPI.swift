@@ -109,11 +109,13 @@ final class NavidromeAPI: ObservableObject {
     private var password: String
     private var credentialIssuedAt: Date
     private var credentialClearedAt: Date
+    private var credentialSyncAuthorizedAt: Date
 
     private let clientName = "WRhythm"
     private let apiVersion = "1.16.1"
     private static let credentialIssuedAtKey = "navidrome_credentials_issued_at"
     private static let credentialClearedAtKey = "navidrome_credentials_cleared_at"
+    private static let credentialSyncAuthorizedAtKey = "navidrome_credential_sync_authorized_at"
 
     var hasCredentials: Bool {
         !baseURL.isEmpty && !username.isEmpty && !password.isEmpty
@@ -128,6 +130,7 @@ final class NavidromeAPI: ObservableObject {
         let hasSavedCredentials = !baseURL.isEmpty && !username.isEmpty && !password.isEmpty
         self.isAuthenticated = hasSavedCredentials
         self.credentialClearedAt = UserDefaults.standard.object(forKey: Self.credentialClearedAtKey) as? Date ?? .distantPast
+        self.credentialSyncAuthorizedAt = UserDefaults.standard.object(forKey: Self.credentialSyncAuthorizedAtKey) as? Date ?? .distantPast
         if let issuedAt = UserDefaults.standard.object(forKey: Self.credentialIssuedAtKey) as? Date {
             self.credentialIssuedAt = issuedAt
         } else {
@@ -227,6 +230,7 @@ final class NavidromeAPI: ObservableObject {
         UserDefaults.standard.removeObject(forKey: "navidrome_username")
         UserDefaults.standard.removeObject(forKey: "navidrome_password")
         UserDefaults.standard.removeObject(forKey: Self.credentialIssuedAtKey)
+        UserDefaults.standard.removeObject(forKey: Self.credentialSyncAuthorizedAtKey)
         let clearedAt = Date()
         UserDefaults.standard.set(clearedAt, forKey: Self.credentialClearedAtKey)
         print("🔓 Cleared credentials")
@@ -237,7 +241,9 @@ final class NavidromeAPI: ObservableObject {
         self.password = ""
         self.credentialIssuedAt = .distantPast
         self.credentialClearedAt = clearedAt
+        self.credentialSyncAuthorizedAt = .distantPast
         self.isAuthenticated = false
+        DeviceSyncManager.shared.disableCredentialSyncAfterLocalLogout()
         DeviceSyncManager.shared.credentialsDidChange()
 
         // NOTE: radioDownloadCount is preserved (app-level setting)
@@ -257,7 +263,11 @@ final class NavidromeAPI: ObservableObject {
             return false
         }
 
-        guard CredentialSyncPolicy.shouldImport(incomingIssuedAt: credentials.issuedAt, localClearedAt: credentialClearedAt) else {
+        guard CredentialSyncPolicy.shouldImport(
+            incomingIssuedAt: credentials.issuedAt,
+            localClearedAt: credentialClearedAt,
+            credentialSyncAuthorizedAt: credentialSyncAuthorizedAt
+        ) else {
             print("🔐 Skipped stale credential import from before local logout")
             return false
         }
@@ -270,6 +280,14 @@ final class NavidromeAPI: ObservableObject {
         ))
         print("🔐 Imported credentials from a trusted nearby WRhythm device")
         return true
+    }
+
+    func authorizeCredentialImportFromTrustedSync() {
+        guard !hasCredentials, !isAuthenticated else { return }
+        let authorizedAt = Date()
+        credentialSyncAuthorizedAt = authorizedAt
+        UserDefaults.standard.set(authorizedAt, forKey: Self.credentialSyncAuthorizedAtKey)
+        print("🔐 Authorized credential import from trusted sync")
     }
 
     // MARK: - Transcoding Support Check

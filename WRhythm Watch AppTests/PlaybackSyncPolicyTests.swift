@@ -681,6 +681,19 @@ struct PlaybackSyncPolicyTests {
     }
 
     @Test func credentialSyncBootstrapOffersCredentialsWhenLocalDeviceHasThem() {
+        #expect(CredentialSyncBootstrapPolicy.shouldAuthorizeImportOnBootstrap(
+            localCredentialSyncEnabled: true,
+            localHasCredentials: false
+        ) == true)
+        #expect(CredentialSyncBootstrapPolicy.shouldAuthorizeImportOnBootstrap(
+            localCredentialSyncEnabled: false,
+            localHasCredentials: false
+        ) == false)
+        #expect(CredentialSyncBootstrapPolicy.shouldAuthorizeImportOnBootstrap(
+            localCredentialSyncEnabled: true,
+            localHasCredentials: true
+        ) == false)
+
         #expect(CredentialSyncBootstrapPolicy.shouldOfferCredentials(
             localCredentialSyncEnabled: true,
             localHasCredentials: true
@@ -1681,14 +1694,46 @@ struct PlaybackSyncPolicyTests {
         let logoutTime = Date()
         let staleCredentialIssuedAt = logoutTime.addingTimeInterval(-1)
 
-        #expect(CredentialSyncPolicy.shouldImport(incomingIssuedAt: staleCredentialIssuedAt, localClearedAt: logoutTime) == false)
+        #expect(CredentialSyncPolicy.shouldImport(
+            incomingIssuedAt: staleCredentialIssuedAt,
+            localClearedAt: logoutTime,
+            credentialSyncAuthorizedAt: .distantPast
+        ) == false)
     }
 
     @Test func credentialImportAcceptsPayloadIssuedAfterLocalLogout() {
         let logoutTime = Date()
         let freshCredentialIssuedAt = logoutTime.addingTimeInterval(1)
 
-        #expect(CredentialSyncPolicy.shouldImport(incomingIssuedAt: freshCredentialIssuedAt, localClearedAt: logoutTime) == true)
+        #expect(CredentialSyncPolicy.shouldImport(
+            incomingIssuedAt: freshCredentialIssuedAt,
+            localClearedAt: logoutTime,
+            credentialSyncAuthorizedAt: .distantPast
+        ) == true)
+    }
+
+    @Test func credentialImportAcceptsOlderPayloadAfterCredentialSyncOptIn() {
+        let logoutTime = Date()
+        let olderCredentialIssuedAt = logoutTime.addingTimeInterval(-1)
+        let credentialSyncAuthorizedAt = logoutTime.addingTimeInterval(1)
+
+        #expect(CredentialSyncPolicy.shouldImport(
+            incomingIssuedAt: olderCredentialIssuedAt,
+            localClearedAt: logoutTime,
+            credentialSyncAuthorizedAt: credentialSyncAuthorizedAt
+        ) == true)
+    }
+
+    @Test func credentialImportRejectsOlderPayloadWhenSyncOptInPredatesLogout() {
+        let logoutTime = Date()
+        let olderCredentialIssuedAt = logoutTime.addingTimeInterval(-1)
+        let oldCredentialSyncAuthorizedAt = logoutTime.addingTimeInterval(-2)
+
+        #expect(CredentialSyncPolicy.shouldImport(
+            incomingIssuedAt: olderCredentialIssuedAt,
+            localClearedAt: logoutTime,
+            credentialSyncAuthorizedAt: oldCredentialSyncAuthorizedAt
+        ) == false)
     }
 
     @MainActor

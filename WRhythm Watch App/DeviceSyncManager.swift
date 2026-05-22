@@ -223,6 +223,10 @@ struct WatchConnectivitySendFailurePolicy: Sendable {
 }
 
 struct CredentialSyncBootstrapPolicy: Sendable {
+    static func shouldAuthorizeImportOnBootstrap(localCredentialSyncEnabled: Bool, localHasCredentials: Bool) -> Bool {
+        localCredentialSyncEnabled && !localHasCredentials
+    }
+
     static func shouldOfferCredentials(localCredentialSyncEnabled: Bool, localHasCredentials: Bool) -> Bool {
         localCredentialSyncEnabled && localHasCredentials
     }
@@ -416,8 +420,12 @@ struct MultipeerInviteRetryPolicy: Sendable {
 }
 
 struct CredentialSyncPolicy: Sendable {
-    static func shouldImport(incomingIssuedAt: Date, localClearedAt: Date) -> Bool {
-        incomingIssuedAt > localClearedAt
+    static func shouldImport(
+        incomingIssuedAt: Date,
+        localClearedAt: Date,
+        credentialSyncAuthorizedAt: Date
+    ) -> Bool {
+        incomingIssuedAt > localClearedAt || credentialSyncAuthorizedAt > localClearedAt
     }
 }
 
@@ -1101,6 +1109,11 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         didSet {
             UserDefaults.standard.set(credentialSyncEnabled, forKey: Self.credentialSyncKey)
             configureTransports()
+            if credentialSyncEnabled {
+                NavidromeAPI.shared.authorizeCredentialImportFromTrustedSync()
+                requestCredentialsFromPeers()
+                maybeSendCredentialsToInterestedPeers()
+            }
             broadcastHello()
         }
     }
@@ -1227,6 +1240,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         decoder.dateDecodingStrategy = .iso8601
         observePlayback()
         configureTransports()
+        bootstrapCredentialSyncIfNeeded()
     }
 
     nonisolated private static func enqueueDelegateEvent(_ operation: @escaping @MainActor @Sendable () -> Void) {
@@ -1804,10 +1818,16 @@ final class DeviceSyncManager: NSObject, ObservableObject {
 
     func requestCredentialSyncNow() {
         guard credentialSyncEnabled else { return }
+        NavidromeAPI.shared.authorizeCredentialImportFromTrustedSync()
         configureTransports()
         broadcastHello()
         requestCredentialsFromPeers()
         maybeSendCredentialsToInterestedPeers()
+    }
+
+    func disableCredentialSyncAfterLocalLogout() {
+        guard credentialSyncEnabled else { return }
+        credentialSyncEnabled = false
     }
 
 #if os(iOS) || os(watchOS)
@@ -1822,6 +1842,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             credentialSyncEnabled: credentialSyncEnabled,
             localHasCredentials: NavidromeAPI.shared.hasCredentials
         ) {
+            NavidromeAPI.shared.authorizeCredentialImportFromTrustedSync()
             requestCredentialsFromPeers()
         }
     }
@@ -1835,6 +1856,17 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         bootstrapWatchConnectivitySync()
     }
 #endif
+
+    private func bootstrapCredentialSyncIfNeeded() {
+        if CredentialSyncBootstrapPolicy.shouldAuthorizeImportOnBootstrap(
+            localCredentialSyncEnabled: credentialSyncEnabled,
+            localHasCredentials: NavidromeAPI.shared.hasCredentials
+        ) {
+            NavidromeAPI.shared.authorizeCredentialImportFromTrustedSync()
+            requestCredentialsFromPeers()
+        }
+        maybeSendCredentialsToInterestedPeers()
+    }
 
     private func observePlayback() {
         let player = AudioPlayer.shared
