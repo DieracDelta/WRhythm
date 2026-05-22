@@ -23,6 +23,15 @@ struct NowPlayingView: View {
         WatchNowPlayingView()
 #else
         ScrollView {
+#if os(iOS)
+            Text("Now Playing")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 12)
+                .padding(.horizontal, 16)
+#endif
+
             if let remote = primaryRemotePlayback {
                 VStack(spacing: 12) {
                     PlaybackTargetPicker()
@@ -241,7 +250,12 @@ struct NowPlayingView: View {
             }
         }
         .background(WRhythmArtworkBackdrop(coverArtId: primaryArtworkCoverArtId).ignoresSafeArea())
+#if os(iOS)
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
+#else
         .navigationTitle("Now Playing")
+#endif
         .sheet(item: $presentedSheet) { sheet in
             switch sheet {
             case .volume:
