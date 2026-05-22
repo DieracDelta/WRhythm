@@ -447,6 +447,12 @@ struct PlaybackSyncPolicyTests {
         #expect(PlaybackCommandSyncPolicy.explicitActionForToggledPlayback(isPlaying: false) == .play)
     }
 
+    @Test func incomingToggleCommandsAreRejectedAsAmbiguous() {
+        #expect(PlaybackCommandSyncPolicy.shouldApplyIncomingCommand(.toggle) == false)
+        #expect(PlaybackCommandSyncPolicy.shouldApplyIncomingCommand(.play) == true)
+        #expect(PlaybackCommandSyncPolicy.shouldApplyIncomingCommand(.pause) == true)
+    }
+
     @Test func volumeCommandUsesToleranceForAcknowledgment() {
         let now = Date()
         let matchingVolume = makeSnapshot(volume: 0.51, updatedAt: now)
@@ -508,6 +514,10 @@ struct PlaybackSyncPolicyTests {
             existingAction: .seek,
             incomingAction: .seek
         ) == true)
+        #expect(PendingPlaybackCommandPolicy.shouldReplacePendingCommand(
+            existingAction: .pause,
+            incomingAction: .setVolume
+        ) == false)
     }
 
     @Test func incomingOppositePlaybackCommandSupersedesPendingCommand() {
@@ -522,6 +532,10 @@ struct PlaybackSyncPolicyTests {
         #expect(PendingPlaybackCommandPolicy.shouldIncomingCommandSupersedePendingCommand(
             pendingAction: .enqueue,
             incomingAction: .play
+        ) == false)
+        #expect(PendingPlaybackCommandPolicy.shouldIncomingCommandSupersedePendingCommand(
+            pendingAction: .pause,
+            incomingAction: .setVolume
         ) == false)
     }
 
@@ -559,6 +573,14 @@ struct PlaybackSyncPolicyTests {
         ) == false)
     }
 
+    @Test func playbackSnapshotFingerprintNormalizesTransportTimingJitter() {
+        let now = Date()
+        let first = makeSnapshot(currentTime: 42.1, updatedAt: now)
+        let second = makeSnapshot(currentTime: 42.8, updatedAt: now.addingTimeInterval(0.7))
+
+        #expect(PlaybackSnapshotFingerprintPolicy.fingerprint(for: first) == PlaybackSnapshotFingerprintPolicy.fingerprint(for: second))
+    }
+
     @Test func playbackSnapshotFingerprintKeepsOnlyRecentFingerprints() {
         let ids = (0..<505).map { "fingerprint-\($0)" }
         let trimmed = PlaybackSnapshotFingerprintPolicy.trimmedFingerprintOrder(ids)
@@ -588,6 +610,13 @@ struct PlaybackSyncPolicyTests {
             capturedShouldAutoplay: true,
             isCurrentlyPlaying: true
         ) == true)
+    }
+
+    @Test func prebufferRetryBackoffCapsAtThirtySeconds() {
+        #expect(PrebufferRetryPolicy.retryDelay(forAttempt: 0) == 1)
+        #expect(PrebufferRetryPolicy.retryDelay(forAttempt: 1) == 2)
+        #expect(PrebufferRetryPolicy.retryDelay(forAttempt: 5) == 30)
+        #expect(PrebufferRetryPolicy.retryDelay(forAttempt: 20) == 30)
     }
 
     @Test func prebufferSchedulingCountsOnlyPreparedTracksAsReady() {
@@ -660,6 +689,35 @@ struct PlaybackSyncPolicyTests {
         await queue.waitForIdle()
 
         #expect(values == [1, 2, 3])
+    }
+
+    @Test func serialFileWriteQueuePreservesLatestEnqueuedWrite() throws {
+        let queue = SerialFileWriteQueue(label: "WRhythm.Tests.SerialFileWriteQueue")
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("wrhythm-\(UUID().uuidString)")
+            .appendingPathExtension("txt")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        queue.write(Data("first".utf8), to: url, label: "first test write")
+        queue.write(Data("second".utf8), to: url, label: "second test write")
+        queue.waitForIdle()
+
+        let value = try String(contentsOf: url, encoding: .utf8)
+        #expect(value == "second")
+    }
+
+    @Test func downloadProgressStateSerializesProgressUpdates() async {
+        let state = DownloadProgressState()
+
+        let initial = await state.reset(expectedBytes: 100)
+        let first = await state.append(byteCount: 25)
+        let second = await state.append(byteCount: 50)
+
+        #expect(initial.receivedBytes == 0)
+        #expect(first.receivedBytes == 25)
+        #expect(first.progress == 0.25)
+        #expect(second.receivedBytes == 75)
+        #expect(second.progress == 0.75)
     }
 
     @Test func displayPolicyShowsRemoteSharedPlaybackInsteadOfStaleLocalMirror() {

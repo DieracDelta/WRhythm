@@ -12,6 +12,42 @@ private struct DownloadTaskHandle: @unchecked Sendable {
     let task: URLSessionTask
 }
 
+final class SerialFileWriteQueue: @unchecked Sendable {
+    private let queue: DispatchQueue
+
+    nonisolated init(label: String) {
+        self.queue = DispatchQueue(label: label, qos: .utility)
+    }
+
+    nonisolated func write(_ data: Data, to url: URL, label: String) {
+        queue.async {
+            do {
+                try data.write(to: url)
+                print("💾 \(label)")
+            } catch {
+                print("❌ Failed to write \(label): \(error)")
+            }
+        }
+    }
+
+    nonisolated func removeItem(at url: URL, label: String) {
+        queue.async {
+            do {
+                if FileManager.default.fileExists(atPath: url.path) {
+                    try FileManager.default.removeItem(at: url)
+                    print("🗑️ \(label)")
+                }
+            } catch {
+                print("❌ Failed to remove \(label): \(error)")
+            }
+        }
+    }
+
+    nonisolated func waitForIdle() {
+        queue.sync {}
+    }
+}
+
 // MARK: - Audio Quality Settings
 
 enum AudioQuality: Int, CaseIterable, Codable, Sendable {
@@ -144,6 +180,7 @@ struct RadioPlaylist: Codable, Identifiable, Sendable {
 final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     static let shared = DownloadManager()
     private nonisolated static let delegateEventQueue = SyncDelegateEventQueue()
+    private nonisolated static let metadataWriteQueue = SerialFileWriteQueue(label: "WRhythm.DownloadMetadataWrites")
 
     @Published var downloadedSongs: [String: DownloadedSong] = [:]
     @Published var cachedPlaylists: [CachedPlaylist] = []
@@ -318,17 +355,13 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
     }
 
     private func saveMetadata() {
-        // Save on background queue to avoid blocking UI
         let songsToSave = downloadedSongs
         let url = metadataURL
-        DispatchQueue.global(qos: .utility).async {
-            do {
-                let data = try JSONEncoder().encode(songsToSave)
-                try data.write(to: url)
-                print("💾 Saved download metadata")
-            } catch {
-                print("❌ Failed to save download metadata: \(error)")
-            }
+        do {
+            let data = try JSONEncoder().encode(songsToSave)
+            Self.metadataWriteQueue.write(data, to: url, label: "Saved download metadata")
+        } catch {
+            print("❌ Failed to encode download metadata: \(error)")
         }
     }
 
@@ -349,17 +382,13 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
     }
 
     private func saveSongMetadata() {
-        // Save on background queue to avoid blocking UI
         let metadataToSave = songMetadata
         let url = songMetadataURL
-        DispatchQueue.global(qos: .utility).async {
-            do {
-                let data = try JSONEncoder().encode(metadataToSave)
-                try data.write(to: url)
-                print("💾 Saved song metadata (\(metadataToSave.count) entries)")
-            } catch {
-                print("❌ Failed to save song metadata: \(error)")
-            }
+        do {
+            let data = try JSONEncoder().encode(metadataToSave)
+            Self.metadataWriteQueue.write(data, to: url, label: "Saved song metadata (\(metadataToSave.count) entries)")
+        } catch {
+            print("❌ Failed to encode song metadata: \(error)")
         }
     }
 
@@ -525,28 +554,17 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
         // Collect all song IDs that are in queue or actively downloading
         let incompleteIds = downloadQueue.map(\.id) + Array(activeDownloads.keys)
 
-        // Save on background queue to avoid blocking UI
         let url = incompleteDownloadsURL
-        DispatchQueue.global(qos: .utility).async {
-            do {
-                let data = try JSONEncoder().encode(incompleteIds)
-                try data.write(to: url)
-                print("💾 Saved \(incompleteIds.count) incomplete downloads")
-            } catch {
-                print("❌ Failed to save incomplete downloads: \(error)")
-            }
+        do {
+            let data = try JSONEncoder().encode(incompleteIds)
+            Self.metadataWriteQueue.write(data, to: url, label: "Saved \(incompleteIds.count) incomplete downloads")
+        } catch {
+            print("❌ Failed to encode incomplete downloads: \(error)")
         }
     }
 
     private func clearIncompleteDownloads() {
-        do {
-            if fileManager.fileExists(atPath: incompleteDownloadsURL.path) {
-                try fileManager.removeItem(at: incompleteDownloadsURL)
-                print("🗑️ Cleared incomplete downloads")
-            }
-        } catch {
-            print("❌ Failed to clear incomplete downloads: \(error)")
-        }
+        Self.metadataWriteQueue.removeItem(at: incompleteDownloadsURL, label: "Cleared incomplete downloads")
     }
 
     // MARK: - Migration State (Codec Change Recovery)

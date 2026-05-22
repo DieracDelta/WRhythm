@@ -70,6 +70,14 @@ struct PrebufferSchedulingPolicy: Sendable {
     }
 }
 
+struct PrebufferRetryPolicy: Sendable {
+    static let maxRetryDelay: TimeInterval = 30
+
+    static func retryDelay(forAttempt attempt: Int) -> TimeInterval {
+        min(pow(2.0, Double(max(0, attempt))), maxRetryDelay)
+    }
+}
+
 @MainActor
 class AudioPlayer: NSObject, ObservableObject {
     static let shared = AudioPlayer()
@@ -161,7 +169,8 @@ class AudioPlayer: NSObject, ObservableObject {
     private var playbackIntentRevision = 0
     private let maxPlaybackRetryAttempts = 4
     private let maxPlaybackRetryBackoff: TimeInterval = 30
-    private var failedPrebufferKeys = Set<String>()
+    private var prebufferRetryAttemptsByKey: [String: Int] = [:]
+    private var prebufferRetryTasksByKey: [String: Task<Void, Never>] = [:]
 #if os(macOS)
     private var mediaKeyMonitors: [Any] = []
     private var mediaKeyEventTap: CFMachPort?
@@ -204,6 +213,12 @@ class AudioPlayer: NSObject, ObservableObject {
 
     private func recordPlaybackIntentChange() {
         playbackIntentRevision += 1
+    }
+
+    private func recordQueueIntentChange() {
+        recordPlaybackIntentChange()
+        playbackRetryTask?.cancel()
+        playbackRetryTask = nil
     }
 
     func persistPlaybackStateNow() {
@@ -593,6 +608,7 @@ class AudioPlayer: NSObject, ObservableObject {
         if DeviceSyncManager.shared.routePlaybackRequestToConnectedDevice([song], startingAt: 0) {
             return
         }
+        recordQueueIntentChange()
         self.queue = [song]
         self.currentIndex = 0
         startPlayback(song)
@@ -608,6 +624,7 @@ class AudioPlayer: NSObject, ObservableObject {
             return
         }
 
+        recordQueueIntentChange()
         self.isShuffled = false
         self.originalQueue = []
         self.queue = songs
@@ -642,6 +659,7 @@ class AudioPlayer: NSObject, ObservableObject {
             return
         }
 
+        recordQueueIntentChange()
         self.isShuffled = true
         self.originalQueue = songs
         self.originalIndex = 0
@@ -707,6 +725,7 @@ class AudioPlayer: NSObject, ObservableObject {
             return
         }
 
+        recordQueueIntentChange()
         let appendedStartIndex = queue.count
         let shouldStartAppendedSongs = queueFinished || currentSong == nil
         queue.append(contentsOf: songs)
@@ -719,6 +738,7 @@ class AudioPlayer: NSObject, ObservableObject {
 
     func mirrorQueueWithoutPlayback(_ songs: [Song], currentIndex index: Int, currentTime: TimeInterval = 0) {
         guard !songs.isEmpty else { return }
+        recordQueueIntentChange()
         let safeIndex = min(max(index, 0), songs.count - 1)
         player.pause()
         player.replaceCurrentItem(with: nil)
@@ -881,7 +901,7 @@ class AudioPlayer: NSObject, ObservableObject {
             prebufferTasks.values.forEach { $0.cancel() }
             prebufferTasks.removeAll()
             preparedPrebuffers.removeAll()
-            failedPrebufferKeys.removeAll()
+            clearPrebufferRetryState()
             updatePrebufferedTrackCount()
             return
         }
@@ -891,7 +911,7 @@ class AudioPlayer: NSObject, ObservableObject {
             prebufferTasks.values.forEach { $0.cancel() }
             prebufferTasks.removeAll()
             preparedPrebuffers.removeAll()
-            failedPrebufferKeys.removeAll()
+            clearPrebufferRetryState()
             updatePrebufferedTrackCount()
             return
         }
@@ -912,7 +932,7 @@ class AudioPlayer: NSObject, ObservableObject {
         for key in Array(preparedPrebuffers.keys) where !desiredKeys.contains(key) {
             preparedPrebuffers.removeValue(forKey: key)
         }
-        failedPrebufferKeys = failedPrebufferKeys.intersection(desiredKeys)
+        prunePrebufferRetryState(keeping: desiredKeys)
 
         prunePrebufferCache(keeping: desiredKeys.union(currentSongKey.map { [$0] } ?? []))
         updatePrebufferedTrackCount()
@@ -921,7 +941,7 @@ class AudioPlayer: NSObject, ObservableObject {
             upcomingKeys: upcomingKeys,
             activeKeys: Set(prebufferTasks.keys),
             preparedKeys: Set(preparedPrebuffers.keys),
-            failedKeys: failedPrebufferKeys,
+            failedKeys: Set(prebufferRetryTasksByKey.keys),
             maxConcurrentTasks: maxConcurrentPrebuffers
         )
 
@@ -962,10 +982,9 @@ class AudioPlayer: NSObject, ObservableObject {
                 await MainActor.run { [weak self] in
                     guard let player = self else { return }
                     player.prebufferTasks.removeValue(forKey: key)
-                    player.failedPrebufferKeys.insert(key)
                     player.updatePrebufferedTrackCount()
                     print("⚠️ Failed to prebuffer \(song.title): \(error)")
-                    player.scheduleQueuePrebuffer()
+                    player.schedulePrebufferRetry(for: song, key: key)
                 }
             }
         }
@@ -986,7 +1005,7 @@ class AudioPlayer: NSObject, ObservableObject {
                 guard let player = self else { return }
                 player.prebufferURLs[key] = prebuffer.url
                 player.preparedPrebuffers[key] = prebuffer
-                player.failedPrebufferKeys.remove(key)
+                player.clearPrebufferRetryState(for: key)
                 player.prebufferTasks.removeValue(forKey: key)
                 player.updatePrebufferedTrackCount()
                 print("✅ Prebuffered and prepared next queue item: \(song.title)")
@@ -1004,12 +1023,56 @@ class AudioPlayer: NSObject, ObservableObject {
                 player.prebufferTasks.removeValue(forKey: key)
                 player.preparedPrebuffers.removeValue(forKey: key)
                 player.prebufferURLs.removeValue(forKey: key)
-                player.failedPrebufferKeys.insert(key)
                 try? FileManager.default.removeItem(at: url)
                 player.updatePrebufferedTrackCount()
                 print("⚠️ Failed to prepare prebuffered file for \(song.title): \(error)")
-                player.scheduleQueuePrebuffer()
+                player.schedulePrebufferRetry(for: song, key: key)
             }
+        }
+    }
+
+    private func schedulePrebufferRetry(for song: Song, key: String) {
+        guard prebufferRetryTasksByKey[key] == nil else { return }
+        let start = currentIndex + 1
+        guard start < queue.count,
+              queue[start..<queue.count].prefix(prebufferAheadCount).contains(where: { prebufferKey(for: $0) == key }) else {
+            return
+        }
+
+        let attempt = prebufferRetryAttemptsByKey[key, default: 0]
+        let delay = PrebufferRetryPolicy.retryDelay(forAttempt: attempt)
+        prebufferRetryAttemptsByKey[key] = attempt + 1
+        print("⏳ Retrying prebuffer for \(song.title) in \(Int(delay))s (attempt \(attempt + 1))")
+
+        prebufferRetryTasksByKey[key] = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled, let self else { return }
+            self.prebufferRetryTasksByKey.removeValue(forKey: key)
+            self.scheduleQueuePrebuffer()
+        }
+    }
+
+    private func clearPrebufferRetryState(for key: String) {
+        prebufferRetryAttemptsByKey.removeValue(forKey: key)
+        prebufferRetryTasksByKey.removeValue(forKey: key)?.cancel()
+    }
+
+    private func clearPrebufferRetryState() {
+        prebufferRetryTasksByKey.values.forEach { $0.cancel() }
+        prebufferRetryTasksByKey.removeAll()
+        prebufferRetryAttemptsByKey.removeAll()
+    }
+
+    private func prunePrebufferRetryState(keeping desiredKeys: Set<String>) {
+        for key in Array(prebufferRetryAttemptsByKey.keys) where !desiredKeys.contains(key) {
+            prebufferRetryAttemptsByKey.removeValue(forKey: key)
+        }
+        for key in Array(prebufferRetryTasksByKey.keys) where !desiredKeys.contains(key) {
+            prebufferRetryTasksByKey.removeValue(forKey: key)?.cancel()
         }
     }
 
@@ -1102,7 +1165,7 @@ class AudioPlayer: NSObject, ObservableObject {
         let prebufferKey = prebufferKey(for: song)
         prebufferTasks[prebufferKey]?.cancel()
         prebufferTasks.removeValue(forKey: prebufferKey)
-        failedPrebufferKeys.remove(prebufferKey)
+        clearPrebufferRetryState(for: prebufferKey)
 
         if let prebuffer = preparedPrebuffer(for: song) {
             playURL = prebuffer.url
@@ -1250,6 +1313,7 @@ class AudioPlayer: NSObject, ObservableObject {
             return
         }
         guard currentIndex < queue.count - 1 else { return }
+        recordQueueIntentChange()
         currentIndex += 1
         startPlayback(queue[currentIndex])
     }
@@ -1262,6 +1326,7 @@ class AudioPlayer: NSObject, ObservableObject {
         if currentTime > 3 {
             seek(to: 0)
         } else if currentIndex > 0 {
+            recordQueueIntentChange()
             currentIndex -= 1
             startPlayback(queue[currentIndex])
         } else {

@@ -11,6 +11,31 @@ import Combine
 
 typealias DownloadProgressHandler = @MainActor @Sendable (Double, Int64, Int64) -> Void
 
+actor DownloadProgressState {
+    private var expectedBytes: Int64 = 0
+    private var receivedBytes: Int64 = 0
+
+    func reset(expectedBytes: Int64) -> (progress: Double, receivedBytes: Int64, expectedBytes: Int64) {
+        self.expectedBytes = expectedBytes
+        self.receivedBytes = 0
+        return (0, 0, expectedBytes)
+    }
+
+    func append(byteCount: Int) -> (progress: Double, receivedBytes: Int64, expectedBytes: Int64) {
+        receivedBytes += Int64(byteCount)
+        let progress = expectedBytes > 0 ? Double(receivedBytes) / Double(expectedBytes) : 0
+        return (progress, receivedBytes, expectedBytes)
+    }
+}
+
+private struct DownloadResponseCompletion: @unchecked Sendable {
+    let handler: (URLSession.ResponseDisposition) -> Void
+
+    func callAsFunction(_ disposition: URLSession.ResponseDisposition) {
+        handler(disposition)
+    }
+}
+
 final class DownloadProgressDelegate: NSObject, URLSessionDataDelegate, @unchecked Sendable {
     private let progressHandler: DownloadProgressHandler
     private let delegateQueue: OperationQueue = {
@@ -19,35 +44,31 @@ final class DownloadProgressDelegate: NSObject, URLSessionDataDelegate, @uncheck
         queue.maxConcurrentOperationCount = 1
         return queue
     }()
-    private var expectedBytes: Int64 = 0
-    private var receivedBytes: Int64 = 0
-    private var receivedData = Data()
-    private var urlResponse: URLResponse?
+    private let state = DownloadProgressState()
 
     init(progressHandler: @escaping DownloadProgressHandler) {
         self.progressHandler = progressHandler
     }
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
-        urlResponse = response
-        expectedBytes = response.expectedContentLength
+        let expectedBytes = response.expectedContentLength
+        let completion = DownloadResponseCompletion(handler: completionHandler)
         print("📊 Expected bytes: \(expectedBytes)")
-        let expectedBytes = expectedBytes
-        Task { @MainActor [progressHandler] in
-            progressHandler(0, 0, expectedBytes)
+        Task { [state, progressHandler, completion] in
+            let update = await state.reset(expectedBytes: expectedBytes)
+            await progressHandler(update.progress, update.receivedBytes, update.expectedBytes)
+            await MainActor.run {
+                completion(.allow)
+            }
         }
-        completionHandler(.allow)
     }
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-        receivedData.append(data)
-        receivedBytes += Int64(data.count)
-        let progress = expectedBytes > 0 ? Double(receivedBytes) / Double(expectedBytes) : 0
-        print("📊 Progress: \(receivedBytes)/\(expectedBytes) = \(Int(progress * 100))%")
-        let receivedBytes = receivedBytes
-        let expectedBytes = expectedBytes
-        Task { @MainActor [progressHandler] in
-            progressHandler(progress, receivedBytes, expectedBytes)
+        let byteCount = data.count
+        Task { [state, progressHandler] in
+            let update = await state.append(byteCount: byteCount)
+            print("📊 Progress: \(update.receivedBytes)/\(update.expectedBytes) = \(Int(update.progress * 100))%")
+            await progressHandler(update.progress, update.receivedBytes, update.expectedBytes)
         }
     }
 
@@ -55,6 +76,7 @@ final class DownloadProgressDelegate: NSObject, URLSessionDataDelegate, @uncheck
         return try await withCheckedThrowingContinuation { continuation in
             let session = URLSession(configuration: .default, delegate: self, delegateQueue: delegateQueue)
             let task = session.dataTask(with: request) { data, response, error in
+                defer { session.finishTasksAndInvalidate() }
                 print("📊 Download completed - data: \(data?.count ?? 0) bytes, response: \(response != nil), error: \(error?.localizedDescription ?? "none")")
 
                 if let error = error {
