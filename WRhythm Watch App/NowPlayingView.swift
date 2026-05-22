@@ -1009,23 +1009,29 @@ struct PlaybackTargetPicker: View {
     var body: some View {
         if deviceSyncManager.syncModeEnabled {
             let targets = deviceSyncManager.availablePlaybackTargets
-            Picker(
-                "Play On",
-                selection: Binding(
-                    get: { deviceSyncManager.validSelectedPlaybackTargetID },
-                    set: { deviceSyncManager.selectPlaybackTarget($0) }
-                )
-            ) {
-                ForEach(targets) { target in
-                    Label(target.displayName, systemImage: target.iconName)
-                        .tag(target.id)
+            let selectedID = deviceSyncManager.validSelectedPlaybackTargetID
+            let selectedTarget = targets.first(where: { $0.id == selectedID })
+
+            Group {
+                #if os(watchOS)
+                NavigationLink {
+                    List {
+                        targetButtons(targets)
+                    }
+                    .navigationTitle("Play On")
+                } label: {
+                    targetLabel(selectedTarget)
                 }
+                .buttonStyle(.plain)
+                #else
+                Menu {
+                    targetButtons(targets)
+                } label: {
+                    targetLabel(selectedTarget)
+                }
+                .buttonStyle(.plain)
+                #endif
             }
-            #if os(watchOS)
-            .pickerStyle(.navigationLink)
-            #else
-            .pickerStyle(.menu)
-            #endif
             .font(.caption)
             .onAppear {
                 Task { @MainActor in
@@ -1038,6 +1044,30 @@ struct PlaybackTargetPicker: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func targetButtons(_ targets: [PlaybackTargetDevice]) -> some View {
+        ForEach(targets) { target in
+            Button {
+                deviceSyncManager.selectPlaybackTarget(target.id)
+            } label: {
+                Label(target.displayName, systemImage: target.iconName)
+            }
+        }
+    }
+
+    private func targetLabel(_ selectedTarget: PlaybackTargetDevice?) -> some View {
+        HStack(spacing: WRhythmSpacing.xs) {
+            Image(systemName: selectedTarget?.iconName ?? "speaker.wave.2")
+            Text(selectedTarget?.displayName ?? "This Device")
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Image(systemName: "chevron.up.chevron.down")
+                .imageScale(.small)
+                .foregroundStyle(.secondary)
+        }
+        .contentShape(Capsule())
     }
 }
 
