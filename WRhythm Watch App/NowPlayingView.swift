@@ -445,10 +445,14 @@ struct PlaybackTargetPicker: View {
             #endif
             .font(.caption)
             .onAppear {
-                deviceSyncManager.validateSelectedPlaybackTarget()
+                Task { @MainActor in
+                    deviceSyncManager.validateSelectedPlaybackTarget()
+                }
             }
             .onChange(of: targets.map(\.id)) { _, _ in
-                deviceSyncManager.validateSelectedPlaybackTarget()
+                Task { @MainActor in
+                    deviceSyncManager.validateSelectedPlaybackTarget()
+                }
             }
         }
     }

@@ -745,6 +745,18 @@ struct LocalPlaybackPublicationPolicy: Sendable {
     }
 }
 
+struct SyncStateRefreshPublicationPolicy: Sendable {
+    static func shouldPublishLocalPlayback(
+        sharedOutputDeviceID: String?,
+        localDeviceID: String,
+        hasLocalPlayback: Bool
+    ) -> Bool {
+        guard hasLocalPlayback else { return false }
+        guard let sharedOutputDeviceID else { return true }
+        return sharedOutputDeviceID == localDeviceID
+    }
+}
+
 struct LocalPlaybackPublicationPositionPolicy: Sendable {
     static let liveTimeTolerance: TimeInterval = 1
 
@@ -1593,7 +1605,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         publishSharedSession(makeSession(
             queue: queue,
             currentIndex: index,
-            position: player.liveCurrentTime,
+            position: localPlaybackPublishedPosition(queue: queue, currentIndex: index),
             isPlaying: player.isPlaying,
             outputDeviceID: targetID
         ))
@@ -1619,22 +1631,27 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         ) else { return }
         let queue = player.queue.isEmpty ? player.currentSong.map { [$0] } ?? [] : player.queue
         guard !queue.isEmpty else { return }
-        let position = LocalPlaybackPublicationPositionPolicy.publishedPosition(
+        let currentIndex = min(player.currentIndex, queue.count - 1)
+        publishSharedSession(makeSession(
+            queue: queue,
+            currentIndex: currentIndex,
+            position: localPlaybackPublishedPosition(queue: queue, currentIndex: currentIndex),
+            isPlaying: isPlaying,
+            outputDeviceID: localDeviceID,
+            volume: player.volume
+        ), applyLocally: false)
+    }
+
+    private func localPlaybackPublishedPosition(queue: [Song], currentIndex: Int) -> TimeInterval {
+        let player = AudioPlayer.shared
+        return LocalPlaybackPublicationPositionPolicy.publishedPosition(
             playerLiveTime: player.liveCurrentTime,
             logicalCurrentTime: player.currentTime,
             previousSession: sharedSession,
             queueIDs: queue.map(\.id),
             currentSongID: player.currentSong?.id,
-            currentIndex: min(player.currentIndex, queue.count - 1)
+            currentIndex: currentIndex
         )
-        publishSharedSession(makeSession(
-            queue: queue,
-            currentIndex: min(player.currentIndex, queue.count - 1),
-            position: position,
-            isPlaying: isPlaying,
-            outputDeviceID: localDeviceID,
-            volume: player.volume
-        ), applyLocally: false)
     }
 
     func credentialsDidChange() {
@@ -1731,16 +1748,20 @@ final class DeviceSyncManager: NSObject, ObservableObject {
 
     private func refreshLocalSharedSessionIfNeeded() {
         guard syncModeEnabled, !isApplyingRemoteCommand else { return }
-        guard sharedSession?.outputDeviceID == localDeviceID else { return }
 
         let player = AudioPlayer.shared
         let queue = player.queue.isEmpty ? player.currentSong.map { [$0] } ?? [] : player.queue
-        guard !queue.isEmpty else { return }
+        let currentIndex = min(player.currentIndex, queue.count - 1)
+        guard SyncStateRefreshPublicationPolicy.shouldPublishLocalPlayback(
+            sharedOutputDeviceID: sharedSession?.outputDeviceID,
+            localDeviceID: localDeviceID,
+            hasLocalPlayback: !queue.isEmpty
+        ) else { return }
 
         publishSharedSession(makeSession(
             queue: queue,
-            currentIndex: min(player.currentIndex, queue.count - 1),
-            position: player.liveCurrentTime,
+            currentIndex: currentIndex,
+            position: localPlaybackPublishedPosition(queue: queue, currentIndex: currentIndex),
             isPlaying: player.isPlaying,
             outputDeviceID: localDeviceID,
             volume: player.volume

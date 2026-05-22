@@ -111,6 +111,22 @@ struct PlaybackSyncPolicyTests {
         #expect(PlaybackSessionSyncPolicy.shouldApply(staleSession, over: freshSession) == false)
     }
 
+    @Test func reconnectBootstrapPublishesLocalPlaybackWithoutExistingSharedSession() {
+        #expect(SyncStateRefreshPublicationPolicy.shouldPublishLocalPlayback(
+            sharedOutputDeviceID: nil,
+            localDeviceID: "mac",
+            hasLocalPlayback: true
+        ) == true)
+    }
+
+    @Test func reconnectBootstrapDoesNotPublishLocalPlaybackOverActiveRemoteOwner() {
+        #expect(SyncStateRefreshPublicationPolicy.shouldPublishLocalPlayback(
+            sharedOutputDeviceID: "iphone",
+            localDeviceID: "mac",
+            hasLocalPlayback: true
+        ) == false)
+    }
+
     @Test func sameRevisionSessionUsesTimestampThenDeviceIDTieBreaker() {
         let now = Date()
         let current = makeSession(revision: 4, updatedAt: now, updatedByDeviceID: "iphone")
@@ -411,6 +427,27 @@ struct PlaybackSyncPolicyTests {
             currentSongID: song.id,
             currentIndex: 0
         ) == 93)
+    }
+
+    @Test func localPlaybackPublicationUsesLogicalZeroWhenPreviousRestartsCurrentTrack() {
+        let song = makeSong(id: "song-1")
+        let previousSession = makeSession(
+            songs: [song],
+            currentIndex: 0,
+            outputDeviceID: "mac",
+            isPlaying: true,
+            position: 93,
+            updatedAt: Date()
+        )
+
+        #expect(LocalPlaybackPublicationPositionPolicy.publishedPosition(
+            playerLiveTime: 93,
+            logicalCurrentTime: 0,
+            previousSession: previousSession,
+            queueIDs: [song.id],
+            currentSongID: song.id,
+            currentIndex: 0
+        ) == 0)
     }
 
     @Test func localPlaybackTelemetryPublishesActualStateWithoutIntentOverride() {
