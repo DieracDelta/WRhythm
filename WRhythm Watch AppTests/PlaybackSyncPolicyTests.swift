@@ -173,6 +173,23 @@ struct PlaybackSyncPolicyTests {
         ) == false)
     }
 
+    @Test func explicitLocalPauseIntentBypassesStaleRemoteOwnerSuppression() {
+        let now = Date()
+        let previous = makeSnapshot(id: "iphone", isPlaying: true, currentTime: 42, updatedAt: now.addingTimeInterval(-2))
+        let paused = makeSnapshot(id: "iphone", isPlaying: false, currentTime: 42, updatedAt: now)
+
+        #expect(PlaybackStateBroadcastPolicy.shouldBroadcast(
+            snapshot: paused,
+            previousSnapshot: previous,
+            lastBroadcastAt: now,
+            now: now,
+            force: true,
+            sharedOutputDeviceID: "mac",
+            isExplicitLocalPlaybackIntent: true,
+            localDeviceID: "iphone"
+        ) == true)
+    }
+
     @Test func localPlayingSnapshotCanClaimPlaybackFromStaleRemoteSharedOutput() {
         let now = Date()
         let previous = makeSnapshot(id: "iphone", isPlaying: false, currentTime: 42, updatedAt: now.addingTimeInterval(-2))
@@ -394,6 +411,15 @@ struct PlaybackSyncPolicyTests {
             localDeviceID: "iphone",
             isLocalPlaying: false
         ) == false)
+    }
+
+    @Test func explicitLocalPauseIntentCanClaimOwnershipFromStaleRemoteOwner() {
+        #expect(LocalPlaybackOwnershipPolicy.shouldPublishLocalPlayback(
+            sharedOutputDeviceID: "mac",
+            localDeviceID: "iphone",
+            isLocalPlaying: false,
+            isExplicitLocalPlaybackIntent: true
+        ) == true)
     }
 
     @Test(arguments: [

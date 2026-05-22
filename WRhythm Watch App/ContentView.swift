@@ -391,7 +391,7 @@ struct MacMiniPlayerBar: View {
                     prebufferedTrackCount: player.prebufferedTrackCount,
                     queuePosition: player.queue.count > 1 ? "\(localLabel): \(player.currentIndex + 1) of \(player.queue.count)" : localLabel,
                     previous: player.previous,
-                    toggle: player.togglePlayPause,
+                    toggle: { deviceSyncManager.setPlaying(!player.isPlaying, targetDeviceID: deviceSyncManager.localPlaybackTargetID) },
                     next: player.next,
                     currentTime: { player.currentTime },
                     duration: player.duration,

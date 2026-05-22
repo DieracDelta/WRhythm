@@ -992,10 +992,11 @@ struct LocalPlaybackOwnershipPolicy: Sendable {
     static func shouldPublishLocalPlayback(
         sharedOutputDeviceID: String?,
         localDeviceID: String,
-        isLocalPlaying: Bool
+        isLocalPlaying: Bool,
+        isExplicitLocalPlaybackIntent: Bool = false
     ) -> Bool {
         guard let sharedOutputDeviceID else { return true }
-        return sharedOutputDeviceID == localDeviceID || isLocalPlaying
+        return sharedOutputDeviceID == localDeviceID || isLocalPlaying || isExplicitLocalPlaybackIntent
     }
 }
 
@@ -1011,13 +1012,15 @@ struct PlaybackStateBroadcastPolicy: Sendable {
         syncModeEnabled: Bool = true,
         isApplyingRemoteCommand: Bool = false,
         sharedOutputDeviceID: String? = nil,
+        isExplicitLocalPlaybackIntent: Bool = false,
         localDeviceID: String
     ) -> Bool {
         guard syncModeEnabled, !isApplyingRemoteCommand else { return false }
         guard LocalPlaybackOwnershipPolicy.shouldPublishLocalPlayback(
             sharedOutputDeviceID: sharedOutputDeviceID,
             localDeviceID: localDeviceID,
-            isLocalPlaying: snapshot.isPlaying
+            isLocalPlaying: snapshot.isPlaying,
+            isExplicitLocalPlaybackIntent: isExplicitLocalPlaybackIntent
         ) else { return false }
         if force { return true }
         guard let previousSnapshot else { return true }
@@ -1443,6 +1446,10 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         availablePlaybackTargets.first(where: { $0.id == validSelectedPlaybackTargetID })?.displayName ?? "This \(platformName)"
     }
 
+    var localPlaybackTargetID: String {
+        localDeviceID
+    }
+
     var validSelectedPlaybackTargetID: String {
         availablePlaybackTargets.contains(where: { $0.id == selectedPlaybackTargetID }) ? selectedPlaybackTargetID : localDeviceID
     }
@@ -1712,8 +1719,8 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             } else {
                 AudioPlayer.shared.pause()
             }
-            broadcastLocalQueueAsShared()
-            broadcastPlaybackState(force: true)
+            broadcastLocalQueueAsShared(isExplicitLocalPlaybackIntent: true)
+            broadcastPlaybackState(force: true, isExplicitLocalPlaybackIntent: true)
             return
         }
 
@@ -1890,13 +1897,14 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         ))
     }
 
-    func broadcastLocalQueueAsShared() {
+    func broadcastLocalQueueAsShared(isExplicitLocalPlaybackIntent: Bool = false) {
         guard syncModeEnabled, !isApplyingRemoteCommand else { return }
         let player = AudioPlayer.shared
         guard LocalPlaybackOwnershipPolicy.shouldPublishLocalPlayback(
             sharedOutputDeviceID: sharedSession?.outputDeviceID,
             localDeviceID: localDeviceID,
-            isLocalPlaying: player.isPlaying
+            isLocalPlaying: player.isPlaying,
+            isExplicitLocalPlaybackIntent: isExplicitLocalPlaybackIntent
         ) else { return }
         let queue = player.queue.isEmpty ? player.currentSong.map { [$0] } ?? [] : player.queue
         guard !queue.isEmpty else { return }
@@ -2086,7 +2094,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         }
     }
 
-    private func broadcastPlaybackState(force: Bool = false) {
+    private func broadcastPlaybackState(force: Bool = false, isExplicitLocalPlaybackIntent: Bool = false) {
         let now = Date()
         let snapshot = localPlaybackSnapshot()
         guard PlaybackStateBroadcastPolicy.shouldBroadcast(
@@ -2098,6 +2106,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             syncModeEnabled: syncModeEnabled,
             isApplyingRemoteCommand: isApplyingRemoteCommand,
             sharedOutputDeviceID: sharedSession?.outputDeviceID,
+            isExplicitLocalPlaybackIntent: isExplicitLocalPlaybackIntent,
             localDeviceID: localDeviceID
         ) else { return }
 

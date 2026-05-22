@@ -444,7 +444,7 @@ class AudioPlayer: NSObject, ObservableObject {
             }
 #else
             Task { @MainActor in
-                AudioPlayer.shared.play()
+                PlaybackKeyboardActions.setLocalPlaying(true)
             }
 #endif
             return .success
@@ -457,7 +457,7 @@ class AudioPlayer: NSObject, ObservableObject {
             }
 #else
             Task { @MainActor in
-                AudioPlayer.shared.pause()
+                PlaybackKeyboardActions.setLocalPlaying(false)
             }
 #endif
             return .success
@@ -470,7 +470,7 @@ class AudioPlayer: NSObject, ObservableObject {
             }
 #else
             Task { @MainActor in
-                AudioPlayer.shared.togglePlayPause()
+                PlaybackKeyboardActions.toggleLocalPlayback()
             }
 #endif
             return .success

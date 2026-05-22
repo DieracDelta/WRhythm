@@ -67,6 +67,7 @@ struct PlaybackKeyboardCommands: Commands {
         }
     }
 }
+#endif
 
 enum PlaybackKeyboardActions {
     @MainActor
@@ -79,6 +80,18 @@ enum PlaybackKeyboardActions {
         let manager = DeviceSyncManager.shared
         manager.validateSelectedPlaybackTarget()
         manager.setPlaying(isPlaying, targetDeviceID: manager.validSelectedPlaybackTargetID)
+    }
+
+    @MainActor
+    static func setLocalPlaying(_ isPlaying: Bool) {
+        let manager = DeviceSyncManager.shared
+        manager.setPlaying(isPlaying, targetDeviceID: manager.localPlaybackTargetID)
+    }
+
+    @MainActor
+    static func toggleLocalPlayback() {
+        let manager = DeviceSyncManager.shared
+        manager.setPlaying(!AudioPlayer.shared.isPlaying, targetDeviceID: manager.localPlaybackTargetID)
     }
 
     @MainActor
@@ -164,4 +177,3 @@ enum PlaybackKeyboardActions {
         return AudioPlayer.shared.currentSong ?? manager.activeSharedPlayback?.song ?? manager.remotePlayback?.song
     }
 }
-#endif
