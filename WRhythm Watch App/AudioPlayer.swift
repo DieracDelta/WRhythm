@@ -80,9 +80,13 @@ class AudioPlayer: NSObject, ObservableObject {
         let updatedAt: Date
     }
 
-    private struct PreparedPrebuffer {
+    private struct PreparedPrebuffer: @unchecked Sendable {
         let url: URL
         let asset: AVURLAsset
+    }
+
+    private enum PrebufferPreparationError: Error {
+        case notPlayable
     }
 
     private static let persistedPlaybackStateKey = "audioPlayerPersistedPlaybackState.v1"
@@ -770,7 +774,7 @@ class AudioPlayer: NSObject, ObservableObject {
         preparedPrebuffer(for: song) != nil
     }
 
-    private func playbackMimeType(for song: Song, url: URL) -> String? {
+    private nonisolated static func playbackMimeType(contentType: String?, url: URL) -> String? {
         switch url.pathExtension.lowercased() {
         case "mp3":
             return "audio/mpeg"
@@ -783,13 +787,17 @@ class AudioPlayer: NSObject, ObservableObject {
         case "aiff", "aif":
             return "audio/aiff"
         default:
-            return song.contentType
+            return contentType
         }
     }
 
-    private func playbackAssetOptions(for song: Song, url: URL) -> [String: Any] {
+    private func playbackMimeType(for song: Song, url: URL) -> String? {
+        Self.playbackMimeType(contentType: song.contentType, url: url)
+    }
+
+    private nonisolated static func playbackAssetOptions(contentType: String?, url: URL) -> [String: Any] {
         var assetOptions: [String: Any] = [:]
-        if let contentType = playbackMimeType(for: song, url: url) {
+        if let contentType = playbackMimeType(contentType: contentType, url: url) {
             let fixedContentType = contentType == "audio/x-flac" ? "audio/flac" : contentType
             assetOptions["AVURLAssetOutOfBandMIMETypeKey"] = fixedContentType
 
@@ -800,8 +808,20 @@ class AudioPlayer: NSObject, ObservableObject {
         return assetOptions
     }
 
+    private func playbackAssetOptions(for song: Song, url: URL) -> [String: Any] {
+        Self.playbackAssetOptions(contentType: song.contentType, url: url)
+    }
+
     private func makePlaybackAsset(for song: Song, url: URL) -> AVURLAsset {
         AVURLAsset(url: url, options: playbackAssetOptions(for: song, url: url))
+    }
+
+    private nonisolated static func preparePrebufferAsset(for song: Song, url: URL) async throws -> PreparedPrebuffer {
+        let asset = AVURLAsset(url: url, options: playbackAssetOptions(contentType: song.contentType, url: url))
+        let isPlayable = try await asset.load(.isPlayable)
+        _ = try? await asset.load(.duration)
+        guard isPlayable else { throw PrebufferPreparationError.notPlayable }
+        return PreparedPrebuffer(url: url, asset: asset)
     }
 
     private func scheduleQueuePrebuffer() {
@@ -895,23 +915,13 @@ class AudioPlayer: NSObject, ObservableObject {
 
     private func prepareDownloadedPrebuffer(_ song: Song, key: String, url: URL) async {
         do {
-            let asset = makePlaybackAsset(for: song, url: url)
-            let isPlayable = try await asset.load(.isPlayable)
-            _ = try? await asset.load(.duration)
+            let prebuffer = try await Self.preparePrebufferAsset(for: song, url: url)
             try Task.checkCancellation()
 
             await MainActor.run { [weak self] in
                 guard let player = self else { return }
-                guard isPlayable else {
-                    player.prebufferTasks.removeValue(forKey: key)
-                    player.prebufferURLs.removeValue(forKey: key)
-                    try? FileManager.default.removeItem(at: url)
-                    player.updatePrebufferedTrackCount()
-                    print("⚠️ Prebuffered file is not playable: \(song.title)")
-                    return
-                }
-                player.prebufferURLs[key] = url
-                player.preparedPrebuffers[key] = PreparedPrebuffer(url: url, asset: asset)
+                player.prebufferURLs[key] = prebuffer.url
+                player.preparedPrebuffers[key] = prebuffer
                 player.prebufferTasks.removeValue(forKey: key)
                 player.updatePrebufferedTrackCount()
                 print("✅ Prebuffered and prepared next queue item: \(song.title)")

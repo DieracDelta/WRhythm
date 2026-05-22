@@ -435,6 +435,37 @@ struct PlaybackSyncPolicyTests {
         #expect(PlaybackCommandSyncPolicy.isAcknowledged(action: .setVolume, expectedVolume: 0.5, by: differentVolume) == false)
     }
 
+    @Test func acknowledgingSnapshotCanReplaceNewerOptimisticRemoteMirror() {
+        let now = Date()
+        let optimisticMirror = makeSnapshot(id: "iphone", isPlaying: true, currentTime: 42, updatedAt: now)
+        let remotePauseAck = makeSnapshot(id: "iphone", isPlaying: false, currentTime: 42.2, updatedAt: now.addingTimeInterval(-5))
+
+        #expect(PlaybackSyncPolicy.shouldPublishRemotePlayback(remotePauseAck, current: optimisticMirror) == false)
+        #expect(PendingPlaybackAcknowledgmentPolicy.shouldAcceptAcknowledgingSnapshot(
+            remotePauseAck,
+            current: optimisticMirror,
+            action: .pause
+        ) == true)
+    }
+
+    @Test func acknowledgingSnapshotMustMatchCurrentQueueIdentity() {
+        let now = Date()
+        let optimisticMirror = makeSnapshot(id: "iphone", queue: [makeSong(id: "song-1")], updatedAt: now)
+        let unrelatedPauseAck = makeSnapshot(
+            id: "iphone",
+            song: makeSong(id: "song-2"),
+            queue: [makeSong(id: "song-2")],
+            isPlaying: false,
+            updatedAt: now.addingTimeInterval(-5)
+        )
+
+        #expect(PendingPlaybackAcknowledgmentPolicy.shouldAcceptAcknowledgingSnapshot(
+            unrelatedPauseAck,
+            current: optimisticMirror,
+            action: .pause
+        ) == false)
+    }
+
     @Test(arguments: [
         (0, 1.0),
         (1, 2.0),
@@ -461,6 +492,51 @@ struct PlaybackSyncPolicyTests {
     @Test func pendingCommandDeadlineDependsOnAcknowledgmentNeed() {
         #expect(PendingPlaybackCommandPolicy.deadlineInterval(needsAcknowledgment: true) == 20)
         #expect(PendingPlaybackCommandPolicy.deadlineInterval(needsAcknowledgment: false) == 6)
+    }
+
+    @Test func duplicatePolicySkipsAlreadyProcessedEnvelopeID() {
+        #expect(SyncDuplicatePolicy.shouldProcess(envelopeID: nil, processedEnvelopeIDs: ["seen"]) == true)
+        #expect(SyncDuplicatePolicy.shouldProcess(envelopeID: "fresh", processedEnvelopeIDs: ["seen"]) == true)
+        #expect(SyncDuplicatePolicy.shouldProcess(envelopeID: "seen", processedEnvelopeIDs: ["seen"]) == false)
+    }
+
+    @Test func duplicatePolicyKeepsOnlyRecentEnvelopeIDs() {
+        let ids = (0..<505).map { "id-\($0)" }
+        let trimmed = SyncDuplicatePolicy.trimmedEnvelopeIDOrder(ids)
+
+        #expect(trimmed.count == SyncDuplicatePolicy.maxTrackedEnvelopeIDs)
+        #expect(trimmed.first == "id-5")
+        #expect(trimmed.last == "id-504")
+    }
+
+    @Test func remotePlaybackApplicationStateIsReferenceCounted() {
+        var state = RemotePlaybackApplicationState()
+
+        #expect(state.isApplying == false)
+        state.begin()
+        state.begin()
+        #expect(state.isApplying == true)
+        state.end()
+        #expect(state.isApplying == true)
+        state.end()
+        #expect(state.isApplying == false)
+        state.end()
+        #expect(state.isApplying == false)
+    }
+
+    @Test @MainActor func syncDelegateEventQueueRunsEventsInOrderAndDrains() async {
+        let queue = SyncDelegateEventQueue()
+        var values: [Int] = []
+
+        await queue.enqueue {
+            values.append(1)
+        }
+        await queue.enqueue {
+            values.append(2)
+        }
+        await queue.waitForIdle()
+
+        #expect(values == [1, 2])
     }
 
     @Test func displayPolicyShowsRemoteSharedPlaybackInsteadOfStaleLocalMirror() {
