@@ -1260,29 +1260,29 @@ private struct WatchVolumeControl: View {
     @Binding var volume: Double
 
     var body: some View {
-        HStack(spacing: WRhythmSpacing.xs) {
+        HStack(spacing: 4) {
             volumeButton(systemImage: "speaker.minus.fill", accessibilityLabel: "Lower volume") {
                 adjustVolume(by: -0.05)
             }
 
             WatchVolumeBar(volume: $volume)
-                .frame(height: 30)
+                .frame(height: 22)
 
             volumeButton(systemImage: "speaker.plus.fill", accessibilityLabel: "Raise volume") {
                 adjustVolume(by: 0.05)
             }
         }
-        .padding(.horizontal, WRhythmSpacing.xs)
-        .padding(.vertical, WRhythmSpacing.xxs)
+        .padding(.horizontal, 4)
+        .padding(.vertical, 3)
         .background(.thinMaterial, in: Capsule())
     }
 
     private func volumeButton(systemImage: String, accessibilityLabel: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.caption.weight(.semibold))
+                .font(.caption2.weight(.semibold))
                 .symbolRenderingMode(.hierarchical)
-                .frame(width: 30, height: 30)
+                .frame(width: 24, height: 24)
                 .background(.regularMaterial, in: Circle())
         }
         .buttonStyle(.plain)
@@ -1627,9 +1627,19 @@ private struct WatchNowPlayingView: View {
 
     @ViewBuilder
     private func localPlaybackContent(song: Song) -> some View {
-        VStack(spacing: WRhythmSpacing.xs) {
-            NowPlayingArtwork(coverArtId: song.coverArt, maxSize: 88)
-                .equatable()
+        VStack(spacing: 5) {
+            WatchTrackHeader(
+                song: song,
+                coverArtSize: 62,
+                status: {
+                    WatchNowPlayingStatusRow(
+                        isPlaying: localIsPlaying,
+                        isBuffering: player.isBuffering,
+                        prebufferedTrackCount: player.prebufferedTrackCount,
+                        hasQueuedTracks: player.queue.count > player.currentIndex + 1
+                    )
+                }
+            )
 
             WatchTransportControls(
                 isPlaying: localIsPlaying,
@@ -1654,27 +1664,6 @@ private struct WatchNowPlayingView: View {
                 seek: player.seek(to:)
             )
 
-            VStack(spacing: WRhythmSpacing.xxs) {
-                Text(song.title)
-                    .font(.headline)
-                    .lineLimit(1)
-                    .multilineTextAlignment(.center)
-
-                if let artist = song.artist, !artist.isEmpty {
-                    Text(artist)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-            }
-
-            WatchNowPlayingStatusRow(
-                isPlaying: localIsPlaying,
-                isBuffering: player.isBuffering,
-                prebufferedTrackCount: player.prebufferedTrackCount,
-                hasQueuedTracks: player.queue.count > player.currentIndex + 1
-            )
-
             InlineVolumeSlider(volume: Binding(
                 get: { player.volume },
                 set: { player.volume = $0 }
@@ -1689,14 +1678,18 @@ private struct WatchNowPlayingView: View {
                 toggleFavorite: { toggleFavorite(song: song) }
             )
 
-            if player.queue.count > 1 {
-                Text("\(player.currentIndex + 1) of \(player.queue.count)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-            }
+            HStack(spacing: WRhythmSpacing.xs) {
+                if player.queue.count > 1 {
+                    Text("\(player.currentIndex + 1) of \(player.queue.count)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
 
-            PlaybackTargetPicker()
+                Spacer(minLength: 0)
+
+                PlaybackTargetPicker()
+            }
         }
     }
 
@@ -1792,8 +1785,18 @@ private struct WatchRemotePlaybackControls: View {
             }
 
             if let song = playback.song {
-                NowPlayingArtwork(coverArtId: song.coverArt, maxSize: 84)
-                    .equatable()
+                WatchTrackHeader(
+                    song: song,
+                    coverArtSize: 58,
+                    status: {
+                        WatchNowPlayingStatusRow(
+                            isPlaying: playback.isPlaying,
+                            isBuffering: playback.isBuffering == true,
+                            prebufferedTrackCount: playback.prebufferedTrackCount,
+                            hasQueuedTracks: playback.currentIndex < playback.queue.count - 1
+                        )
+                    }
+                )
 
                 WatchTransportControls(
                     isPlaying: playback.isPlaying,
@@ -1817,27 +1820,6 @@ private struct WatchRemotePlaybackControls: View {
                     )
                 }
 
-                VStack(spacing: WRhythmSpacing.xxs) {
-                    Text(song.title)
-                        .font(.headline)
-                        .lineLimit(1)
-                        .multilineTextAlignment(.center)
-
-                    if let artist = song.artist, !artist.isEmpty {
-                        Text(artist)
-                            .font(.caption)
-                            .lineLimit(1)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                WatchNowPlayingStatusRow(
-                    isPlaying: playback.isPlaying,
-                    isBuffering: playback.isBuffering == true,
-                    prebufferedTrackCount: playback.prebufferedTrackCount,
-                    hasQueuedTracks: playback.currentIndex < playback.queue.count - 1
-                )
-
                 InlineVolumeSlider(volume: Binding(
                     get: { displayedVolume },
                     set: { newVolume in
@@ -1852,7 +1834,7 @@ private struct WatchRemotePlaybackControls: View {
                     .controlSize(.small)
             }
         }
-        .padding(12)
+        .padding(8)
         .frame(maxWidth: .infinity)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius))
         .overlay {
@@ -1887,6 +1869,37 @@ private struct WatchRemotePlaybackControls: View {
     }
 }
 
+private struct WatchTrackHeader<Status: View>: View {
+    let song: Song
+    let coverArtSize: CGFloat
+    @ViewBuilder let status: () -> Status
+
+    var body: some View {
+        HStack(spacing: 8) {
+            NowPlayingArtwork(coverArtId: song.coverArt, maxSize: coverArtSize)
+                .equatable()
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(song.title)
+                    .font(.headline)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.75)
+
+                if let artist = song.artist, !artist.isEmpty {
+                    Text(artist)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                status()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 private struct WatchNowPlayingStatusRow: View {
     let isPlaying: Bool
     let isBuffering: Bool
@@ -1894,7 +1907,7 @@ private struct WatchNowPlayingStatusRow: View {
     let hasQueuedTracks: Bool
 
     var body: some View {
-        HStack(spacing: WRhythmSpacing.xs) {
+        HStack(spacing: 4) {
             WRhythmStatusPill(
                 text: isPlaying ? "Playing" : "Paused",
                 systemImage: isPlaying ? "waveform" : "pause.fill",
@@ -1907,6 +1920,8 @@ private struct WatchNowPlayingStatusRow: View {
                 WRhythmStatusPill(text: "\(prebufferedTrackCount) ready", systemImage: "arrow.down.circle")
             }
         }
+        .font(.caption2)
+        .lineLimit(1)
     }
 }
 
@@ -1921,27 +1936,27 @@ private struct WatchProgressCard: View {
         let liveTime = currentTime.isFinite ? currentTime : 0
         let displayedTime = min(max(scrubTime ?? liveTime, 0), safeDuration)
 
-        VStack(spacing: WRhythmSpacing.xs) {
+        HStack(spacing: 5) {
+            Text(watchFormatTime(displayedTime))
+                .frame(width: 31, alignment: .leading)
+
             WatchScrubBar(
                 displayedTime: displayedTime,
                 duration: safeDuration,
                 scrubTime: $scrubTime,
                 seek: seek
             )
-            .frame(height: 24)
+            .frame(height: 16)
 
-            HStack {
-                Text(watchFormatTime(displayedTime))
-                Spacer()
-                Text("-" + watchFormatTime(max(0, safeDuration - displayedTime)))
-            }
-            .font(.caption)
-            .monospacedDigit()
-            .foregroundStyle(.secondary)
+            Text("-" + watchFormatTime(max(0, safeDuration - displayedTime)))
+                .frame(width: 36, alignment: .trailing)
         }
-        .padding(.horizontal, WRhythmSpacing.sm)
-        .padding(.vertical, 8)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius))
+        .font(.caption2)
+        .monospacedDigit()
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(.thinMaterial, in: Capsule())
     }
 }
 
@@ -1966,8 +1981,8 @@ private struct WatchScrubBar: View {
 
                 Circle()
                     .fill(Color.primary)
-                    .frame(width: 8, height: 8)
-                    .offset(x: min(max(width * progress - 4, 0), width - 8))
+                    .frame(width: 7, height: 7)
+                    .offset(x: min(max(width * progress - 3.5, 0), width - 7))
             }
             .contentShape(Rectangle())
             .gesture(
@@ -1999,7 +2014,7 @@ private struct WatchTransportControls: View {
     let next: () -> Void
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 3) {
             WatchTransportButton("Previous Track", systemImage: "backward.end.fill", action: previous)
                 .disabled(previousDisabled)
 
@@ -2036,12 +2051,12 @@ private struct WatchTransportButton: View {
     var body: some View {
         Button(title, systemImage: systemImage, action: action)
             .labelStyle(.iconOnly)
-            .font(prominent ? .title3 : .subheadline)
-            .frame(width: prominent ? 42 : 30, height: prominent ? 42 : 30)
+            .font(prominent ? .title3 : .caption.weight(.semibold))
+            .frame(width: prominent ? 38 : 27, height: prominent ? 38 : 27)
             .background(prominent ? AnyShapeStyle(WRhythmTheme.accent.gradient) : AnyShapeStyle(.regularMaterial), in: Circle())
             .foregroundStyle(prominent ? AnyShapeStyle(Color.white) : AnyShapeStyle(Color.primary))
             .buttonStyle(.plain)
-            .shadow(color: Color.black.opacity(prominent ? 0.20 : 0.08), radius: prominent ? 12 : 6, y: prominent ? 6 : 3)
+            .shadow(color: Color.black.opacity(prominent ? 0.18 : 0.06), radius: prominent ? 8 : 4, y: prominent ? 4 : 2)
     }
 }
 
@@ -2054,19 +2069,31 @@ private struct WatchNowPlayingActions: View {
     let toggleFavorite: () -> Void
 
     var body: some View {
-        HStack(spacing: 8) {
-            Button("Volume", systemImage: "speaker.wave.3.fill", action: showVolume)
-            Button("Output", systemImage: "airpodsmax", action: showAudioRoute)
+        HStack(spacing: 7) {
+            watchActionButton("Volume", systemImage: "speaker.wave.3.fill", action: showVolume)
+            watchActionButton("Output", systemImage: "airpodsmax", action: showAudioRoute)
             NavigationLink(destination: RadioOptionsView(sourceSong: song, sourceTitle: song.title, sourceType: .song)) {
-                Label("Radio", systemImage: "music.note.list")
+                Image(systemName: "music.note.list")
+                    .frame(width: 28, height: 28)
+                    .background(.regularMaterial, in: Circle())
             }
-            Button(isStarred ? "Unfavorite" : "Favorite", systemImage: isStarred ? "heart.fill" : "heart", action: toggleFavorite)
+            .accessibilityLabel("Radio")
+
+            watchActionButton(isStarred ? "Unfavorite" : "Favorite", systemImage: isStarred ? "heart.fill" : "heart", action: toggleFavorite)
                 .disabled(isStarring)
         }
-        .labelStyle(.iconOnly)
-        .font(.caption)
-        .buttonStyle(.bordered)
-        .controlSize(.small)
+        .font(.caption.weight(.semibold))
+        .buttonStyle(.plain)
+        .foregroundStyle(WRhythmTheme.accent)
+    }
+
+    private func watchActionButton(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .frame(width: 28, height: 28)
+                .background(.regularMaterial, in: Circle())
+        }
+        .accessibilityLabel(title)
     }
 }
 
