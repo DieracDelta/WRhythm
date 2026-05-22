@@ -780,12 +780,33 @@ struct PlaybackSyncPolicyTests {
             localPlatform: .iPhone,
             hasDestinationTransport: true
         ) == true)
+    }
+
+    @Test func iPhoneCanBridgeLivePlaybackBetweenWatchConnectivityAndMultipeer() {
+        #expect(SyncBridgeRelayPolicy.shouldRelay(
+            kind: .playbackSession,
+            receivedVia: .watchConnectivity,
+            localPlatform: .iPhone,
+            hasDestinationTransport: true
+        ) == true)
         #expect(SyncBridgeRelayPolicy.shouldRelay(
             kind: .playbackCommand,
             receivedVia: .watchConnectivity,
             localPlatform: .iPhone,
             hasDestinationTransport: true
-        ) == false)
+        ) == true)
+        #expect(SyncBridgeRelayPolicy.shouldRelay(
+            kind: .playbackSession,
+            receivedVia: .multipeer,
+            localPlatform: .iPhone,
+            hasDestinationTransport: true
+        ) == true)
+        #expect(SyncBridgeRelayPolicy.shouldRelay(
+            kind: .playbackCommand,
+            receivedVia: .multipeer,
+            localPlatform: .iPhone,
+            hasDestinationTransport: true
+        ) == true)
     }
 
     @Test func bridgeRequiresIPhoneAndDestinationTransport() {
@@ -801,6 +822,27 @@ struct PlaybackSyncPolicyTests {
             localPlatform: .iPhone,
             hasDestinationTransport: false
         ) == false)
+        #expect(SyncBridgeRelayPolicy.shouldRelay(
+            kind: .playbackSession,
+            receivedVia: .watchConnectivity,
+            localPlatform: .iPhone,
+            hasDestinationTransport: false
+        ) == false)
+    }
+
+    @Test func relayedLivePlaybackEnvelopeIsStillDeduplicatedOnReturnPath() {
+        let processedEnvelopeIDs: Set<String> = ["watch-session-1"]
+
+        #expect(SyncDuplicatePolicy.shouldProcess(
+            envelopeID: "watch-session-1",
+            processedEnvelopeIDs: processedEnvelopeIDs
+        ) == false)
+        #expect(SyncBridgeRelayPolicy.shouldRelay(
+            kind: .playbackSession,
+            receivedVia: .multipeer,
+            localPlatform: .iPhone,
+            hasDestinationTransport: true
+        ) == true)
     }
 
     @Test func playbackTargetsOnlyExposeReachableControlPaths() {
@@ -824,6 +866,42 @@ struct PlaybackSyncPolicyTests {
             remotePlatform: .iPhone,
             hasDirectMultipeer: true
         ) == true)
+    }
+
+    @Test func macCanDisplayRelayedWatchPlaybackWithoutWatchControlTarget() throws {
+        let now = Date()
+        let watchSession = makeSession(
+            outputDeviceID: "watch",
+            isPlaying: true,
+            position: 42,
+            updatedAt: now,
+            updatedByDeviceID: "watch"
+        )
+
+        let snapshot = try #require(PlaybackSessionSnapshotPolicy.snapshot(
+            from: watchSession,
+            deviceName: "Justin's Watch",
+            platform: "Apple Watch",
+            now: now.addingTimeInterval(3)
+        ))
+        let visibility = PlaybackDisplaySourcePolicy.visibility(
+            hasLocalSong: false,
+            localIsPlaying: false,
+            hasRemotePlayback: snapshot.song != nil,
+            hasActiveSharedPlayback: true,
+            remoteQueueMatchesLocal: false
+        )
+
+        #expect(PlaybackTargetSelectionPolicy.isSelectable(
+            localPlatform: .mac,
+            remotePlatform: .appleWatch,
+            hasDirectMultipeer: false
+        ) == false)
+        #expect(snapshot.platform == "Apple Watch")
+        #expect(snapshot.deviceName == "Justin's Watch")
+        #expect(snapshot.isPlaying == true)
+        #expect(snapshot.currentTime == 45)
+        #expect(visibility.showsRemote == true)
     }
 
     @Test func multipeerSendFailuresRestartOnlyWhenSessionHadPeers() {

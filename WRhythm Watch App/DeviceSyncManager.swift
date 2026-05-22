@@ -312,12 +312,10 @@ struct SyncBridgeRelayPolicy: Sendable {
         guard localPlatform == .iPhone, hasDestinationTransport else { return false }
 
         switch kind {
-        case .hello, .syncRequest:
+        case .hello, .syncRequest, .playbackSession, .playbackCommand:
             return true
         case .credentials(let hasPayload):
             return hasPayload
-        case .playbackSession, .playbackCommand:
-            return false
         }
     }
 }
