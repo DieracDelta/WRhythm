@@ -882,6 +882,31 @@ struct PlaybackSessionSyncPolicy: Sendable {
 }
 
 struct PlaybackSessionSnapshotPolicy: Sendable {
+    private static func isSupersededByDifferentLivePlayback(
+        _ remotePlayback: PlaybackSnapshot?,
+        session: PlaybackSession
+    ) -> Bool {
+        guard let remotePlayback,
+              remotePlayback.id != session.outputDeviceID,
+              remotePlayback.song != nil,
+              remotePlayback.updatedAt >= session.updatedAt else {
+            return false
+        }
+
+        if let currentSong = session.currentSong,
+           let remoteSong = remotePlayback.song,
+           remoteSong.id != currentSong.id {
+            return false
+        }
+
+        let remoteQueueIDs = remotePlayback.queue.map(\.id)
+        if !remoteQueueIDs.isEmpty, remoteQueueIDs != session.queue.map(\.id) {
+            return false
+        }
+
+        return true
+    }
+
     private static func livePlaybackForSession(
         _ remotePlayback: PlaybackSnapshot?,
         session: PlaybackSession
@@ -914,6 +939,7 @@ struct PlaybackSessionSnapshotPolicy: Sendable {
         now: Date = Date()
     ) -> PlaybackSnapshot? {
         guard let song = session.currentSong else { return nil }
+        guard !isSupersededByDifferentLivePlayback(remotePlayback, session: session) else { return nil }
         let livePlayback = livePlaybackForSession(remotePlayback, session: session)
         let currentTime = livePlayback?.estimatedCurrentTime(at: now) ?? session.estimatedPosition(at: now)
 

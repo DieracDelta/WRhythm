@@ -1140,6 +1140,35 @@ struct PlaybackSyncPolicyTests {
         #expect(snapshot.updatedAt == now)
     }
 
+    @Test func playbackSessionSnapshotYieldsToFreshDifferentRemoteOutput() {
+        let now = Date()
+        let staleIPhoneSession = makeSession(
+            outputDeviceID: "iphone",
+            isPlaying: true,
+            position: 30,
+            updatedAt: now.addingTimeInterval(-5),
+            updatedByDeviceID: "iphone"
+        )
+        let freshMacPlayback = makeSnapshot(
+            id: "mac",
+            song: makeSong(id: "song-1"),
+            queue: [makeSong(id: "song-1")],
+            isPlaying: true,
+            currentTime: 35,
+            updatedAt: now
+        )
+
+        let snapshot = PlaybackSessionSnapshotPolicy.snapshot(
+            from: staleIPhoneSession,
+            deviceName: "iPhone",
+            platform: "iPhone",
+            remotePlayback: freshMacPlayback,
+            now: now
+        )
+
+        #expect(snapshot == nil)
+    }
+
     @Test func playbackRetryPolicyRejectsRetryAfterUserIntentChanges() {
         #expect(PlaybackRetryPolicy.shouldRunRetry(
             capturedSongID: "song-1",
