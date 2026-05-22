@@ -25,11 +25,15 @@ struct DownloadsView: View {
             }
 
             if sortedSongs.isEmpty {
+#if os(iOS)
+                PhoneDownloadsEmptyView(message: emptyDownloadsMessage)
+#else
                 WRhythmEmptyState(
                     systemImage: "arrow.down.circle",
                     title: "No Downloads",
                     message: emptyDownloadsMessage
                 )
+#endif
             } else {
                 downloadedSummaryCard
 
@@ -57,7 +61,10 @@ struct DownloadsView: View {
                 }
             }
         }
-        .navigationTitle("Downloads")
+        .navigationTitle(navigationTitleText)
+#if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+#endif
         .sheet(item: $presentedSheet) { sheet in
             switch sheet {
             case .deleteAll:
@@ -265,6 +272,14 @@ struct DownloadsView: View {
         nil
 #else
         "Download songs, albums, or playlists for offline playback"
+#endif
+    }
+
+    private var navigationTitleText: String {
+#if os(iOS)
+        downloadManager.downloadedSongs.isEmpty ? "" : "Downloads"
+#else
+        "Downloads"
 #endif
     }
 
