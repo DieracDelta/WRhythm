@@ -78,6 +78,13 @@ struct PrebufferRetryPolicy: Sendable {
     }
 }
 
+struct NowPlayingArtworkLoadPolicy: Sendable {
+    static func shouldStartLoad(songID: String, inFlightSongID: String?, cachedSongIDs: Set<String>) -> Bool {
+        guard !cachedSongIDs.contains(songID) else { return false }
+        return inFlightSongID != songID
+    }
+}
+
 @MainActor
 class AudioPlayer: NSObject, ObservableObject {
     static let shared = AudioPlayer()
@@ -171,6 +178,12 @@ class AudioPlayer: NSObject, ObservableObject {
     private let maxPlaybackRetryBackoff: TimeInterval = 30
     private var prebufferRetryAttemptsByKey: [String: Int] = [:]
     private var prebufferRetryTasksByKey: [String: Task<Void, Never>] = [:]
+#if os(iOS) || os(watchOS) || os(macOS)
+    private var nowPlayingArtworkTask: Task<Void, Never>?
+    private var nowPlayingArtworkSongID: String?
+    private var nowPlayingArtworkCache: [String: MPMediaItemArtwork] = [:]
+    private let maxNowPlayingArtworkCacheEntries = 20
+#endif
 #if os(macOS)
     private var mediaKeyMonitors: [Any] = []
     private var mediaKeyEventTap: CFMachPort?
@@ -1637,6 +1650,9 @@ class AudioPlayer: NSObject, ObservableObject {
     private func updateNowPlayingInfo() {
 #if os(iOS) || os(watchOS) || os(macOS)
         guard let song = currentSong else {
+            nowPlayingArtworkTask?.cancel()
+            nowPlayingArtworkTask = nil
+            nowPlayingArtworkSongID = nil
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
             return
         }
@@ -1653,28 +1669,60 @@ class AudioPlayer: NSObject, ObservableObject {
         nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = currentTime
         nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
 
+        if let artwork = nowPlayingArtworkCache[song.id] {
+            nowPlayingInfo[MPMediaItemPropertyArtwork] = artwork
+        }
+
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
+
         if let coverArtId = song.coverArt,
            let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 300) {
             let artworkSongID = song.id
-            Task {
+            guard NowPlayingArtworkLoadPolicy.shouldStartLoad(
+                songID: artworkSongID,
+                inFlightSongID: nowPlayingArtworkSongID,
+                cachedSongIDs: Set(nowPlayingArtworkCache.keys)
+            ) else { return }
+
+            nowPlayingArtworkTask?.cancel()
+            nowPlayingArtworkSongID = artworkSongID
+            nowPlayingArtworkTask = Task {
                 do {
                     let (data, _) = try await URLSession.shared.data(from: coverURL)
+                    try Task.checkCancellation()
                     if let image = PlatformImage(data: data) {
                         let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
                         await MainActor.run {
                             guard self.currentSong?.id == artworkSongID else { return }
+                            self.nowPlayingArtworkCache[artworkSongID] = artwork
+                            if self.nowPlayingArtworkCache.count > self.maxNowPlayingArtworkCacheEntries,
+                               let firstKey = self.nowPlayingArtworkCache.keys.first {
+                                self.nowPlayingArtworkCache.removeValue(forKey: firstKey)
+                            }
+                            self.nowPlayingArtworkTask = nil
+                            self.nowPlayingArtworkSongID = nil
                             var updatedInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
                             updatedInfo[MPMediaItemPropertyArtwork] = artwork
                             MPNowPlayingInfoCenter.default().nowPlayingInfo = updatedInfo
                         }
                     }
                 } catch {
-                    print("Failed to load cover art: \(error)")
+                    if !Task.isCancelled {
+                        await MainActor.run {
+                            if self.nowPlayingArtworkSongID == artworkSongID {
+                                self.nowPlayingArtworkTask = nil
+                                self.nowPlayingArtworkSongID = nil
+                            }
+                        }
+                        print("Failed to load cover art: \(error)")
+                    }
                 }
             }
+        } else {
+            nowPlayingArtworkTask?.cancel()
+            nowPlayingArtworkTask = nil
+            nowPlayingArtworkSongID = nil
         }
-
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
 #endif
     }
 
@@ -1682,6 +1730,9 @@ class AudioPlayer: NSObject, ObservableObject {
     deinit {
         pendingPersistenceTask?.cancel()
         playbackRetryTask?.cancel()
+#if os(iOS) || os(watchOS) || os(macOS)
+        nowPlayingArtworkTask?.cancel()
+#endif
         prebufferTasks.values.forEach { $0.cancel() }
         if let observer = timeObserver {
             player.removeTimeObserver(observer)

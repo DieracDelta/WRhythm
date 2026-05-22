@@ -493,6 +493,25 @@ struct PlaybackSyncPolicyTests {
         ) == false)
     }
 
+    @Test func stalePlaybackSnapshotIsRejectedBeforeFingerprintingUnlessItAcknowledgesPendingCommand() {
+        let now = Date()
+        let current = makeSnapshot(id: "mac", updatedAt: now)
+        let stale = makeSnapshot(id: "mac", currentTime: 3, updatedAt: now.addingTimeInterval(-31))
+
+        #expect(PlaybackSnapshotReceivePolicy.shouldAccept(
+            stale,
+            current: current,
+            isAcknowledgingPendingCommand: false,
+            now: now
+        ) == false)
+        #expect(PlaybackSnapshotReceivePolicy.shouldAccept(
+            stale,
+            current: current,
+            isAcknowledgingPendingCommand: true,
+            now: now
+        ) == true)
+    }
+
     @Test(arguments: [
         (0, 1.0),
         (1, 2.0),
@@ -544,6 +563,47 @@ struct PlaybackSyncPolicyTests {
         #expect(PendingPlaybackCommandPolicy.deadlineInterval(needsAcknowledgment: false) == 6)
     }
 
+    @Test func commandReceivePolicyRejectsCommandsBeforeDedupeWhenTargetedElsewhere() {
+        #expect(PlaybackCommandReceivePolicy.shouldApplyNormalCommand(
+            action: .pause,
+            targetDeviceID: "iphone",
+            localDeviceID: "mac"
+        ) == false)
+        #expect(PlaybackCommandReceivePolicy.shouldApplyNormalCommand(
+            action: .pause,
+            targetDeviceID: "mac",
+            localDeviceID: "mac"
+        ) == true)
+        #expect(PlaybackCommandReceivePolicy.shouldApplyNormalCommand(
+            action: .pause,
+            targetDeviceID: nil,
+            localDeviceID: "mac"
+        ) == true)
+        #expect(PlaybackCommandReceivePolicy.shouldApplyNormalCommand(
+            action: .toggle,
+            targetDeviceID: "mac",
+            localDeviceID: "mac"
+        ) == false)
+    }
+
+    @Test func syncQueueCommandsApplyOnlyToMirroringNonOwnersWithSongs() {
+        #expect(PlaybackCommandReceivePolicy.shouldApplySyncQueue(
+            targetDeviceID: "mac",
+            localDeviceID: "iphone",
+            hasSongs: true
+        ) == true)
+        #expect(PlaybackCommandReceivePolicy.shouldApplySyncQueue(
+            targetDeviceID: "iphone",
+            localDeviceID: "iphone",
+            hasSongs: true
+        ) == false)
+        #expect(PlaybackCommandReceivePolicy.shouldApplySyncQueue(
+            targetDeviceID: "mac",
+            localDeviceID: "iphone",
+            hasSongs: false
+        ) == false)
+    }
+
     @Test func duplicatePolicySkipsAlreadyProcessedEnvelopeID() {
         #expect(SyncDuplicatePolicy.shouldProcess(envelopeID: nil, processedEnvelopeIDs: ["seen"]) == true)
         #expect(SyncDuplicatePolicy.shouldProcess(envelopeID: "fresh", processedEnvelopeIDs: ["seen"]) == true)
@@ -588,6 +648,38 @@ struct PlaybackSyncPolicyTests {
         #expect(trimmed.count == PlaybackSnapshotFingerprintPolicy.maxTrackedFingerprints)
         #expect(trimmed.first == "fingerprint-5")
         #expect(trimmed.last == "fingerprint-504")
+    }
+
+    @Test func playbackSessionRejectsStaleAndFarFutureUpdates() {
+        let now = Date()
+        let current = makeSession(updatedAt: now)
+        let stale = makeSession(revision: 99, updatedAt: now.addingTimeInterval(-31), updatedByDeviceID: "iphone")
+        let farFuture = makeSession(revision: 99, updatedAt: now.addingTimeInterval(11), updatedByDeviceID: "iphone")
+
+        #expect(PlaybackSessionSyncPolicy.isStale(stale, current: current, now: now) == true)
+        #expect(PlaybackSessionSyncPolicy.isStale(farFuture, current: current, now: now) == true)
+        #expect(PlaybackSessionSyncPolicy.shouldApply(stale, over: current, now: now) == false)
+        #expect(PlaybackSessionSyncPolicy.shouldApply(farFuture, over: current, now: now) == false)
+    }
+
+    @Test func playbackSessionSnapshotUsesEstimatedPositionForRemoteDisplay() throws {
+        let now = Date()
+        let session = makeSession(
+            outputDeviceID: "mac",
+            isPlaying: true,
+            position: 10,
+            updatedAt: now.addingTimeInterval(-5)
+        )
+
+        let snapshot = try #require(PlaybackSessionSnapshotPolicy.snapshot(
+            from: session,
+            deviceName: "Mac",
+            platform: "Mac",
+            remotePlayback: nil,
+            now: now
+        ))
+
+        #expect(snapshot.currentTime == 15)
     }
 
     @Test func playbackRetryPolicyRejectsRetryAfterUserIntentChanges() {
@@ -636,6 +728,24 @@ struct PlaybackSyncPolicyTests {
         )
 
         #expect(scheduled == ["d"])
+    }
+
+    @Test func nowPlayingArtworkPolicyAvoidsDuplicateLoadsForCachedOrInFlightSongs() {
+        #expect(NowPlayingArtworkLoadPolicy.shouldStartLoad(
+            songID: "song-1",
+            inFlightSongID: nil,
+            cachedSongIDs: []
+        ) == true)
+        #expect(NowPlayingArtworkLoadPolicy.shouldStartLoad(
+            songID: "song-1",
+            inFlightSongID: "song-1",
+            cachedSongIDs: []
+        ) == false)
+        #expect(NowPlayingArtworkLoadPolicy.shouldStartLoad(
+            songID: "song-1",
+            inFlightSongID: nil,
+            cachedSongIDs: ["song-1"]
+        ) == false)
     }
 
     @Test func remotePlaybackApplicationStateIsReferenceCounted() {
