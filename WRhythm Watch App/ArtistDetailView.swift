@@ -180,9 +180,7 @@ struct ArtistDetailView: View {
                             }
                         }
                         .buttonStyle(.plain)
-                        .contextMenu {
-                            AlbumContextMenuItems(albumId: album.id, albumName: album.name)
-                        }
+                        .wrhythmAlbumActions(albumId: album.id, albumName: album.name)
                     }
                 }
             }

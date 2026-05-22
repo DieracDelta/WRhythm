@@ -100,9 +100,7 @@ struct TrackRowView: View {
             }
         }
         .buttonStyle(.plain)
-        .contextMenu {
-            TrackContextMenuItems(song: song)
-        }
+        .wrhythmTrackActions(song: song)
     }
 }
 

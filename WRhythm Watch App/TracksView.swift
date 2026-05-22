@@ -133,9 +133,7 @@ struct TracksView: View {
                                             tint: .purple
                                         )
                                     }
-                                    .contextMenu {
-                                        PlaylistContextMenuItems(playlistId: playlist.id, playlistName: playlist.name)
-                                    }
+                                    .wrhythmPlaylistActions(playlistId: playlist.id, playlistName: playlist.name)
                                 }
                             }
                         }
@@ -155,9 +153,7 @@ struct TracksView: View {
                                             tint: .indigo
                                         )
                                     }
-                                    .contextMenu {
-                                        ArtistContextMenuItems(artistId: "offline-\(artist.name)", artistName: artist.name)
-                                    }
+                                    .wrhythmArtistActions(artistId: "offline-\(artist.name)", artistName: artist.name)
                                 }
                             }
                         }
@@ -177,9 +173,7 @@ struct TracksView: View {
                                             tint: .teal
                                         )
                                     }
-                                    .contextMenu {
-                                        AlbumContextMenuItems(albumId: album.id, albumName: album.name)
-                                    }
+                                    .wrhythmAlbumActions(albumId: album.id, albumName: album.name)
                                 }
                             }
                         }
@@ -235,10 +229,8 @@ struct TracksView: View {
                                         fallbackSystemImage: "person.fill",
                                         tint: .indigo
                                     )
-                                    .contextMenu {
-                                        ArtistContextMenuItems(artistId: artist.id, artistName: artist.name)
-                                    }
                                 }
+                                .wrhythmArtistActions(artistId: artist.id, artistName: artist.name)
                             }
                         }
                     }
@@ -255,10 +247,8 @@ struct TracksView: View {
                                         fallbackSystemImage: "square.stack",
                                         tint: .teal
                                     )
-                                    .contextMenu {
-                                        AlbumContextMenuItems(albumId: album.id, albumName: album.name)
-                                    }
                                 }
+                                .wrhythmAlbumActions(albumId: album.id, albumName: album.name)
                             }
                         }
                     }
@@ -383,9 +373,7 @@ struct TracksView: View {
             }
         }
         .buttonStyle(.plain)
-        .contextMenu {
-            TrackContextMenuItems(song: song)
-        }
+        .wrhythmTrackActions(song: song)
     }
 
     private var offlineSearchMessage: String {

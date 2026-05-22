@@ -138,9 +138,7 @@ struct PlaylistsView: View {
                             .foregroundColor(.green)
                     }
                 }
-                .contextMenu {
-                    PlaylistContextMenuItems(playlistId: playlist.id, playlistName: playlist.name)
-                }
+                .wrhythmPlaylistActions(playlistId: playlist.id, playlistName: playlist.name)
             }
             .searchable(text: $searchText, prompt: "Search playlists")
             .wrhythmListSurface()
@@ -182,9 +180,7 @@ struct PlaylistsView: View {
                         tint: .purple
                     )
                 }
-                .contextMenu {
-                    PlaylistContextMenuItems(playlistId: playlist.id, playlistName: playlist.name)
-                }
+                .wrhythmPlaylistActions(playlistId: playlist.id, playlistName: playlist.name)
             }
             .wrhythmListSurface()
         }

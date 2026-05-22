@@ -197,9 +197,7 @@ struct AlbumsView: View {
                                     .foregroundColor(.green)
                             }
                         }
-                        .contextMenu {
-                            AlbumContextMenuItems(albumId: album.id, albumName: album.name)
-                        }
+                        .wrhythmAlbumActions(albumId: album.id, albumName: album.name)
 
                     }
 
@@ -266,9 +264,7 @@ struct AlbumsView: View {
                                 tint: .teal
                             )
                         }
-                        .contextMenu {
-                            AlbumContextMenuItems(albumId: album.id, albumName: album.name)
-                        }
+                        .wrhythmAlbumActions(albumId: album.id, albumName: album.name)
 
                         .onAppear {
 

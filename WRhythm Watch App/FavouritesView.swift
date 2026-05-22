@@ -207,9 +207,7 @@ struct FavouritesView: View {
                                             tint: .teal
                                         )
                                     }
-                                    .contextMenu {
-                                        AlbumContextMenuItems(albumId: album.id, albumName: album.name)
-                                    }
+                                    .wrhythmAlbumActions(albumId: album.id, albumName: album.name)
                                 }
                             }
 
@@ -235,9 +233,7 @@ struct FavouritesView: View {
                                             tint: .indigo
                                         )
                                     }
-                                    .contextMenu {
-                                        ArtistContextMenuItems(artistId: artist.id, artistName: artist.name)
-                                    }
+                                    .wrhythmArtistActions(artistId: artist.id, artistName: artist.name)
                                 }
                             }
                             }

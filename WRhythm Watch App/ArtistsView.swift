@@ -155,9 +155,7 @@ struct ArtistsView: View {
                                 .foregroundColor(.green)
                         }
                     }
-                    .contextMenu {
-                        ArtistContextMenuItems(artistId: "offline-\(artist.name)", artistName: artist.name)
-                    }
+                    .wrhythmArtistActions(artistId: "offline-\(artist.name)", artistName: artist.name)
                 }
             }
             .searchable(text: $searchText, prompt: "Search artists")
@@ -204,9 +202,7 @@ struct ArtistsView: View {
                             tint: .indigo
                         )
                     }
-                    .contextMenu {
-                        ArtistContextMenuItems(artistId: artist.id, artistName: artist.name)
-                    }
+                    .wrhythmArtistActions(artistId: artist.id, artistName: artist.name)
                     .onAppear {
                         if artist.id == displayedArtists.last?.id {
                             loadMoreArtists()

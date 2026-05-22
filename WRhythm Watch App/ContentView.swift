@@ -176,9 +176,7 @@ struct MacSidebar: View {
                                 )
                             }
                             .buttonStyle(.plain)
-                            .contextMenu {
-                                TrackContextMenuItems(song: item.song)
-                            }
+                            .wrhythmTrackActions(song: item.song)
                         }
                     }
                 }
@@ -203,9 +201,7 @@ struct MacSidebar: View {
                                     )
                                 }
                                 .buttonStyle(.plain)
-                                .contextMenu {
-                                    TrackContextMenuItems(song: item.song)
-                                }
+                                .wrhythmTrackActions(song: item.song)
                             }
                         }
                     }

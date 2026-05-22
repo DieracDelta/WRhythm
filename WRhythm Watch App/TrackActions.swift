@@ -305,6 +305,258 @@ struct ArtistContextMenuItems: View {
     }
 }
 
+extension View {
+    func wrhythmTrackActions(song: Song) -> some View {
+        modifier(WRhythmTrackActionsModifier(song: song))
+    }
+
+    func wrhythmAlbumActions(albumId: String, albumName: String?) -> some View {
+        modifier(WRhythmAlbumActionsModifier(albumId: albumId, albumName: albumName))
+    }
+
+    func wrhythmPlaylistActions(playlistId: String, playlistName: String?) -> some View {
+        modifier(WRhythmPlaylistActionsModifier(playlistId: playlistId, playlistName: playlistName))
+    }
+
+    func wrhythmArtistActions(artistId: String, artistName: String) -> some View {
+        modifier(WRhythmArtistActionsModifier(artistId: artistId, artistName: artistName))
+    }
+
+    func wrhythmAlbumDetailTrackActions(
+        song: Song,
+        startRadio: @escaping (Song) -> Void,
+        downloadRadio: @escaping (Song) -> Void
+    ) -> some View {
+        modifier(WRhythmAlbumDetailTrackActionsModifier(
+            song: song,
+            startRadio: startRadio,
+            downloadRadio: downloadRadio
+        ))
+    }
+}
+
+private struct WRhythmTrackActionsModifier: ViewModifier {
+    let song: Song
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+#if os(watchOS)
+        content
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                WatchTrackSwipeActions(song: song)
+            }
+#else
+        content
+            .contextMenu {
+                TrackContextMenuItems(song: song)
+            }
+#endif
+    }
+}
+
+private struct WRhythmAlbumActionsModifier: ViewModifier {
+    let albumId: String
+    let albumName: String?
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+#if os(watchOS)
+        content
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                Button {
+                    TrackActions.addAlbumToQueue(albumId: albumId, albumName: albumName)
+                } label: {
+                    Label("Add to Queue", systemImage: "text.badge.plus")
+                }
+                .tint(.blue)
+            }
+#else
+        content
+            .contextMenu {
+                AlbumContextMenuItems(albumId: albumId, albumName: albumName)
+            }
+#endif
+    }
+}
+
+private struct WRhythmPlaylistActionsModifier: ViewModifier {
+    let playlistId: String
+    let playlistName: String?
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+#if os(watchOS)
+        content
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                Button {
+                    TrackActions.addPlaylistToQueue(playlistId: playlistId, playlistName: playlistName)
+                } label: {
+                    Label("Add to Queue", systemImage: "text.badge.plus")
+                }
+                .tint(.blue)
+            }
+#else
+        content
+            .contextMenu {
+                PlaylistContextMenuItems(playlistId: playlistId, playlistName: playlistName)
+            }
+#endif
+    }
+}
+
+private struct WRhythmArtistActionsModifier: ViewModifier {
+    let artistId: String
+    let artistName: String
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+#if os(watchOS)
+        content
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                Button {
+                    TrackActions.addArtistToQueue(artistId: artistId, artistName: artistName)
+                } label: {
+                    Label("Add to Queue", systemImage: "text.badge.plus")
+                }
+                .tint(.blue)
+            }
+#else
+        content
+            .contextMenu {
+                ArtistContextMenuItems(artistId: artistId, artistName: artistName)
+            }
+#endif
+    }
+}
+
+private struct WRhythmAlbumDetailTrackActionsModifier: ViewModifier {
+    let song: Song
+    let startRadio: (Song) -> Void
+    let downloadRadio: (Song) -> Void
+    @ObservedObject var deviceSyncManager = DeviceSyncManager.shared
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+#if os(watchOS)
+        content
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                if deviceSyncManager.syncModeEnabled && deviceSyncManager.hasActiveRemotePlayback {
+                    Button {
+                        deviceSyncManager.enqueueOnConnectedDevices([song])
+                    } label: {
+                        Label("Queue on Connected Device", systemImage: "display.and.arrow.down")
+                    }
+                    .tint(.orange)
+                }
+
+                Button {
+                    startRadio(song)
+                } label: {
+                    Label("Start Playlist Gen", systemImage: "music.note.list")
+                }
+                .tint(.purple)
+
+                Button {
+                    downloadRadio(song)
+                } label: {
+                    Label("Download Playlist Gen", systemImage: "arrow.down.circle")
+                }
+                .tint(.green)
+            }
+#else
+        content
+            .contextMenu {
+                if deviceSyncManager.syncModeEnabled && deviceSyncManager.hasActiveRemotePlayback {
+                    Button {
+                        deviceSyncManager.enqueueOnConnectedDevices([song])
+                    } label: {
+                        Label("Queue on Connected Device", systemImage: "text.badge.plus")
+                    }
+                }
+
+                Button {
+                    startRadio(song)
+                } label: {
+                    Label("Start Playlist Gen", systemImage: "music.note.list")
+                }
+
+                Button {
+                    downloadRadio(song)
+                } label: {
+                    Label("Download Playlist Gen", systemImage: "arrow.down.circle")
+                }
+
+                if let artistId = song.artistId, let artist = song.artist {
+                    NavigationLink(destination: ArtistDetailView(artistId: artistId, artistName: artist)) {
+                        Label("Go to Artist", systemImage: "person.fill")
+                    }
+                }
+            }
+#endif
+    }
+}
+
+#if os(watchOS)
+private struct WatchTrackSwipeActions: View {
+    let song: Song
+    @ObservedObject var downloadManager = DownloadManager.shared
+    @ObservedObject var deviceSyncManager = DeviceSyncManager.shared
+    @AppStorage("offlineMode") private var offlineMode = false
+
+    var body: some View {
+        Button {
+            TrackActions.addToQueue(song)
+        } label: {
+            Label("Add to Queue", systemImage: "text.badge.plus")
+        }
+        .tint(.blue)
+
+        if !offlineMode {
+            Button {
+                TrackActions.toggleFavorite(song)
+            } label: {
+                Label(
+                    downloadManager.starredSongIds.contains(song.id) ? "Unfavorite" : "Favorite",
+                    systemImage: downloadManager.starredSongIds.contains(song.id) ? "heart.fill" : "heart"
+                )
+            }
+            .tint(.red)
+
+            Button {
+                TrackActions.startRadio(for: song)
+            } label: {
+                Label("Start Playlist Gen", systemImage: "music.note.list")
+            }
+            .tint(.purple)
+
+            if downloadManager.isDownloaded(song.id) {
+                Button(role: .destructive) {
+                    downloadManager.deleteSong(song.id)
+                } label: {
+                    Label("Delete Download", systemImage: "trash")
+                }
+            } else {
+                Button {
+                    downloadManager.downloadSong(song)
+                } label: {
+                    Label("Download", systemImage: "arrow.down.circle")
+                }
+                .tint(.green)
+            }
+        }
+
+        if deviceSyncManager.syncModeEnabled && deviceSyncManager.hasActiveRemotePlayback {
+            Button {
+                deviceSyncManager.enqueueOnConnectedDevices([song])
+            } label: {
+                Label("Queue on Connected Device", systemImage: "display.and.arrow.down")
+            }
+            .tint(.orange)
+        }
+    }
+}
+#endif
+
 private extension Array where Element == Song {
     func sortedByTrack() -> [Song] {
         sorted {

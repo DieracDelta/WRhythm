@@ -77,33 +77,7 @@ struct SongRowView: View {
             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous))
         }
         .buttonStyle(.plain)
-        .contextMenu {
-            if deviceSyncManager.syncModeEnabled && deviceSyncManager.hasActiveRemotePlayback {
-                Button(action: {
-                    deviceSyncManager.enqueueOnConnectedDevices([song])
-                }) {
-                    Label("Queue on Connected Device", systemImage: "text.badge.plus")
-                }
-            }
-
-            Button(action: {
-                startRadio(for: song)
-            }) {
-                Label("Start Playlist Gen", systemImage: "music.note.list")
-            }
-
-            Button(action: {
-                downloadRadio(for: song)
-            }) {
-                Label("Download Playlist Gen", systemImage: "arrow.down.circle")
-            }
-
-            if let artistId = song.artistId, let artist = song.artist {
-                NavigationLink(destination: ArtistDetailView(artistId: artistId, artistName: artist)) {
-                    Label("Go to Artist", systemImage: "person.fill")
-                }
-            }
-        }
+        .wrhythmAlbumDetailTrackActions(song: song, startRadio: startRadio(for:), downloadRadio: downloadRadio(for:))
     }
 
     private func startRadio(for song: Song) {
