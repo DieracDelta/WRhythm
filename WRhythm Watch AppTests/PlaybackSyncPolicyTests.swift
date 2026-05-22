@@ -1843,6 +1843,84 @@ struct PlaybackSyncPolicyTests {
         #expect(visibility.showsRemote == false)
     }
 
+    @Test func remotePauseOnLocalOutputDisplaysPausedOwnerInsteadOfPlayingMirror() throws {
+        let now = Date()
+        let song = makeSong(id: "song-1")
+        let pausedOwnerSession = makeSession(
+            songs: [song],
+            outputDeviceID: "iphone",
+            isPlaying: false,
+            position: 120,
+            revision: 8,
+            updatedAt: now,
+            updatedByDeviceID: "iphone"
+        )
+        let stalePlayingTelemetry = makeSnapshot(
+            id: "iphone",
+            song: song,
+            queue: [song],
+            isPlaying: true,
+            currentTime: 121,
+            updatedAt: now.addingTimeInterval(1)
+        )
+
+        let ownerSnapshot = try #require(PlaybackSessionSnapshotPolicy.snapshot(
+            from: pausedOwnerSession,
+            deviceName: "iPhone",
+            platform: "iPhone",
+            remotePlayback: stalePlayingTelemetry,
+            now: now.addingTimeInterval(1)
+        ))
+        let visibility = PlaybackDisplaySourcePolicy.visibility(
+            hasLocalSong: ownerSnapshot.song != nil,
+            localIsPlaying: ownerSnapshot.isPlaying,
+            hasRemotePlayback: true,
+            hasActiveSharedPlayback: false,
+            remoteQueueMatchesLocal: true,
+            localIsPlaybackOutput: true
+        )
+
+        #expect(ownerSnapshot.isPlaying == false)
+        #expect(ownerSnapshot.currentTime == 120)
+        #expect(visibility.showsLocal == true)
+        #expect(visibility.showsRemote == false)
+    }
+
+    @Test func remoteObserverDisplaysPausedSharedOutputInsteadOfStaleLocalMirror() throws {
+        let now = Date()
+        let song = makeSong(id: "song-1")
+        let pausedOwnerSession = makeSession(
+            songs: [song],
+            outputDeviceID: "iphone",
+            isPlaying: false,
+            position: 120,
+            revision: 8,
+            updatedAt: now,
+            updatedByDeviceID: "iphone"
+        )
+
+        let sharedSnapshot = try #require(PlaybackSessionSnapshotPolicy.snapshot(
+            from: pausedOwnerSession,
+            deviceName: "iPhone",
+            platform: "iPhone",
+            remotePlayback: nil,
+            now: now
+        ))
+        let visibility = PlaybackDisplaySourcePolicy.visibility(
+            hasLocalSong: true,
+            localIsPlaying: true,
+            hasRemotePlayback: sharedSnapshot.song != nil,
+            hasActiveSharedPlayback: true,
+            remoteQueueMatchesLocal: true,
+            localIsPlaybackOutput: false
+        )
+
+        #expect(sharedSnapshot.isPlaying == false)
+        #expect(sharedSnapshot.currentTime == 120)
+        #expect(visibility.showsLocal == false)
+        #expect(visibility.showsRemote == true)
+    }
+
     @Test func displayPolicyCanShowIndependentLocalAndRemotePlaybackRows() {
         let visibility = PlaybackDisplaySourcePolicy.visibility(
             hasLocalSong: true,
