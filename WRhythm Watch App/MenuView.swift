@@ -9,9 +9,14 @@ import SwiftUI
 
 struct MenuView: View {
     private let menuIconTint = WRhythmTheme.accent
+#if os(watchOS)
+    private let screenVerticalPadding = WRhythmSpacing.xs
+#else
+    private let screenVerticalPadding: CGFloat = 16
+#endif
 
     var body: some View {
-        WRhythmScreen {
+        WRhythmScreen(verticalPadding: screenVerticalPadding) {
             menuGroup("Library") {
                 menuLink("Artists", systemImage: "person.2", destination: ArtistsView())
                 menuLink("Albums", systemImage: "square.stack", destination: AlbumsView())

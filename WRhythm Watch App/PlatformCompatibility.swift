@@ -189,15 +189,18 @@ enum WRhythmSurfaceStyle {
 struct WRhythmScreen<Content: View>: View {
     var coverArtId: String?
     var horizontalPadding: CGFloat = 16
+    var verticalPadding: CGFloat = 16
     private let content: Content
 
     init(
         coverArtId: String? = nil,
         horizontalPadding: CGFloat = 16,
+        verticalPadding: CGFloat = 16,
         @ViewBuilder content: () -> Content
     ) {
         self.coverArtId = coverArtId
         self.horizontalPadding = horizontalPadding
+        self.verticalPadding = verticalPadding
         self.content = content()
     }
 
@@ -228,7 +231,7 @@ struct WRhythmScreen<Content: View>: View {
             .frame(maxWidth: WRhythmVisual.contentMaxWidth)
             .frame(maxWidth: .infinity)
             .padding(.horizontal, horizontalPadding)
-            .padding(.vertical, 16)
+            .padding(.vertical, verticalPadding)
         }
         .wrhythmPageBackground(coverArtId: coverArtId)
 #endif
