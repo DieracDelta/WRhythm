@@ -418,7 +418,7 @@ struct NowPlayingView: View {
 }
 
 private func bufferedTrackLabel(_ count: Int) -> String {
-    "\(count) \(count == 1 ? "track" : "tracks") buffered"
+    "\(count) next ready"
 }
 
 private enum NowPlayingSheet: String, Identifiable {
@@ -920,7 +920,7 @@ private struct BufferedTracksButton: View {
             )
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(count) ready buffered \(count == 1 ? "track" : "tracks")")
+        .accessibilityLabel("\(count) ready queued \(count == 1 ? "track" : "tracks")")
     }
 }
 

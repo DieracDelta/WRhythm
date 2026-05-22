@@ -51,12 +51,30 @@ struct PlaybackRetryPolicy: Sendable {
 }
 
 struct PrebufferSchedulingPolicy: Sendable {
+    static func desiredKeys(currentKey: String?, upcomingKeys: [String]) -> Set<String> {
+        var keys = Set(upcomingKeys)
+        if let currentKey {
+            keys.insert(currentKey)
+        }
+        return keys
+    }
+
+    static func orderedCandidateKeys(currentKey: String?, upcomingKeys: [String]) -> [String] {
+        var seen = Set<String>()
+        var keys: [String] = []
+        for key in ([currentKey].compactMap { $0 } + upcomingKeys) where !seen.contains(key) {
+            seen.insert(key)
+            keys.append(key)
+        }
+        return keys
+    }
+
     static func readyCount(upcomingKeys: [String], preparedKeys: Set<String>) -> Int {
         upcomingKeys.filter { preparedKeys.contains($0) }.count
     }
 
     static func keysToSchedule(
-        upcomingKeys: [String],
+        candidateKeys: [String],
         activeKeys: Set<String>,
         preparedKeys: Set<String>,
         failedKeys: Set<String>,
@@ -66,7 +84,7 @@ struct PrebufferSchedulingPolicy: Sendable {
         guard availableSlots > 0 else { return [] }
 
         var scheduled: [String] = []
-        for key in upcomingKeys {
+        for key in candidateKeys {
             guard availableSlots > 0 else { break }
             guard !activeKeys.contains(key),
                   !preparedKeys.contains(key),
@@ -963,23 +981,21 @@ class AudioPlayer: NSObject, ObservableObject {
             return
         }
 
-        let start = currentIndex + 1
-        guard start < queue.count else {
-            prebufferTasks.values.forEach { $0.cancel() }
-            prebufferTasks.removeAll()
-            prebufferTaskTokens.removeAll()
-            preparedPrebuffers.removeAll()
-            clearPrebufferRetryState()
-            updatePrebufferedTrackCount()
-            return
-        }
-
+        let currentQueueSong = queue.indices.contains(currentIndex) ? queue[currentIndex] : currentSong
+        let currentKey = currentQueueSong.map(prebufferKey)
+        let start = min(max(currentIndex + 1, 0), queue.count)
         let end = min(queue.count, start + prebufferAheadCount)
-        let upcomingSongs = Array(queue[start..<end])
+        let upcomingSongs = start < end ? Array(queue[start..<end]) : []
         let upcomingKeys = upcomingSongs.map(prebufferKey)
-        let desiredKeys = Set(upcomingKeys)
-        let songsByKey = Dictionary(uniqueKeysWithValues: zip(upcomingKeys, upcomingSongs))
-        let currentSongKey = currentSong.map(prebufferKey)
+        let desiredKeys = PrebufferSchedulingPolicy.desiredKeys(currentKey: currentKey, upcomingKeys: upcomingKeys)
+        let candidateKeys = PrebufferSchedulingPolicy.orderedCandidateKeys(currentKey: currentKey, upcomingKeys: upcomingKeys)
+        var songsByKey: [String: Song] = [:]
+        if let currentQueueSong, let currentKey {
+            songsByKey[currentKey] = currentQueueSong
+        }
+        for song in upcomingSongs {
+            songsByKey[prebufferKey(for: song)] = song
+        }
 
         let staleKeys = prebufferTasks.keys.filter { !desiredKeys.contains($0) }
         for key in staleKeys {
@@ -993,11 +1009,11 @@ class AudioPlayer: NSObject, ObservableObject {
         }
         prunePrebufferRetryState(keeping: desiredKeys)
 
-        prunePrebufferCache(keeping: desiredKeys.union(currentSongKey.map { [$0] } ?? []))
+        prunePrebufferCache(keeping: desiredKeys)
         updatePrebufferedTrackCount()
 
         let keysToSchedule = PrebufferSchedulingPolicy.keysToSchedule(
-            upcomingKeys: upcomingKeys,
+            candidateKeys: candidateKeys,
             activeKeys: Set(prebufferTasks.keys),
             preparedKeys: Set(preparedPrebuffers.keys),
             failedKeys: Set(prebufferRetryTasksByKey.keys),
@@ -1125,19 +1141,17 @@ class AudioPlayer: NSObject, ObservableObject {
     }
 
     private func desiredPrebufferKeys() -> Set<String> {
-        let start = currentIndex + 1
-        guard start < queue.count else { return [] }
+        guard !queue.isEmpty else { return [] }
+        let currentKey = queue.indices.contains(currentIndex) ? prebufferKey(for: queue[currentIndex]) : currentSong.map(prebufferKey)
+        let start = min(max(currentIndex + 1, 0), queue.count)
         let end = min(queue.count, start + prebufferAheadCount)
-        return Set(queue[start..<end].map(prebufferKey))
+        let upcomingKeys = start < end ? Array(queue[start..<end]).map(prebufferKey) : []
+        return PrebufferSchedulingPolicy.desiredKeys(currentKey: currentKey, upcomingKeys: upcomingKeys)
     }
 
     private func schedulePrebufferRetry(for song: Song, key: String) {
         guard prebufferRetryTasksByKey[key] == nil else { return }
-        let start = currentIndex + 1
-        guard start < queue.count,
-              queue[start..<queue.count].prefix(prebufferAheadCount).contains(where: { prebufferKey(for: $0) == key }) else {
-            return
-        }
+        guard desiredPrebufferKeys().contains(key) else { return }
 
         let attempt = prebufferRetryAttemptsByKey[key, default: 0]
         let delay = PrebufferRetryPolicy.retryDelay(forAttempt: attempt)
@@ -1266,15 +1280,11 @@ class AudioPlayer: NSObject, ObservableObject {
             self.duration = 0
             print("🔄 Reset duration to 0, will try to get from stream")
         }
+        scheduleQueuePrebuffer()
 
         // Check if song is downloaded first
         let playURL: URL
         let preparedAsset: AVURLAsset?
-        let prebufferKey = prebufferKey(for: song)
-        prebufferTasks[prebufferKey]?.cancel()
-        prebufferTasks.removeValue(forKey: prebufferKey)
-        prebufferTaskTokens.removeValue(forKey: prebufferKey)
-        clearPrebufferRetryState(for: prebufferKey)
 
         if let prebuffer = preparedPrebuffer(for: song) {
             playURL = prebuffer.url

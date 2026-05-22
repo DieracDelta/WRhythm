@@ -1464,9 +1464,48 @@ struct PlaybackSyncPolicyTests {
         ) == 2)
     }
 
+    @Test func prebufferSchedulingKeepsCurrentQueueItemDesiredWhenSkippingIntoReadyTrack() {
+        // Given
+        let currentQueueKey = "song-2"
+        let previousNowPlayingKey = "song-1"
+        let upcomingKeys = ["song-3", "song-4"]
+
+        // When
+        let desiredKeys = PrebufferSchedulingPolicy.desiredKeys(
+            currentKey: currentQueueKey,
+            upcomingKeys: upcomingKeys
+        )
+
+        // Then
+        #expect(desiredKeys.contains(currentQueueKey))
+        #expect(desiredKeys.contains(previousNowPlayingKey) == false)
+        #expect(desiredKeys == ["song-2", "song-3", "song-4"])
+    }
+
+    @Test func prebufferSchedulingPrioritizesCurrentItemBeforeUpcomingItems() {
+        // Given
+        let candidates = PrebufferSchedulingPolicy.orderedCandidateKeys(
+            currentKey: "song-2",
+            upcomingKeys: ["song-2", "song-3", "song-4"]
+        )
+
+        // When
+        let scheduled = PrebufferSchedulingPolicy.keysToSchedule(
+            candidateKeys: candidates,
+            activeKeys: [],
+            preparedKeys: [],
+            failedKeys: [],
+            maxConcurrentTasks: 2
+        )
+
+        // Then
+        #expect(candidates == ["song-2", "song-3", "song-4"])
+        #expect(scheduled == ["song-2", "song-3"])
+    }
+
     @Test func prebufferSchedulingSkipsFailedPreparedAndActiveKeysToFillSlots() {
         let scheduled = PrebufferSchedulingPolicy.keysToSchedule(
-            upcomingKeys: ["a", "b", "c", "d"],
+            candidateKeys: ["a", "b", "c", "d"],
             activeKeys: ["a"],
             preparedKeys: ["b"],
             failedKeys: ["c"],
