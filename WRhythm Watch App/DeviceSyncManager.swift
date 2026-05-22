@@ -102,38 +102,6 @@ final class SyncDelegateEventSubmitter: @unchecked Sendable {
     }
 }
 
-struct PlaybackSnapshotFingerprintPolicy: Sendable {
-    static let maxTrackedFingerprints = 500
-
-    static func fingerprint(for playback: PlaybackSnapshot) -> String {
-        let normalizedCurrentTime = Int((playback.currentTime.isFinite ? playback.currentTime : 0).rounded(.down))
-        let normalizedDuration = Int((playback.duration.isFinite ? playback.duration : 0).rounded())
-        let normalizedVolume = Int(((playback.volume ?? -1) * 100).rounded())
-
-        return [
-            playback.id,
-            playback.song?.id ?? "",
-            playback.isPlaying ? "1" : "0",
-            playback.isBuffering == true ? "1" : "0",
-            "\(playback.prebufferedTrackCount ?? -1)",
-            "\(normalizedVolume)",
-            "\(normalizedCurrentTime)",
-            "\(normalizedDuration)",
-            "\(playback.currentIndex)",
-            playback.queue.map(\.id).joined(separator: ",")
-        ].joined(separator: "|")
-    }
-
-    static func shouldProcess(fingerprint: String, processedFingerprints: Set<String>) -> Bool {
-        !processedFingerprints.contains(fingerprint)
-    }
-
-    static func trimmedFingerprintOrder(_ ids: [String]) -> [String] {
-        guard ids.count > maxTrackedFingerprints else { return ids }
-        return Array(ids.suffix(maxTrackedFingerprints))
-    }
-}
-
 struct SyncedCredentials: Codable, Sendable {
     let baseURL: String
     let username: String
@@ -227,75 +195,9 @@ extension PlaybackSnapshot {
     }
 }
 
-struct PlaybackSyncPolicy: Sendable {
-    static let defaultMaxRemotePlaybackSnapshotAge: TimeInterval = 30
-    static let defaultAllowedFutureClockSkew: TimeInterval = 10
-    static let progressReanchorInterval: TimeInterval = 2
-    static let playingProgressDriftTolerance: TimeInterval = 1.5
-    static let pausedProgressDriftTolerance: TimeInterval = 0.35
-
-    static func isStalePlaybackSnapshot(
-        _ playback: PlaybackSnapshot,
-        current: PlaybackSnapshot?,
-        now: Date = Date(),
-        maxAge: TimeInterval = defaultMaxRemotePlaybackSnapshotAge,
-        allowedFutureClockSkew: TimeInterval = defaultAllowedFutureClockSkew
-    ) -> Bool {
-        if playback.updatedAt.timeIntervalSince(now) > allowedFutureClockSkew {
-            return true
-        }
-
-        if now.timeIntervalSince(playback.updatedAt) > maxAge {
-            return true
-        }
-
-        guard let current, current.id == playback.id else {
-            return false
-        }
-
-        return playback.updatedAt < current.updatedAt
-    }
-
-    static func shouldPublishRemotePlayback(_ playback: PlaybackSnapshot, current: PlaybackSnapshot?) -> Bool {
-        guard let current, current.id == playback.id else { return true }
-        guard playback.updatedAt >= current.updatedAt else { return false }
-        if current.deviceName != playback.deviceName || current.platform != playback.platform { return true }
-        if current.song?.id != playback.song?.id { return true }
-        if current.isPlaying != playback.isPlaying { return true }
-        if (current.isBuffering ?? false) != (playback.isBuffering ?? false) { return true }
-        if (current.prebufferedTrackCount ?? 0) != (playback.prebufferedTrackCount ?? 0) { return true }
-        if abs(current.duration - playback.duration) > 1 { return true }
-        if abs((current.volume ?? -1) - (playback.volume ?? -1)) > 0.01 { return true }
-        if current.currentIndex != playback.currentIndex { return true }
-        if current.queue.map(\.id) != playback.queue.map(\.id) { return true }
-        if current.isPlaying && playback.isPlaying,
-           playback.updatedAt.timeIntervalSince(current.updatedAt) >= progressReanchorInterval {
-            return true
-        }
-
-        if !current.isPlaying && !playback.isPlaying {
-            return abs(current.currentTime - playback.currentTime) > pausedProgressDriftTolerance
-        }
-
-        return abs(current.estimatedCurrentTime - playback.currentTime) > playingProgressDriftTolerance
-    }
-}
-
-struct PlaybackSnapshotReceivePolicy: Sendable {
-    static func shouldAccept(
-        _ playback: PlaybackSnapshot,
-        current: PlaybackSnapshot?,
-        isAcknowledgingPendingCommand: Bool,
-        now: Date = Date()
-    ) -> Bool {
-        !PlaybackSyncPolicy.isStalePlaybackSnapshot(playback, current: current, now: now) || isAcknowledgingPendingCommand
-    }
-}
-
 enum WatchConnectivitySyncPayloadKind: Sendable {
     case hello
     case syncRequest
-    case playbackState
     case playbackSession
     case playbackCommand
     case credentials(hasPayload: Bool)
@@ -308,7 +210,7 @@ struct WatchConnectivitySyncPolicy: Sendable {
             return hasPayload
         case .hello, .syncRequest:
             return true
-        case .playbackState, .playbackSession, .playbackCommand:
+        case .playbackSession, .playbackCommand:
             return false
         }
     }
@@ -328,7 +230,7 @@ enum SyncTransportKind: Sendable {
 struct SyncTransportFailurePolicy: Sendable {
     static func shouldInvalidatePlaybackBroadcastAttempt(kind: WatchConnectivitySyncPayloadKind) -> Bool {
         switch kind {
-        case .playbackState, .playbackSession, .playbackCommand:
+        case .playbackSession, .playbackCommand:
             return true
         case .hello, .syncRequest, .credentials:
             return false
@@ -337,7 +239,7 @@ struct SyncTransportFailurePolicy: Sendable {
 
     static func shouldRequestPlaybackRefresh(kind: WatchConnectivitySyncPayloadKind) -> Bool {
         switch kind {
-        case .playbackState, .playbackSession, .playbackCommand:
+        case .playbackSession, .playbackCommand:
             return true
         case .hello, .syncRequest, .credentials:
             return false
@@ -448,74 +350,8 @@ struct PlaybackCommandSyncPolicy: Sendable {
         action != .toggle
     }
 
-    static func isAcknowledged(
-        action: PlaybackSyncCommandAction,
-        expectedSongs: [Song]? = nil,
-        expectedIndex: Int? = nil,
-        expectedTime: TimeInterval? = nil,
-        expectedVolume: Double? = nil,
-        by playback: PlaybackSnapshot,
-        now: Date = Date()
-    ) -> Bool {
-        switch action {
-        case .play:
-            return playback.isPlaying
-        case .pause:
-            return !playback.isPlaying
-        case .next, .previous:
-            guard let expectedIndex else { return false }
-            guard playback.currentIndex == expectedIndex else { return false }
-            if let expectedSong = playback.queue[safe: expectedIndex] {
-                guard playback.song?.id == expectedSong.id else { return false }
-            }
-            if let expectedTime {
-                let currentDelta = abs(playback.currentTime - expectedTime)
-                let estimatedDelta = abs(playback.estimatedCurrentTime(at: now) - expectedTime)
-                return min(currentDelta, estimatedDelta) <= seekAcknowledgmentTolerance
-            }
-            return true
-        case .seek:
-            guard let expectedTime else { return false }
-            let currentDelta = abs(playback.currentTime - expectedTime)
-            let estimatedDelta = abs(playback.estimatedCurrentTime(at: now) - expectedTime)
-            return min(currentDelta, estimatedDelta) <= seekAcknowledgmentTolerance
-        case .setVolume:
-            guard let expectedVolume, let actualVolume = playback.volume else { return false }
-            return abs(expectedVolume - actualVolume) < volumeAcknowledgmentTolerance
-        case .playQueue:
-            guard let expectedSongs, !expectedSongs.isEmpty else { return false }
-            let expectedIndex = min(max(expectedIndex ?? 0, 0), expectedSongs.count - 1)
-            guard playback.queue.map(\.id) == expectedSongs.map(\.id) else { return false }
-            guard playback.currentIndex == expectedIndex else { return false }
-            guard playback.song?.id == expectedSongs[expectedIndex].id else { return false }
-            return playback.isPlaying
-        case .enqueue:
-            guard let expectedSongs, !expectedSongs.isEmpty else { return false }
-            return containsContiguousSongIDs(expectedSongs.map(\.id), in: playback.queue.map(\.id))
-        case .syncQueue:
-            guard let expectedSongs, !expectedSongs.isEmpty else { return false }
-            let expectedIndex = min(max(expectedIndex ?? 0, 0), expectedSongs.count - 1)
-            return playback.queue.map(\.id) == expectedSongs.map(\.id) && playback.currentIndex == expectedIndex
-        case .stop:
-            return !playback.isPlaying && playback.song == nil && playback.queue.isEmpty
-        case .toggle:
-            return false
-        }
-    }
-
     static func retryDelay(forAttempt attempt: Int) -> TimeInterval {
         min(pow(2.0, Double(max(0, attempt))), maxRetryDelay)
-    }
-
-    private static func containsContiguousSongIDs(_ needle: [String], in haystack: [String]) -> Bool {
-        guard !needle.isEmpty, needle.count <= haystack.count else { return false }
-        for startIndex in 0...(haystack.count - needle.count) {
-            let slice = haystack[startIndex..<(startIndex + needle.count)]
-            if Array(slice) == needle {
-                return true
-            }
-        }
-        return false
     }
 }
 
@@ -541,23 +377,11 @@ struct PlaybackControlTargetPolicy: Sendable {
     static func resolvedDefaultRemoteTargetID(
         selectedTargetID: String,
         localDeviceID: String,
-        availableTargetIDs: Set<String>,
-        sharedSessionOutputDeviceID: String?,
-        activeSharedPlaybackID: String?,
-        remotePlaybackID: String?
+        availableTargetIDs: Set<String>
     ) -> String? {
         guard selectedTargetID != localDeviceID,
               availableTargetIDs.contains(selectedTargetID) else {
             return nil
-        }
-
-        if let remotePlaybackID,
-           remotePlaybackID != localDeviceID,
-           remotePlaybackID != selectedTargetID,
-           availableTargetIDs.contains(remotePlaybackID),
-           selectedTargetID == sharedSessionOutputDeviceID,
-           activeSharedPlaybackID == nil {
-            return remotePlaybackID
         }
 
         return selectedTargetID
@@ -614,59 +438,14 @@ struct PendingPlaybackCommandPolicy: Sendable {
     }
 }
 
-struct PendingPlaybackAcknowledgmentPolicy: Sendable {
-    static func shouldAcceptAcknowledgingSnapshot(
-        _ playback: PlaybackSnapshot,
-        current: PlaybackSnapshot?,
-        action: PlaybackSyncCommandAction,
-        expectedSongs: [Song]? = nil,
-        expectedIndex: Int? = nil,
-        expectedTime: TimeInterval? = nil,
-        expectedVolume: Double? = nil
-    ) -> Bool {
-        guard PlaybackCommandSyncPolicy.needsPlaybackAcknowledgment(action),
-              PlaybackCommandSyncPolicy.isAcknowledged(
-                action: action,
-                expectedSongs: expectedSongs,
-                expectedIndex: expectedIndex,
-                expectedTime: expectedTime,
-                expectedVolume: expectedVolume,
-                by: playback
-              ) else {
-            return false
-        }
-
-        guard let current, current.id == playback.id else {
-            return true
-        }
-
-        switch action {
-        case .playQueue, .enqueue, .syncQueue, .stop:
-            return true
-        case .play, .pause, .toggle, .next, .previous, .seek, .setVolume:
-            break
-        }
-
-        if playback.song?.id != current.song?.id { return false }
-        if playback.queue.map(\.id) != current.queue.map(\.id) { return false }
-        return true
-    }
-}
-
-struct PendingPlaybackCommandExpiryPolicy: Sendable {
-    static func shouldInvalidateOptimisticRemotePlayback(remotePlaybackID: String?, expiredDeviceID: String) -> Bool {
-        remotePlaybackID == expiredDeviceID
-    }
-}
-
 struct PendingPlaybackCommandRetryPolicy: Sendable {
     static func shouldRunRetry(pendingCommandID: String?, scheduledCommandID: String?) -> Bool {
         pendingCommandID == scheduledCommandID
     }
 }
 
-struct PendingPlaybackSnapshotPolicy: Sendable {
-    static func shouldApplySnapshot(hasPendingCommandForDevice: Bool, isAcknowledgingPendingCommand: Bool) -> Bool {
+struct PendingPlaybackUpdatePolicy: Sendable {
+    static func shouldApplyUpdate(hasPendingCommandForDevice: Bool, isAcknowledgingPendingCommand: Bool) -> Bool {
         !hasPendingCommandForDevice || isAcknowledgingPendingCommand
     }
 }
@@ -737,7 +516,7 @@ struct SyncDuplicatePolicy: Sendable {
     }
 }
 
-struct RemotePlaybackApplicationState: Sendable {
+struct RemoteCommandApplicationState: Sendable {
     private var depth = 0
 
     var isApplying: Bool {
@@ -920,71 +699,13 @@ struct PlaybackSessionSyncPolicy: Sendable {
 }
 
 struct PlaybackSessionSnapshotPolicy: Sendable {
-    private static func isSupersededByDifferentLivePlayback(
-        _ remotePlayback: PlaybackSnapshot?,
-        session: PlaybackSession
-    ) -> Bool {
-        guard let remotePlayback,
-              remotePlayback.id != session.outputDeviceID,
-              remotePlayback.song != nil,
-              remotePlayback.updatedAt >= session.updatedAt else {
-            return false
-        }
-
-        if let currentSong = session.currentSong,
-           let remoteSong = remotePlayback.song,
-           remoteSong.id != currentSong.id {
-            return false
-        }
-
-        let remoteQueueIDs = remotePlayback.queue.map(\.id)
-        if !remoteQueueIDs.isEmpty, remoteQueueIDs != session.queue.map(\.id) {
-            return false
-        }
-
-        return true
-    }
-
-    private static func livePlaybackForSession(
-        _ remotePlayback: PlaybackSnapshot?,
-        session: PlaybackSession
-    ) -> PlaybackSnapshot? {
-        guard let remotePlayback,
-              remotePlayback.id == session.outputDeviceID,
-              remotePlayback.updatedAt >= session.updatedAt else {
-            return nil
-        }
-
-        if let currentSong = session.currentSong,
-           let remoteSong = remotePlayback.song,
-           remoteSong.id != currentSong.id {
-            return nil
-        }
-
-        let remoteQueueIDs = remotePlayback.queue.map(\.id)
-        if !remoteQueueIDs.isEmpty, remoteQueueIDs != session.queue.map(\.id) {
-            return nil
-        }
-
-        return remotePlayback
-    }
-
     static func snapshot(
         from session: PlaybackSession,
         deviceName: String,
         platform: String,
-        remotePlayback: PlaybackSnapshot?,
         now: Date = Date()
     ) -> PlaybackSnapshot? {
         guard let song = session.currentSong else { return nil }
-        guard !isSupersededByDifferentLivePlayback(remotePlayback, session: session) else { return nil }
-        let livePlayback = livePlaybackForSession(remotePlayback, session: session)
-        let sessionPosition = session.estimatedPosition(at: now)
-        let currentTime = if session.isPlaying, livePlayback?.isPlaying == true {
-            livePlayback?.estimatedCurrentTime(at: now) ?? sessionPosition
-        } else {
-            sessionPosition
-        }
 
         return PlaybackSnapshot(
             id: session.outputDeviceID,
@@ -992,11 +713,11 @@ struct PlaybackSessionSnapshotPolicy: Sendable {
             platform: platform,
             song: song,
             isPlaying: session.isPlaying,
-            isBuffering: livePlayback?.isBuffering,
-            prebufferedTrackCount: livePlayback?.prebufferedTrackCount,
-            volume: livePlayback?.volume ?? session.volume,
-            currentTime: currentTime,
-            duration: livePlayback?.duration ?? TimeInterval(song.duration ?? 0),
+            isBuffering: nil,
+            prebufferedTrackCount: nil,
+            volume: session.volume,
+            currentTime: session.estimatedPosition(at: now),
+            duration: TimeInterval(song.duration ?? 0),
             queue: session.queue,
             currentIndex: session.currentIndex,
             updatedAt: now
@@ -1013,70 +734,6 @@ struct LocalPlaybackOwnershipPolicy: Sendable {
     ) -> Bool {
         guard let sharedOutputDeviceID else { return true }
         return sharedOutputDeviceID == localDeviceID || isLocalPlaying || isExplicitLocalPlaybackIntent
-    }
-}
-
-struct PlaybackStateBroadcastPolicy: Sendable {
-    static let minimumProgressBroadcastInterval: TimeInterval = 1.5
-
-    static func shouldBroadcast(
-        snapshot: PlaybackSnapshot,
-        previousSnapshot: PlaybackSnapshot?,
-        lastBroadcastAt: Date?,
-        now: Date = Date(),
-        force: Bool = false,
-        syncModeEnabled: Bool = true,
-        isApplyingRemoteCommand: Bool = false,
-        sharedOutputDeviceID: String? = nil,
-        isExplicitLocalPlaybackIntent: Bool = false,
-        localDeviceID: String
-    ) -> Bool {
-        guard syncModeEnabled, !isApplyingRemoteCommand else { return false }
-        guard LocalPlaybackOwnershipPolicy.shouldPublishLocalPlayback(
-            sharedOutputDeviceID: sharedOutputDeviceID,
-            localDeviceID: localDeviceID,
-            isLocalPlaying: snapshot.isPlaying,
-            isExplicitLocalPlaybackIntent: isExplicitLocalPlaybackIntent
-        ) else { return false }
-        if force { return true }
-        guard let previousSnapshot else { return true }
-
-        if shouldBypassProgressThrottle(snapshot: snapshot, previousSnapshot: previousSnapshot) {
-            return true
-        }
-
-        guard let lastBroadcastAt else { return true }
-        return now.timeIntervalSince(lastBroadcastAt) > minimumProgressBroadcastInterval
-    }
-
-    private static func shouldBypassProgressThrottle(
-        snapshot: PlaybackSnapshot,
-        previousSnapshot: PlaybackSnapshot
-    ) -> Bool {
-        if snapshot.song?.id != previousSnapshot.song?.id { return true }
-        if snapshot.isPlaying != previousSnapshot.isPlaying { return true }
-        if (snapshot.isBuffering ?? false) != (previousSnapshot.isBuffering ?? false) { return true }
-        if (snapshot.prebufferedTrackCount ?? 0) != (previousSnapshot.prebufferedTrackCount ?? 0) { return true }
-        if snapshot.currentIndex != previousSnapshot.currentIndex { return true }
-        if snapshot.queue.map(\.id) != previousSnapshot.queue.map(\.id) { return true }
-        if abs((snapshot.volume ?? -1) - (previousSnapshot.volume ?? -1)) > 0.01 { return true }
-        if abs(snapshot.duration - previousSnapshot.duration) > 1 { return true }
-        return false
-    }
-}
-
-struct PlaybackStateBroadcastDeliveryPolicy: Sendable {
-    static func shouldRecordAttempt(didSend: Bool) -> Bool {
-        didSend
-    }
-}
-
-struct PlaybackTelemetryBroadcastPolicy: Sendable {
-    static let minimumTelemetryBroadcastInterval: TimeInterval = 2
-
-    static func shouldBroadcast(lastBroadcastAt: Date?, now: Date = Date()) -> Bool {
-        guard let lastBroadcastAt else { return true }
-        return now.timeIntervalSince(lastBroadcastAt) >= minimumTelemetryBroadcastInterval
     }
 }
 
@@ -1155,7 +812,6 @@ private struct SyncEnvelope: Codable, Sendable {
     enum Kind: String, Codable, Sendable {
         case hello
         case syncRequest
-        case playbackState
         case playbackSession
         case playbackCommand
         case credentials
@@ -1164,7 +820,6 @@ private struct SyncEnvelope: Codable, Sendable {
     let envelopeID: String?
     let kind: Kind
     let sender: SyncPeerInfo
-    let playback: PlaybackSnapshot?
     let playbackSession: PlaybackSession?
     let command: PlaybackCommand?
     let credentials: SyncedCredentials?
@@ -1174,7 +829,6 @@ private struct SyncEnvelope: Codable, Sendable {
         envelopeID: String = UUID().uuidString,
         kind: Kind,
         sender: SyncPeerInfo,
-        playback: PlaybackSnapshot?,
         playbackSession: PlaybackSession? = nil,
         command: PlaybackCommand?,
         credentials: SyncedCredentials?,
@@ -1183,7 +837,6 @@ private struct SyncEnvelope: Codable, Sendable {
         self.envelopeID = envelopeID
         self.kind = kind
         self.sender = sender
-        self.playback = playback
         self.playbackSession = playbackSession
         self.command = command
         self.credentials = credentials
@@ -1198,8 +851,6 @@ private extension SyncEnvelope {
             return .hello
         case .syncRequest:
             return .syncRequest
-        case .playbackState:
-            return .playbackState
         case .playbackSession:
             return .playbackSession
         case .playbackCommand:
@@ -1223,7 +874,6 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             }
             configureTransports()
             broadcastHello()
-            broadcastPlaybackState(force: true)
         }
     }
 
@@ -1235,7 +885,6 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         }
     }
 
-    @Published private(set) var remotePlayback: PlaybackSnapshot?
     @Published private(set) var sharedSession: PlaybackSession?
     @Published private(set) var connectedDeviceNames: [String] = []
     @Published var selectedPlaybackTargetID: String {
@@ -1255,12 +904,9 @@ final class DeviceSyncManager: NSObject, ObservableObject {
     private let localDeviceName: String
     private let platformName: String
     private var cancellables = Set<AnyCancellable>()
-    private var lastPlaybackBroadcast = Date.distantPast
-    private var lastPlaybackTelemetryBroadcast = Date.distantPast
-    private var lastBroadcastedPlaybackSnapshot: PlaybackSnapshot?
-    private var remotePlaybackApplicationState = RemotePlaybackApplicationState()
+    private var remoteCommandApplicationState = RemoteCommandApplicationState()
     private var isApplyingRemoteCommand: Bool {
-        remotePlaybackApplicationState.isApplying
+        remoteCommandApplicationState.isApplying
     }
     private var peerInfos: [String: SyncPeerInfo] = [:]
     private var pendingTargetedCommands: [String: PlaybackCommand] = [:]
@@ -1271,8 +917,6 @@ final class DeviceSyncManager: NSObject, ObservableObject {
     private var processedCommandIDOrder: [String] = []
     private var processedEnvelopeIDs = Set<String>()
     private var processedEnvelopeIDOrder: [String] = []
-    private var processedPlaybackSnapshotFingerprints = Set<String>()
-    private var processedPlaybackSnapshotFingerprintOrder: [String] = []
     private var isHandlingSyncTransportFailure = false
     private let sharedSessionID: String
 #if os(iOS) || os(watchOS)
@@ -1367,15 +1011,15 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         delegateEventSubmitter.enqueue(operation)
     }
 
-    private func withRemotePlaybackApplication(_ body: () -> Void) {
-        remotePlaybackApplicationState.begin()
-        defer { remotePlaybackApplicationState.end() }
+    private func withRemoteCommandApplication(_ body: () -> Void) {
+        remoteCommandApplicationState.begin()
+        defer { remoteCommandApplicationState.end() }
         body()
     }
 
     var hasActiveRemotePlayback: Bool {
-        guard syncModeEnabled, let remotePlayback else { return false }
-        return remotePlayback.isPlaying || remotePlayback.song != nil
+        guard syncModeEnabled, let sharedSession else { return false }
+        return sharedSession.outputDeviceID != localDeviceID && sharedSession.currentSong != nil
     }
 
     var isLocalPlaybackOutput: Bool {
@@ -1394,9 +1038,8 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         let outputPeer = peerInfo(for: sharedSession.outputDeviceID)
         return PlaybackSessionSnapshotPolicy.snapshot(
             from: sharedSession,
-            deviceName: outputPeer?.name ?? remotePlayback?.deviceName ?? "Remote Device",
-            platform: outputPeer?.platform ?? remotePlayback?.platform ?? "Device",
-            remotePlayback: remotePlayback
+            deviceName: outputPeer?.name ?? "Remote Device",
+            platform: outputPeer?.platform ?? "Device"
         )
     }
 
@@ -1422,18 +1065,6 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         targets.append(contentsOf: peers.map {
             PlaybackTargetDevice(id: $0.id, name: $0.name, platform: $0.platform, isLocal: false)
         })
-
-        if let remotePlayback,
-           remotePlayback.id != localDeviceID,
-           Date().timeIntervalSince(remotePlayback.updatedAt) < 20,
-           !targets.contains(where: { $0.id == remotePlayback.id }) {
-            targets.append(PlaybackTargetDevice(
-                id: remotePlayback.id,
-                name: remotePlayback.deviceName,
-                platform: remotePlayback.platform,
-                isLocal: false
-            ))
-        }
 
         return targets
     }
@@ -1483,7 +1114,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
     func requestPlaybackSyncRefresh() {
         guard syncModeEnabled || credentialSyncEnabled else { return }
         configureTransports()
-        _ = sendEnvelope(.init(kind: .syncRequest, sender: localPeerInfo(), playback: nil, command: nil, credentials: nil, targetDeviceID: nil))
+        _ = sendEnvelope(.init(kind: .syncRequest, sender: localPeerInfo(), command: nil, credentials: nil, targetDeviceID: nil))
         sendCurrentSyncState(includeHello: true)
     }
 
@@ -1524,7 +1155,6 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         _ = sendEnvelope(.init(
             kind: .playbackSession,
             sender: localPeerInfo(),
-            playback: nil,
             playbackSession: session,
             command: nil,
             credentials: nil,
@@ -1561,7 +1191,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         )
 
         if session.outputDeviceID == localDeviceID {
-            withRemotePlaybackApplication {
+            withRemoteCommandApplication {
                 guard let song = session.currentSong else {
                     if plan.shouldStop {
                         player.stop()
@@ -1602,7 +1232,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
                 }
             }
         } else if plan.shouldPause {
-            withRemotePlaybackApplication {
+            withRemoteCommandApplication {
                 player.pause()
             }
         }
@@ -1651,9 +1281,6 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         if let sharedSession, sharedSession.outputDeviceID == selectedPlaybackTargetID {
             baseQueue = sharedSession.queue
             currentIndex = min(sharedSession.currentIndex, max(baseQueue.count - 1, 0))
-        } else if let remotePlayback, remotePlayback.id == selectedPlaybackTargetID {
-            baseQueue = remotePlayback.queue.isEmpty ? remotePlayback.song.map { [$0] } ?? [] : remotePlayback.queue
-            currentIndex = min(remotePlayback.currentIndex, max(baseQueue.count - 1, 0))
         } else {
             baseQueue = player.queue.isEmpty ? player.currentSong.map { [$0] } ?? [] : player.queue
             currentIndex = min(player.currentIndex, max(baseQueue.count - 1, 0))
@@ -1661,9 +1288,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
 
         let sharedTargetFinished = sharedSession?.outputDeviceID == selectedPlaybackTargetID
             && sharedSession?.isFinishedAtQueueEnd == true
-        let remoteTargetFinished = remotePlayback?.id == selectedPlaybackTargetID
-            && remotePlayback?.isFinishedAtQueueEnd == true
-        let shouldStartAppendedSongs = sharedTargetFinished || remoteTargetFinished
+        let shouldStartAppendedSongs = sharedTargetFinished
         let sharedQueue = baseQueue + songs
         let appendedStartIndex = baseQueue.count
         publishSharedSession(makeSession(
@@ -1701,8 +1326,6 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             setPlaying(!AudioPlayer.shared.isPlaying, targetDeviceID: localDeviceID)
         } else if let sharedSession, sharedSession.outputDeviceID == targetDeviceID {
             setPlaying(!sharedSession.isPlaying, targetDeviceID: targetDeviceID)
-        } else if let remotePlayback, remotePlayback.id == targetDeviceID {
-            setPlaying(!remotePlayback.isPlaying, targetDeviceID: targetDeviceID)
         } else {
             sendPlayPause(targetDeviceID: targetDeviceID)
         }
@@ -1719,10 +1342,6 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             return !sharedSession.isPlaying
         }
 
-        if let remotePlayback, remotePlayback.id == targetDeviceID {
-            return !remotePlayback.isPlaying
-        }
-
         return nil
     }
 
@@ -1736,7 +1355,6 @@ final class DeviceSyncManager: NSObject, ObservableObject {
                 AudioPlayer.shared.pause()
             }
             broadcastLocalQueueAsShared(isExplicitLocalPlaybackIntent: true)
-            broadcastPlaybackState(force: true, isExplicitLocalPlaybackIntent: true)
             return
         }
 
@@ -1749,22 +1367,6 @@ final class DeviceSyncManager: NSObject, ObservableObject {
                 outputDeviceID: sharedSession.outputDeviceID,
                 volume: sharedSession.volume
             ), applyLocally: false)
-        } else if let remotePlayback, remotePlayback.id == targetDeviceID {
-            self.remotePlayback = PlaybackSnapshot(
-                id: remotePlayback.id,
-                deviceName: remotePlayback.deviceName,
-                platform: remotePlayback.platform,
-                song: remotePlayback.song,
-                isPlaying: isPlaying,
-                isBuffering: isPlaying ? remotePlayback.isBuffering : false,
-                prebufferedTrackCount: remotePlayback.prebufferedTrackCount,
-                volume: remotePlayback.volume,
-                currentTime: remotePlayback.estimatedCurrentTime,
-                duration: remotePlayback.duration,
-                queue: remotePlayback.queue,
-                currentIndex: remotePlayback.currentIndex,
-                updatedAt: Date()
-            )
         }
 
         let action = PlaybackCommandSyncPolicy.explicitActionForToggledPlayback(isPlaying: !isPlaying)
@@ -1801,7 +1403,6 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         if targetDeviceID == nil || targetDeviceID == localDeviceID {
             AudioPlayer.shared.volume = volume
             broadcastLocalQueueAsShared()
-            broadcastPlaybackState(force: true)
             return
         }
 
@@ -1847,14 +1448,14 @@ final class DeviceSyncManager: NSObject, ObservableObject {
     }
 
     func takeOverRemotePlayback() {
-        guard syncModeEnabled, let remotePlayback, let song = remotePlayback.song else { return }
+        guard syncModeEnabled, let sharedPlayback = activeSharedPlayback, let song = sharedPlayback.song else { return }
         selectedPlaybackTargetID = localDeviceID
-        let queue = remotePlayback.queue.isEmpty ? [song] : remotePlayback.queue
+        let queue = sharedPlayback.queue.isEmpty ? [song] : sharedPlayback.queue
         publishSharedSession(makeSession(
             queue: queue,
-            currentIndex: remotePlayback.currentIndex,
-            position: remotePlayback.estimatedCurrentTime,
-            isPlaying: remotePlayback.isPlaying,
+            currentIndex: sharedPlayback.currentIndex,
+            position: sharedPlayback.estimatedCurrentTime,
+            isPlaying: sharedPlayback.isPlaying,
             outputDeviceID: localDeviceID
         ))
     }
@@ -1878,8 +1479,6 @@ final class DeviceSyncManager: NSObject, ObservableObject {
                     isPlaying: sharedPlayback.isPlaying,
                     outputDeviceID: localDeviceID
                 ))
-            } else if let remotePlayback, remotePlayback.song != nil, AudioPlayer.shared.currentSong == nil {
-                takeOverRemotePlayback()
             }
             return
         }
@@ -1953,14 +1552,6 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             .sink { [weak self] _, _, _, _ in
                 guard let self else { return }
                 self.broadcastLocalQueueAsShared()
-                self.broadcastPlaybackState()
-            }
-            .store(in: &cancellables)
-
-        player.$currentTime
-            .removeDuplicates { abs($0 - $1) < 1 }
-            .sink { [weak self] _ in
-                self?.broadcastPlaybackState()
             }
             .store(in: &cancellables)
 
@@ -1969,21 +1560,6 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             .sink { [weak self] _ in
                 guard let self, !self.isApplyingRemoteCommand else { return }
                 self.broadcastLocalQueueAsShared()
-                self.broadcastPlaybackState(force: true)
-            }
-            .store(in: &cancellables)
-
-        player.$isBuffering
-            .removeDuplicates()
-            .sink { [weak self] _ in
-                self?.broadcastPlaybackTelemetryState()
-            }
-            .store(in: &cancellables)
-
-        player.$prebufferedTrackCount
-            .removeDuplicates()
-            .sink { [weak self] _ in
-                self?.broadcastPlaybackTelemetryState()
             }
             .store(in: &cancellables)
     }
@@ -2033,7 +1609,6 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             multipeerDeviceIDs.removeAll()
             deviceIDsByPeerDisplayName.removeAll()
             connectedDeviceNames = []
-            remotePlayback = nil
             sharedSession = nil
         }
 #endif
@@ -2047,25 +1622,6 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             syncModeEnabled: syncModeEnabled,
             credentialSyncEnabled: credentialSyncEnabled,
             hasCredentials: NavidromeAPI.shared.hasCredentials
-        )
-    }
-
-    private func localPlaybackSnapshot() -> PlaybackSnapshot {
-        let player = AudioPlayer.shared
-        return PlaybackSnapshot(
-            id: localDeviceID,
-            deviceName: localDeviceName,
-            platform: platformName,
-            song: player.currentSong,
-            isPlaying: player.isPlaying,
-            isBuffering: player.isBuffering,
-            prebufferedTrackCount: player.prebufferedTrackCount,
-            volume: player.volume,
-            currentTime: player.liveCurrentTime,
-            duration: player.duration,
-            queue: player.queue,
-            currentIndex: player.currentIndex,
-            updatedAt: Date()
         )
     }
 
@@ -2092,16 +1648,14 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         if includeHello {
             broadcastHello()
         }
-        broadcastPlaybackState(force: true)
     }
 
     private func broadcastHello() {
-        _ = sendEnvelope(.init(kind: .hello, sender: localPeerInfo(), playback: nil, command: nil, credentials: nil, targetDeviceID: nil))
+        _ = sendEnvelope(.init(kind: .hello, sender: localPeerInfo(), command: nil, credentials: nil, targetDeviceID: nil))
         if let sharedSession {
             _ = sendEnvelope(.init(
                 kind: .playbackSession,
                 sender: localPeerInfo(),
-                playback: nil,
                 playbackSession: sharedSession,
                 command: nil,
                 credentials: nil,
@@ -2110,46 +1664,9 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         }
     }
 
-    private func broadcastPlaybackState(force: Bool = false, isExplicitLocalPlaybackIntent: Bool = false) {
-        let now = Date()
-        let snapshot = localPlaybackSnapshot()
-        guard PlaybackStateBroadcastPolicy.shouldBroadcast(
-            snapshot: snapshot,
-            previousSnapshot: lastBroadcastedPlaybackSnapshot,
-            lastBroadcastAt: lastPlaybackBroadcast,
-            now: now,
-            force: force,
-            syncModeEnabled: syncModeEnabled,
-            isApplyingRemoteCommand: isApplyingRemoteCommand,
-            sharedOutputDeviceID: sharedSession?.outputDeviceID,
-            isExplicitLocalPlaybackIntent: isExplicitLocalPlaybackIntent,
-            localDeviceID: localDeviceID
-        ) else { return }
-
-        let didSend = sendEnvelope(.init(kind: .playbackState, sender: localPeerInfo(), playback: snapshot, command: nil, credentials: nil, targetDeviceID: nil))
-        guard PlaybackStateBroadcastDeliveryPolicy.shouldRecordAttempt(didSend: didSend) else { return }
-        lastPlaybackBroadcast = now
-        lastBroadcastedPlaybackSnapshot = snapshot
-    }
-
-    private func broadcastPlaybackTelemetryState() {
-        let now = Date()
-        guard PlaybackTelemetryBroadcastPolicy.shouldBroadcast(lastBroadcastAt: lastPlaybackTelemetryBroadcast, now: now) else { return }
-        lastPlaybackTelemetryBroadcast = now
-        broadcastPlaybackState(force: true)
-    }
-
-    private func shouldPublishRemotePlayback(_ playback: PlaybackSnapshot) -> Bool {
-        PlaybackSyncPolicy.shouldPublishRemotePlayback(playback, current: remotePlayback)
-    }
-
-    private func isStalePlaybackSnapshot(_ playback: PlaybackSnapshot) -> Bool {
-        PlaybackSyncPolicy.isStalePlaybackSnapshot(playback, current: remotePlayback)
-    }
-
     private func maybeSendCredentialsToInterestedPeers() {
         guard credentialSyncEnabled, let credentials = NavidromeAPI.shared.exportCredentialsForSync() else { return }
-        _ = sendEnvelope(.init(kind: .credentials, sender: localPeerInfo(), playback: nil, command: nil, credentials: credentials, targetDeviceID: nil))
+        _ = sendEnvelope(.init(kind: .credentials, sender: localPeerInfo(), command: nil, credentials: credentials, targetDeviceID: nil))
     }
 
     private var selectedRemotePlaybackTargetID: String? {
@@ -2158,10 +1675,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         return PlaybackControlTargetPolicy.resolvedDefaultRemoteTargetID(
             selectedTargetID: selectedPlaybackTargetID,
             localDeviceID: localDeviceID,
-            availableTargetIDs: availableTargetIDs,
-            sharedSessionOutputDeviceID: sharedSession?.outputDeviceID,
-            activeSharedPlaybackID: activeSharedPlayback?.id,
-            remotePlaybackID: remotePlayback?.id
+            availableTargetIDs: availableTargetIDs
         )
     }
 
@@ -2179,16 +1693,6 @@ final class DeviceSyncManager: NSObject, ObservableObject {
                 sharedSession.queue,
                 min(max(sharedSession.currentIndex, 0), sharedSession.queue.count - 1),
                 sharedSession.estimatedPosition
-            )
-        }
-
-        if let remotePlayback, remotePlayback.id == targetDeviceID {
-            let queue = remotePlayback.queue.isEmpty ? remotePlayback.song.map { [$0] } ?? [] : remotePlayback.queue
-            guard !queue.isEmpty else { return nil }
-            return (
-                queue,
-                min(max(remotePlayback.currentIndex, 0), queue.count - 1),
-                remotePlayback.estimatedCurrentTime
             )
         }
 
@@ -2231,27 +1735,6 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         return true
     }
 
-    private func shouldProcessPlaybackState(_ playback: PlaybackSnapshot) -> Bool {
-        let fingerprint = PlaybackSnapshotFingerprintPolicy.fingerprint(for: playback)
-        guard PlaybackSnapshotFingerprintPolicy.shouldProcess(
-            fingerprint: fingerprint,
-            processedFingerprints: processedPlaybackSnapshotFingerprints
-        ) else {
-            return false
-        }
-
-        processedPlaybackSnapshotFingerprints.insert(fingerprint)
-        processedPlaybackSnapshotFingerprintOrder.append(fingerprint)
-
-        let trimmedOrder = PlaybackSnapshotFingerprintPolicy.trimmedFingerprintOrder(processedPlaybackSnapshotFingerprintOrder)
-        if trimmedOrder.count != processedPlaybackSnapshotFingerprintOrder.count {
-            processedPlaybackSnapshotFingerprintOrder = trimmedOrder
-            processedPlaybackSnapshotFingerprints = Set(trimmedOrder)
-        }
-
-        return true
-    }
-
     private func pendingCommandKey(for deviceID: String, action: PlaybackSyncCommandAction) -> String {
         "\(deviceID)|\(PlaybackCommandSyncPolicy.commandFamily(for: action).rawValue)"
     }
@@ -2286,7 +1769,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             )
         }
 
-        let sent = sendEnvelope(.init(kind: .playbackCommand, sender: localPeerInfo(), playback: nil, command: command, credentials: nil, targetDeviceID: targetDeviceID))
+        let sent = sendEnvelope(.init(kind: .playbackCommand, sender: localPeerInfo(), command: command, credentials: nil, targetDeviceID: targetDeviceID))
 
         if let targetDeviceID {
             schedulePendingCommandRetry(for: targetDeviceID, action: command.action)
@@ -2360,11 +1843,6 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         }
 #endif
 
-        if SyncTransportFailurePolicy.shouldInvalidatePlaybackBroadcastAttempt(kind: kind) {
-            lastPlaybackBroadcast = .distantPast
-            lastBroadcastedPlaybackSnapshot = nil
-        }
-
 #if os(iOS) || os(macOS)
         if transport == .multipeer,
            SyncTransportFailurePolicy.shouldRestartMultipeerDiscoveryAfterSendFailure(hasConnectedPeers: session?.connectedPeers.isEmpty == false) {
@@ -2400,44 +1878,13 @@ final class DeviceSyncManager: NSObject, ObservableObject {
                envelope.sender.credentialSyncEnabled,
                !envelope.sender.hasCredentials,
                let credentials = NavidromeAPI.shared.exportCredentialsForSync() {
-                _ = sendEnvelope(.init(kind: .credentials, sender: localPeerInfo(), playback: nil, command: nil, credentials: credentials, targetDeviceID: nil))
+                _ = sendEnvelope(.init(kind: .credentials, sender: localPeerInfo(), command: nil, credentials: credentials, targetDeviceID: nil))
             }
             sendCurrentSyncState()
 
         case .syncRequest:
             flushPendingCommands(for: envelope.sender.id)
             sendCurrentSyncState(includeHello: true)
-
-        case .playbackState:
-            guard syncModeEnabled, envelope.sender.syncModeEnabled, let playback = envelope.playback else { return }
-            let acknowledgingPendingCommandKey = acknowledgingPendingCommandKey(for: playback)
-            let isAcknowledgingSnapshot = acknowledgingPendingCommandKey != nil
-            let hasPendingCommandForDevice = !pendingCommandKeys(for: playback.id).isEmpty
-            guard PlaybackSnapshotReceivePolicy.shouldAccept(
-                playback,
-                current: remotePlayback,
-                isAcknowledgingPendingCommand: isAcknowledgingSnapshot
-            ) else { return }
-            guard shouldProcessPlaybackState(playback) || isAcknowledgingSnapshot else { return }
-            guard PendingPlaybackSnapshotPolicy.shouldApplySnapshot(
-                hasPendingCommandForDevice: hasPendingCommandForDevice,
-                isAcknowledgingPendingCommand: isAcknowledgingSnapshot
-            ) else {
-                flushPendingCommands(for: envelope.sender.id)
-                return
-            }
-            if let acknowledgingPendingCommandKey {
-                clearPendingCommand(forKey: acknowledgingPendingCommandKey)
-            }
-            if shouldPublishRemotePlayback(playback) || isAcknowledgingSnapshot {
-                remotePlayback = playback
-            }
-            flushPendingCommands(for: envelope.sender.id)
-            if sharedSession == nil,
-               playback.isPlaying,
-               !AudioPlayer.shared.isPlaying {
-                selectedPlaybackTargetID = playback.id
-            }
 
         case .playbackSession:
             guard syncModeEnabled,
@@ -2446,7 +1893,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             let acknowledgingPendingCommandKey = acknowledgingPendingCommandKey(for: session)
             let isAcknowledgingSession = acknowledgingPendingCommandKey != nil
             let hasPendingCommandForDevice = !pendingCommandKeys(for: session.outputDeviceID).isEmpty
-            guard PendingPlaybackSnapshotPolicy.shouldApplySnapshot(
+            guard PendingPlaybackUpdatePolicy.shouldApplyUpdate(
                 hasPendingCommandForDevice: hasPendingCommandForDevice,
                 isAcknowledgingPendingCommand: isAcknowledgingSession
             ) else {
@@ -2518,7 +1965,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
 
     private func apply(_ command: PlaybackCommand) {
         let player = AudioPlayer.shared
-        withRemotePlaybackApplication {
+        withRemoteCommandApplication {
             switch command.action {
             case .play:
                 player.play()
@@ -2561,8 +2008,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         }
 
         if command.action != .syncQueue {
-            broadcastLocalQueueAsShared()
-            broadcastPlaybackState(force: true)
+            broadcastLocalQueueAsShared(isExplicitLocalPlaybackIntent: true)
         }
     }
 
@@ -2581,60 +2027,18 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             startingIndex: min(currentIndex, songs.count - 1),
             time: currentTime
         ).withCommandID()
-        _ = sendEnvelope(.init(kind: .playbackCommand, sender: localPeerInfo(), playback: nil, command: command, credentials: nil, targetDeviceID: ownerDeviceID))
+        _ = sendEnvelope(.init(kind: .playbackCommand, sender: localPeerInfo(), command: command, credentials: nil, targetDeviceID: ownerDeviceID))
     }
 
     private func mirrorSharedQueue(songs: [Song], currentIndex: Int, currentTime: TimeInterval) {
         guard !songs.isEmpty else { return }
-        withRemotePlaybackApplication {
+        withRemoteCommandApplication {
             AudioPlayer.shared.mirrorQueueWithoutPlayback(songs, currentIndex: currentIndex, currentTime: currentTime)
         }
     }
 
     private func commandNeedsPlaybackAcknowledgment(_ command: PlaybackCommand) -> Bool {
         PlaybackCommandSyncPolicy.needsPlaybackAcknowledgment(command.action)
-    }
-
-    private func pendingCommand(_ command: PlaybackCommand, isAcknowledgedBy playback: PlaybackSnapshot) -> Bool {
-        PlaybackCommandSyncPolicy.isAcknowledged(
-            action: command.action,
-            expectedSongs: command.songs,
-            expectedIndex: command.startingIndex,
-            expectedTime: command.time,
-            expectedVolume: command.volume,
-            by: playback
-        )
-    }
-
-    private func isPlaybackSnapshotAcknowledgingPendingCommand(_ playback: PlaybackSnapshot) -> Bool {
-        acknowledgingPendingCommandKey(for: playback) != nil
-    }
-
-    @discardableResult
-    private func acknowledgePendingCommandIfSatisfied(by playback: PlaybackSnapshot) -> Bool {
-        guard let key = acknowledgingPendingCommandKey(for: playback) else { return false }
-        clearPendingCommand(forKey: key)
-        return true
-    }
-
-    private func acknowledgingPendingCommandKey(for playback: PlaybackSnapshot) -> String? {
-        for key in pendingCommandKeys(for: playback.id) {
-            guard let command = pendingTargetedCommands[key],
-                  commandNeedsPlaybackAcknowledgment(command),
-                  PendingPlaybackAcknowledgmentPolicy.shouldAcceptAcknowledgingSnapshot(
-                    playback,
-                    current: remotePlayback,
-                    action: command.action,
-                    expectedSongs: command.songs,
-                    expectedIndex: command.startingIndex,
-                    expectedTime: command.time,
-                    expectedVolume: command.volume
-                  ) else {
-                continue
-            }
-            return key
-        }
-        return nil
     }
 
     private func acknowledgingPendingCommandKey(for session: PlaybackSession) -> String? {
@@ -2699,19 +2103,13 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             return
         }
 
-        _ = sendEnvelope(.init(kind: .playbackCommand, sender: localPeerInfo(), playback: nil, command: command, credentials: nil, targetDeviceID: deviceID))
+        _ = sendEnvelope(.init(kind: .playbackCommand, sender: localPeerInfo(), command: command, credentials: nil, targetDeviceID: deviceID))
         schedulePendingCommandRetry(for: deviceID, action: command.action)
     }
 
     private func handleExpiredPendingCommand(_ command: PlaybackCommand, deviceID: String, key: String) {
         print("⚠️ Dropping unacknowledged sync command \(command.action.rawValue) for \(deviceID)")
         clearPendingCommand(forKey: key)
-        if PendingPlaybackCommandExpiryPolicy.shouldInvalidateOptimisticRemotePlayback(
-            remotePlaybackID: remotePlayback?.id,
-            expiredDeviceID: deviceID
-        ) {
-            remotePlayback = nil
-        }
         requestPlaybackSyncRefresh()
     }
 
@@ -2749,7 +2147,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             return WatchConnectivitySyncPolicy.shouldQueue(.credentials(hasPayload: envelope.credentials != nil))
         case .hello, .syncRequest:
             return WatchConnectivitySyncPolicy.shouldQueue(envelope.watchConnectivityPayloadKind)
-        case .playbackState, .playbackSession, .playbackCommand:
+        case .playbackSession, .playbackCommand:
             return WatchConnectivitySyncPolicy.shouldQueue(envelope.watchConnectivityPayloadKind)
         }
     }
@@ -2919,9 +2317,6 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         if let deviceID = deviceIDsByPeerDisplayName.removeValue(forKey: peerID.displayName) {
             multipeerDeviceIDs.remove(deviceID)
             peerInfos.removeValue(forKey: deviceID)
-            if remotePlayback?.id == deviceID {
-                remotePlayback = nil
-            }
 
             if selectedPlaybackTargetID == deviceID {
                 selectedPlaybackTargetID = localDeviceID

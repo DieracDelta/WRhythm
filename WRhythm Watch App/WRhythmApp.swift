@@ -149,11 +149,6 @@ enum PlaybackKeyboardActions {
            let volume = sharedSession.volume {
             return volume
         }
-        if let remotePlayback = manager.remotePlayback,
-           remotePlayback.id == targetID,
-           let volume = remotePlayback.volume {
-            return volume
-        }
         return AudioPlayer.shared.volume
     }
 
@@ -170,10 +165,6 @@ enum PlaybackKeyboardActions {
            sharedPlayback.id == targetID {
             return sharedPlayback.song
         }
-        if let remotePlayback = manager.remotePlayback,
-           remotePlayback.id == targetID {
-            return remotePlayback.song
-        }
-        return AudioPlayer.shared.currentSong ?? manager.activeSharedPlayback?.song ?? manager.remotePlayback?.song
+        return AudioPlayer.shared.currentSong ?? manager.activeSharedPlayback?.song
     }
 }

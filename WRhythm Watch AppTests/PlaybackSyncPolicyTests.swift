@@ -8,212 +8,6 @@ import Testing
 @testable import WRhythm_Watch_App
 
 struct PlaybackSyncPolicyTests {
-    @Test func staleSnapshotOlderThanFreshnessWindowIsRejected() {
-        let now = Date()
-        let snapshot = makeSnapshot(updatedAt: now.addingTimeInterval(-31))
-
-        #expect(PlaybackSyncPolicy.isStalePlaybackSnapshot(snapshot, current: nil, now: now) == true)
-    }
-
-    @Test func snapshotTooFarInFutureIsRejectedAsClockSkewed() {
-        let now = Date()
-        let snapshot = makeSnapshot(updatedAt: now.addingTimeInterval(11))
-
-        #expect(PlaybackSyncPolicy.isStalePlaybackSnapshot(snapshot, current: nil, now: now) == true)
-    }
-
-    @Test func smallFutureClockSkewIsAccepted() {
-        let now = Date()
-        let snapshot = makeSnapshot(updatedAt: now.addingTimeInterval(5))
-
-        #expect(PlaybackSyncPolicy.isStalePlaybackSnapshot(snapshot, current: nil, now: now) == false)
-    }
-
-    @Test func olderSnapshotFromSameDeviceIsRejectedEvenInsideFreshnessWindow() {
-        let now = Date()
-        let current = makeSnapshot(currentTime: 20, updatedAt: now.addingTimeInterval(-5))
-        let older = makeSnapshot(currentTime: 12, updatedAt: now.addingTimeInterval(-6))
-
-        #expect(PlaybackSyncPolicy.isStalePlaybackSnapshot(older, current: current, now: now) == true)
-        #expect(PlaybackSyncPolicy.shouldPublishRemotePlayback(older, current: current) == false)
-    }
-
-    @Test func freshSnapshotPublishesWhenQueueOrTrackChanges() {
-        let now = Date()
-        let current = makeSnapshot(song: makeSong(id: "song-1"), queue: [makeSong(id: "song-1")], updatedAt: now)
-        let changed = makeSnapshot(song: makeSong(id: "song-2"), queue: [makeSong(id: "song-2")], updatedAt: now.addingTimeInterval(1))
-
-        #expect(PlaybackSyncPolicy.isStalePlaybackSnapshot(changed, current: current, now: now.addingTimeInterval(1)) == false)
-        #expect(PlaybackSyncPolicy.shouldPublishRemotePlayback(changed, current: current) == true)
-    }
-
-    @Test func pauseSnapshotPublishesEvenWhenTrackAndQueueAreUnchanged() {
-        let now = Date()
-        let current = makeSnapshot(isPlaying: true, currentTime: 42, updatedAt: now)
-        let paused = makeSnapshot(isPlaying: false, currentTime: 42.2, updatedAt: now.addingTimeInterval(0.5))
-
-        #expect(PlaybackSyncPolicy.shouldPublishRemotePlayback(paused, current: current) == true)
-    }
-
-    @Test func smallPlaybackClockDriftDoesNotRepublishImmediately() {
-        let now = Date()
-        let current = makeSnapshot(currentTime: 42, updatedAt: now)
-        let drift = makeSnapshot(currentTime: 43.5, updatedAt: now.addingTimeInterval(0.5))
-
-        #expect(PlaybackSyncPolicy.shouldPublishRemotePlayback(drift, current: current) == false)
-    }
-
-    @Test func playingProgressReanchorsAfterShortIntervalEvenWithSmallDrift() {
-        let now = Date()
-        let current = makeSnapshot(currentTime: 42, updatedAt: now)
-        let drift = makeSnapshot(currentTime: 43.5, updatedAt: now.addingTimeInterval(2.1))
-
-        #expect(PlaybackSyncPolicy.shouldPublishRemotePlayback(drift, current: current) == true)
-    }
-
-    @Test func pausedProgressReanchorsOnSubsecondDifference() {
-        let now = Date()
-        let current = makeSnapshot(isPlaying: false, currentTime: 42, updatedAt: now)
-        let correctedPause = makeSnapshot(isPlaying: false, currentTime: 42.5, updatedAt: now.addingTimeInterval(0.5))
-
-        #expect(PlaybackSyncPolicy.shouldPublishRemotePlayback(correctedPause, current: current) == true)
-    }
-
-    @Test func seekPositionJumpPublishesEvenWhenTrackAndQueueAreUnchanged() {
-        let now = Date()
-        let current = makeSnapshot(currentTime: 2, updatedAt: now)
-        let seeked = makeSnapshot(currentTime: 30, updatedAt: now.addingTimeInterval(0.5))
-
-        #expect(PlaybackSyncPolicy.shouldPublishRemotePlayback(seeked, current: current) == true)
-    }
-
-    @Test func localPauseStateBypassesPlaybackBroadcastThrottle() {
-        let now = Date()
-        let playing = makeSnapshot(id: "mac", isPlaying: true, currentTime: 42, updatedAt: now.addingTimeInterval(-0.2))
-        let paused = makeSnapshot(id: "mac", isPlaying: false, currentTime: 42.1, updatedAt: now)
-
-        #expect(PlaybackStateBroadcastPolicy.shouldBroadcast(
-            snapshot: paused,
-            previousSnapshot: playing,
-            lastBroadcastAt: now,
-            now: now,
-            localDeviceID: "mac"
-        ) == true)
-    }
-
-    @Test func localPlayStateBypassesPlaybackBroadcastThrottle() {
-        let now = Date()
-        let paused = makeSnapshot(id: "mac", isPlaying: false, currentTime: 42, updatedAt: now.addingTimeInterval(-0.2))
-        let playing = makeSnapshot(id: "mac", isPlaying: true, currentTime: 42.1, updatedAt: now)
-
-        #expect(PlaybackStateBroadcastPolicy.shouldBroadcast(
-            snapshot: playing,
-            previousSnapshot: paused,
-            lastBroadcastAt: now,
-            now: now,
-            localDeviceID: "mac"
-        ) == true)
-    }
-
-    @Test func progressOnlyPlaybackBroadcastIsThrottledInsideMinimumInterval() {
-        let now = Date()
-        let previous = makeSnapshot(id: "mac", isPlaying: true, currentTime: 42, updatedAt: now.addingTimeInterval(-0.5))
-        let progressed = makeSnapshot(id: "mac", isPlaying: true, currentTime: 42.7, updatedAt: now)
-
-        #expect(PlaybackStateBroadcastPolicy.shouldBroadcast(
-            snapshot: progressed,
-            previousSnapshot: previous,
-            lastBroadcastAt: now.addingTimeInterval(-0.5),
-            now: now,
-            localDeviceID: "mac"
-        ) == false)
-    }
-
-    @Test func progressOnlyPlaybackBroadcastPublishesAfterMinimumInterval() {
-        let now = Date()
-        let previous = makeSnapshot(id: "mac", isPlaying: true, currentTime: 42, updatedAt: now.addingTimeInterval(-2))
-        let progressed = makeSnapshot(id: "mac", isPlaying: true, currentTime: 45, updatedAt: now)
-
-        #expect(PlaybackStateBroadcastPolicy.shouldBroadcast(
-            snapshot: progressed,
-            previousSnapshot: previous,
-            lastBroadcastAt: now.addingTimeInterval(-2),
-            now: now,
-            localDeviceID: "mac"
-        ) == true)
-    }
-
-    @Test func forcedPlaybackBroadcastPublishesEvenInsideThrottleWindow() {
-        let now = Date()
-        let previous = makeSnapshot(id: "mac", isPlaying: true, currentTime: 42, updatedAt: now.addingTimeInterval(-0.2))
-        let current = makeSnapshot(id: "mac", isPlaying: true, currentTime: 42.1, updatedAt: now)
-
-        #expect(PlaybackStateBroadcastPolicy.shouldBroadcast(
-            snapshot: current,
-            previousSnapshot: previous,
-            lastBroadcastAt: now,
-            now: now,
-            force: true,
-            localDeviceID: "mac"
-        ) == true)
-    }
-
-    @Test func playbackBroadcastIsSuppressedWhileAnotherDeviceOwnsSharedOutput() {
-        let now = Date()
-        let previous = makeSnapshot(id: "mac", isPlaying: true, currentTime: 42, updatedAt: now.addingTimeInterval(-2))
-        let paused = makeSnapshot(id: "mac", isPlaying: false, currentTime: 42, updatedAt: now)
-
-        #expect(PlaybackStateBroadcastPolicy.shouldBroadcast(
-            snapshot: paused,
-            previousSnapshot: previous,
-            lastBroadcastAt: now.addingTimeInterval(-2),
-            now: now,
-            sharedOutputDeviceID: "iphone",
-            localDeviceID: "mac"
-        ) == false)
-    }
-
-    @Test func explicitLocalPauseIntentBypassesStaleRemoteOwnerSuppression() {
-        let now = Date()
-        let previous = makeSnapshot(id: "iphone", isPlaying: true, currentTime: 42, updatedAt: now.addingTimeInterval(-2))
-        let paused = makeSnapshot(id: "iphone", isPlaying: false, currentTime: 42, updatedAt: now)
-
-        #expect(PlaybackStateBroadcastPolicy.shouldBroadcast(
-            snapshot: paused,
-            previousSnapshot: previous,
-            lastBroadcastAt: now,
-            now: now,
-            force: true,
-            sharedOutputDeviceID: "mac",
-            isExplicitLocalPlaybackIntent: true,
-            localDeviceID: "iphone"
-        ) == true)
-    }
-
-    @Test func localPlayingSnapshotCanClaimPlaybackFromStaleRemoteSharedOutput() {
-        let now = Date()
-        let previous = makeSnapshot(id: "iphone", isPlaying: false, currentTime: 42, updatedAt: now.addingTimeInterval(-2))
-        let playing = makeSnapshot(id: "iphone", isPlaying: true, currentTime: 42, updatedAt: now)
-
-        #expect(PlaybackStateBroadcastPolicy.shouldBroadcast(
-            snapshot: playing,
-            previousSnapshot: previous,
-            lastBroadcastAt: now,
-            now: now,
-            sharedOutputDeviceID: "mac",
-            localDeviceID: "iphone"
-        ) == true)
-    }
-
-    @Test func remotePauseSnapshotFromMacPublishesOnIPhoneEvenWithTinyTimeDelta() {
-        let now = Date()
-        let current = makeSnapshot(id: "mac", isPlaying: true, currentTime: 42, updatedAt: now.addingTimeInterval(-0.3))
-        let paused = makeSnapshot(id: "mac", isPlaying: false, currentTime: 42.05, updatedAt: now)
-
-        #expect(PlaybackSyncPolicy.isStalePlaybackSnapshot(paused, current: current, now: now) == false)
-        #expect(PlaybackSyncPolicy.shouldPublishRemotePlayback(paused, current: current) == true)
-    }
-
     @Test func newerSessionRevisionWinsOverCurrentSession() {
         let now = Date()
         let current = makeSession(revision: 4, updatedAt: now, updatedByDeviceID: "iphone")
@@ -256,18 +50,11 @@ struct PlaybackSyncPolicyTests {
             updatedAt: now,
             updatedByDeviceID: "iphone"
         )
-        let laterPlayingTelemetry = makeSnapshot(
-            id: "iphone",
-            isPlaying: true,
-            currentTime: 124,
-            updatedAt: now.addingTimeInterval(0.5)
-        )
 
         let snapshot = try #require(PlaybackSessionSnapshotPolicy.snapshot(
             from: pausedSession,
             deviceName: "iPhone",
             platform: "iPhone",
-            remotePlayback: laterPlayingTelemetry,
             now: now.addingTimeInterval(0.5)
         ))
 
@@ -478,7 +265,6 @@ struct PlaybackSyncPolicyTests {
         (.syncRequest, true),
         (.credentials(hasPayload: true), true),
         (.credentials(hasPayload: false), false),
-        (.playbackState, false),
         (.playbackSession, false),
         (.playbackCommand, false)
     ])
@@ -503,34 +289,34 @@ struct PlaybackSyncPolicyTests {
         #expect(PlaybackCommandSyncPolicy.needsPlaybackAcknowledgment(action) == expected)
     }
 
-    @Test func pauseCommandIsAcknowledgedByPausedRemoteSnapshot() {
-        let playback = makeSnapshot(isPlaying: false, updatedAt: Date())
+    @Test func pauseCommandIsAcknowledgedByPausedSession() {
+        let session = makeSession(isPlaying: false, updatedAt: Date())
 
-        #expect(PlaybackCommandSyncPolicy.isAcknowledged(action: .pause, by: playback) == true)
-        #expect(PlaybackCommandSyncPolicy.isAcknowledged(action: .play, by: playback) == false)
+        #expect(PendingPlaybackSessionAcknowledgmentPolicy.shouldAcceptAcknowledgingSession(session, action: .pause) == true)
+        #expect(PendingPlaybackSessionAcknowledgmentPolicy.shouldAcceptAcknowledgingSession(session, action: .play) == false)
     }
 
     @Test func seekCommandIsAcknowledgedOnlyNearRequestedPosition() {
         let now = Date()
-        let nearSeekTarget = makeSnapshot(currentTime: 30.5, updatedAt: now)
-        let stalePosition = makeSnapshot(currentTime: 2, updatedAt: now)
+        let nearSeekTarget = makeSession(position: 30.5, updatedAt: now)
+        let stalePosition = makeSession(position: 2, updatedAt: now)
 
-        #expect(PlaybackCommandSyncPolicy.isAcknowledged(action: .seek, expectedTime: 30, by: nearSeekTarget) == true)
-        #expect(PlaybackCommandSyncPolicy.isAcknowledged(action: .seek, expectedTime: 30, by: stalePosition) == false)
+        #expect(PendingPlaybackSessionAcknowledgmentPolicy.shouldAcceptAcknowledgingSession(nearSeekTarget, action: .seek, expectedTime: 30) == true)
+        #expect(PendingPlaybackSessionAcknowledgmentPolicy.shouldAcceptAcknowledgingSession(stalePosition, action: .seek, expectedTime: 30) == false)
     }
 
     @Test func seekCommandAcknowledgmentUsesEstimatedPlayingProgress() {
         let now = Date()
-        let progressedSnapshot = makeSnapshot(
+        let progressedSession = makeSession(
             isPlaying: true,
-            currentTime: 25,
+            position: 25,
             updatedAt: now.addingTimeInterval(-5)
         )
 
-        #expect(PlaybackCommandSyncPolicy.isAcknowledged(
+        #expect(PendingPlaybackSessionAcknowledgmentPolicy.shouldAcceptAcknowledgingSession(
+            progressedSession,
             action: .seek,
             expectedTime: 30,
-            by: progressedSnapshot,
             now: now
         ) == true)
     }
@@ -548,151 +334,84 @@ struct PlaybackSyncPolicyTests {
 
     @Test func volumeCommandUsesToleranceForAcknowledgment() {
         let now = Date()
-        let matchingVolume = makeSnapshot(volume: 0.51, updatedAt: now)
-        let differentVolume = makeSnapshot(volume: 0.62, updatedAt: now)
+        let matchingVolume = makeSession(volume: 0.51, updatedAt: now)
+        let differentVolume = makeSession(volume: 0.62, updatedAt: now)
 
-        #expect(PlaybackCommandSyncPolicy.isAcknowledged(action: .setVolume, expectedVolume: 0.5, by: matchingVolume) == true)
-        #expect(PlaybackCommandSyncPolicy.isAcknowledged(action: .setVolume, expectedVolume: 0.5, by: differentVolume) == false)
+        #expect(PendingPlaybackSessionAcknowledgmentPolicy.shouldAcceptAcknowledgingSession(matchingVolume, action: .setVolume, expectedVolume: 0.5) == true)
+        #expect(PendingPlaybackSessionAcknowledgmentPolicy.shouldAcceptAcknowledgingSession(differentVolume, action: .setVolume, expectedVolume: 0.5) == false)
     }
 
     @Test func navigationCommandsRequireExpectedQueuePosition() {
         let now = Date()
         let first = makeSong(id: "song-1")
         let second = makeSong(id: "song-2")
-        let playback = makeSnapshot(song: second, queue: [first, second], currentIndex: 1, updatedAt: now)
+        let session = makeSession(songs: [first, second], currentIndex: 1, updatedAt: now)
 
-        #expect(PlaybackCommandSyncPolicy.isAcknowledged(action: .next, expectedIndex: 1, by: playback) == true)
-        #expect(PlaybackCommandSyncPolicy.isAcknowledged(action: .next, expectedIndex: 0, by: playback) == false)
+        #expect(PendingPlaybackSessionAcknowledgmentPolicy.shouldAcceptAcknowledgingSession(session, action: .next, expectedIndex: 1) == true)
+        #expect(PendingPlaybackSessionAcknowledgmentPolicy.shouldAcceptAcknowledgingSession(session, action: .next, expectedIndex: 0) == false)
     }
 
     @Test func previousCommandCanAcknowledgeRestartingCurrentTrack() {
         let now = Date()
         let first = makeSong(id: "song-1")
         let second = makeSong(id: "song-2")
-        let playback = makeSnapshot(song: second, queue: [first, second], currentTime: 0.5, currentIndex: 1, updatedAt: now)
+        let session = makeSession(songs: [first, second], currentIndex: 1, position: 0.5, updatedAt: now)
 
-        #expect(PlaybackCommandSyncPolicy.isAcknowledged(
+        #expect(PendingPlaybackSessionAcknowledgmentPolicy.shouldAcceptAcknowledgingSession(
+            session,
             action: .previous,
             expectedIndex: 1,
-            expectedTime: 0,
-            by: playback
+            expectedTime: 0
         ) == true)
     }
 
     @Test func playQueueCommandAcknowledgesExpectedQueueAndIndex() {
         let now = Date()
         let songs = [makeSong(id: "song-1"), makeSong(id: "song-2")]
-        let playback = makeSnapshot(song: songs[1], queue: songs, currentIndex: 1, updatedAt: now)
+        let session = makeSession(songs: songs, currentIndex: 1, updatedAt: now)
 
-        #expect(PlaybackCommandSyncPolicy.isAcknowledged(
+        #expect(PendingPlaybackSessionAcknowledgmentPolicy.shouldAcceptAcknowledgingSession(
+            session,
             action: .playQueue,
             expectedSongs: songs,
-            expectedIndex: 1,
-            by: playback
+            expectedIndex: 1
         ) == true)
     }
 
     @Test func enqueueCommandAcknowledgesInsertedContiguousSongs() {
         let now = Date()
         let songs = [makeSong(id: "song-1"), makeSong(id: "song-2"), makeSong(id: "song-3")]
-        let playback = makeSnapshot(song: songs[0], queue: songs, currentIndex: 0, updatedAt: now)
+        let session = makeSession(songs: songs, currentIndex: 0, updatedAt: now)
 
-        #expect(PlaybackCommandSyncPolicy.isAcknowledged(
+        #expect(PendingPlaybackSessionAcknowledgmentPolicy.shouldAcceptAcknowledgingSession(
+            session,
             action: .enqueue,
-            expectedSongs: Array(songs[1...2]),
-            by: playback
+            expectedSongs: Array(songs[1...2])
         ) == true)
-        #expect(PlaybackCommandSyncPolicy.isAcknowledged(
+        #expect(PendingPlaybackSessionAcknowledgmentPolicy.shouldAcceptAcknowledgingSession(
+            session,
             action: .enqueue,
-            expectedSongs: [songs[2], songs[1]],
-            by: playback
+            expectedSongs: [songs[2], songs[1]]
         ) == false)
     }
 
     @Test func syncQueueCommandAcknowledgesExactQueueAndIndex() {
         let now = Date()
         let songs = [makeSong(id: "song-1"), makeSong(id: "song-2")]
-        let playback = makeSnapshot(song: songs[0], queue: songs, currentIndex: 0, updatedAt: now)
+        let session = makeSession(songs: songs, currentIndex: 0, updatedAt: now)
 
-        #expect(PlaybackCommandSyncPolicy.isAcknowledged(
+        #expect(PendingPlaybackSessionAcknowledgmentPolicy.shouldAcceptAcknowledgingSession(
+            session,
             action: .syncQueue,
             expectedSongs: songs,
-            expectedIndex: 0,
-            by: playback
+            expectedIndex: 0
         ) == true)
     }
 
-    @Test func stopCommandAcknowledgesStoppedEmptySnapshot() {
-        let playback = PlaybackSnapshot(
-            id: "device-1",
-            deviceName: "Mac",
-            platform: "Mac",
-            song: nil,
-            isPlaying: false,
-            isBuffering: false,
-            prebufferedTrackCount: 0,
-            volume: 0.8,
-            currentTime: 0,
-            duration: 0,
-            queue: [],
-            currentIndex: 0,
-            updatedAt: Date()
-        )
+    @Test func stopCommandAcknowledgesStoppedEmptySession() {
+        let session = makeSession(songs: [], isPlaying: false, updatedAt: Date())
 
-        #expect(PlaybackCommandSyncPolicy.isAcknowledged(action: .stop, by: playback) == true)
-    }
-
-    @Test func acknowledgingSnapshotCanReplaceNewerOptimisticRemoteMirror() {
-        let now = Date()
-        let optimisticMirror = makeSnapshot(id: "iphone", isPlaying: true, currentTime: 42, updatedAt: now)
-        let remotePauseAck = makeSnapshot(id: "iphone", isPlaying: false, currentTime: 42.2, updatedAt: now.addingTimeInterval(-5))
-
-        #expect(PlaybackSyncPolicy.shouldPublishRemotePlayback(remotePauseAck, current: optimisticMirror) == false)
-        #expect(PendingPlaybackAcknowledgmentPolicy.shouldAcceptAcknowledgingSnapshot(
-            remotePauseAck,
-            current: optimisticMirror,
-            action: .pause
-        ) == true)
-    }
-
-    @Test func acknowledgingSnapshotMustMatchCurrentQueueIdentity() {
-        let now = Date()
-        let optimisticMirror = makeSnapshot(id: "iphone", queue: [makeSong(id: "song-1")], updatedAt: now)
-        let unrelatedPauseAck = makeSnapshot(
-            id: "iphone",
-            song: makeSong(id: "song-2"),
-            queue: [makeSong(id: "song-2")],
-            isPlaying: false,
-            updatedAt: now.addingTimeInterval(-5)
-        )
-
-        #expect(PendingPlaybackAcknowledgmentPolicy.shouldAcceptAcknowledgingSnapshot(
-            unrelatedPauseAck,
-            current: optimisticMirror,
-            action: .pause
-        ) == false)
-    }
-
-    @Test func queueAcknowledgmentsCanReplaceChangedOptimisticMirror() {
-        let now = Date()
-        let oldSong = makeSong(id: "song-1")
-        let newSongs = [makeSong(id: "song-2"), makeSong(id: "song-3")]
-        let optimisticMirror = makeSnapshot(id: "iphone", song: oldSong, queue: [oldSong], updatedAt: now)
-        let remoteQueueAck = makeSnapshot(
-            id: "iphone",
-            song: newSongs[1],
-            queue: newSongs,
-            currentIndex: 1,
-            updatedAt: now.addingTimeInterval(-1)
-        )
-
-        #expect(PendingPlaybackAcknowledgmentPolicy.shouldAcceptAcknowledgingSnapshot(
-            remoteQueueAck,
-            current: optimisticMirror,
-            action: .playQueue,
-            expectedSongs: newSongs,
-            expectedIndex: 1
-        ) == true)
+        #expect(PendingPlaybackSessionAcknowledgmentPolicy.shouldAcceptAcknowledgingSession(session, action: .stop) == true)
     }
 
     @Test func queueCommandsInvalidateStalePendingCommandFamilies() {
@@ -702,32 +421,7 @@ struct PlaybackSyncPolicyTests {
         #expect(PendingPlaybackCommandPolicy.commandFamiliesInvalidated(by: .seek).isEmpty)
     }
 
-    @Test func expiredCommandInvalidatesMatchingOptimisticRemotePlayback() {
-        #expect(PendingPlaybackCommandExpiryPolicy.shouldInvalidateOptimisticRemotePlayback(
-            remotePlaybackID: "iphone",
-            expiredDeviceID: "iphone"
-        ) == true)
-        #expect(PendingPlaybackCommandExpiryPolicy.shouldInvalidateOptimisticRemotePlayback(
-            remotePlaybackID: "mac",
-            expiredDeviceID: "iphone"
-        ) == false)
-    }
-
-    @Test func playbackBroadcastDeliveryOnlyRecordsSuccessfulSends() {
-        #expect(PlaybackStateBroadcastDeliveryPolicy.shouldRecordAttempt(didSend: true) == true)
-        #expect(PlaybackStateBroadcastDeliveryPolicy.shouldRecordAttempt(didSend: false) == false)
-    }
-
-    @Test func telemetryBroadcastsAreThrottledSeparately() {
-        let now = Date()
-
-        #expect(PlaybackTelemetryBroadcastPolicy.shouldBroadcast(lastBroadcastAt: nil, now: now) == true)
-        #expect(PlaybackTelemetryBroadcastPolicy.shouldBroadcast(lastBroadcastAt: now.addingTimeInterval(-0.5), now: now) == false)
-        #expect(PlaybackTelemetryBroadcastPolicy.shouldBroadcast(lastBroadcastAt: now.addingTimeInterval(-2), now: now) == true)
-    }
-
     @Test func transportFailuresInvalidatePlaybackButNotDurablePayloads() {
-        #expect(SyncTransportFailurePolicy.shouldInvalidatePlaybackBroadcastAttempt(kind: .playbackState) == true)
         #expect(SyncTransportFailurePolicy.shouldInvalidatePlaybackBroadcastAttempt(kind: .playbackCommand) == true)
         #expect(SyncTransportFailurePolicy.shouldInvalidatePlaybackBroadcastAttempt(kind: .hello) == false)
         #expect(SyncTransportFailurePolicy.shouldInvalidatePlaybackBroadcastAttempt(kind: .credentials(hasPayload: true)) == false)
@@ -739,7 +433,7 @@ struct PlaybackSyncPolicyTests {
         #expect(WatchConnectivitySendFailurePolicy.shouldFallbackToUserInfo(kind: .credentials(hasPayload: true), canQueuePayload: true) == true)
         #expect(WatchConnectivitySendFailurePolicy.shouldFallbackToUserInfo(kind: .hello, canQueuePayload: true) == true)
         #expect(WatchConnectivitySendFailurePolicy.shouldFallbackToUserInfo(kind: .syncRequest, canQueuePayload: true) == true)
-        #expect(WatchConnectivitySendFailurePolicy.shouldFallbackToUserInfo(kind: .playbackState, canQueuePayload: true) == false)
+        #expect(WatchConnectivitySendFailurePolicy.shouldFallbackToUserInfo(kind: .playbackSession, canQueuePayload: true) == false)
         #expect(WatchConnectivitySendFailurePolicy.shouldFallbackToUserInfo(kind: .credentials(hasPayload: true), canQueuePayload: false) == false)
         #expect(WatchConnectivitySendFailurePolicy.shouldFallbackToUserInfo(kind: .credentials(hasPayload: false), canQueuePayload: true) == false)
     }
@@ -793,40 +487,18 @@ struct PlaybackSyncPolicyTests {
         #expect(PendingPlaybackCommandRetryPolicy.shouldRunRetry(pendingCommandID: nil, scheduledCommandID: "command-1") == false)
     }
 
-    @Test func pendingPlaybackCommandDefersConflictingNonAcknowledgingSnapshots() {
-        #expect(PendingPlaybackSnapshotPolicy.shouldApplySnapshot(
+    @Test func pendingPlaybackCommandDefersConflictingNonAcknowledgingUpdates() {
+        #expect(PendingPlaybackUpdatePolicy.shouldApplyUpdate(
             hasPendingCommandForDevice: true,
             isAcknowledgingPendingCommand: false
         ) == false)
-        #expect(PendingPlaybackSnapshotPolicy.shouldApplySnapshot(
+        #expect(PendingPlaybackUpdatePolicy.shouldApplyUpdate(
             hasPendingCommandForDevice: true,
             isAcknowledgingPendingCommand: true
         ) == true)
-        #expect(PendingPlaybackSnapshotPolicy.shouldApplySnapshot(
+        #expect(PendingPlaybackUpdatePolicy.shouldApplyUpdate(
             hasPendingCommandForDevice: false,
             isAcknowledgingPendingCommand: false
-        ) == true)
-    }
-
-    @Test func pendingPauseKeepsOptimisticPausedMirrorUntilAcknowledgmentArrives() {
-        let now = Date()
-        let optimisticPausedMirror = makeSnapshot(id: "mac", isPlaying: false, currentTime: 120, updatedAt: now)
-        let delayedPlayingSnapshot = makeSnapshot(id: "mac", isPlaying: true, currentTime: 122, updatedAt: now.addingTimeInterval(0.5))
-        let pausedAcknowledgment = makeSnapshot(id: "mac", isPlaying: false, currentTime: 120.3, updatedAt: now.addingTimeInterval(-1))
-
-        #expect(PlaybackSyncPolicy.shouldPublishRemotePlayback(delayedPlayingSnapshot, current: optimisticPausedMirror) == true)
-        #expect(PendingPlaybackSnapshotPolicy.shouldApplySnapshot(
-            hasPendingCommandForDevice: true,
-            isAcknowledgingPendingCommand: false
-        ) == false)
-        #expect(PendingPlaybackAcknowledgmentPolicy.shouldAcceptAcknowledgingSnapshot(
-            pausedAcknowledgment,
-            current: optimisticPausedMirror,
-            action: .pause
-        ) == true)
-        #expect(PendingPlaybackSnapshotPolicy.shouldApplySnapshot(
-            hasPendingCommandForDevice: true,
-            isAcknowledgingPendingCommand: true
         ) == true)
     }
 
@@ -839,7 +511,7 @@ struct PlaybackSyncPolicyTests {
             delayedPlayingSession,
             action: .pause
         ) == false)
-        #expect(PendingPlaybackSnapshotPolicy.shouldApplySnapshot(
+        #expect(PendingPlaybackUpdatePolicy.shouldApplyUpdate(
             hasPendingCommandForDevice: true,
             isAcknowledgingPendingCommand: false
         ) == false)
@@ -847,7 +519,7 @@ struct PlaybackSyncPolicyTests {
             pausedSession,
             action: .pause
         ) == true)
-        #expect(PendingPlaybackSnapshotPolicy.shouldApplySnapshot(
+        #expect(PendingPlaybackUpdatePolicy.shouldApplyUpdate(
             hasPendingCommandForDevice: true,
             isAcknowledgingPendingCommand: true
         ) == true)
@@ -909,56 +581,32 @@ struct PlaybackSyncPolicyTests {
 
     @Test func remotePauseRoundTripCanApplyAndAcknowledgeAcrossDevices() {
         let now = Date()
-        let optimisticMirror = makeSnapshot(id: "mac", isPlaying: true, currentTime: 120, updatedAt: now)
-        let macPausedAck = makeSnapshot(id: "mac", isPlaying: false, currentTime: 120.2, updatedAt: now.addingTimeInterval(-2))
+        let macPausedSession = makeSession(outputDeviceID: "mac", isPlaying: false, position: 120.2, updatedAt: now)
 
         #expect(PlaybackCommandReceivePolicy.shouldApplyNormalCommand(
             action: .pause,
             targetDeviceID: "mac",
             localDeviceID: "mac"
         ) == true)
-        #expect(PlaybackSyncPolicy.shouldPublishRemotePlayback(macPausedAck, current: optimisticMirror) == false)
-        #expect(PendingPlaybackAcknowledgmentPolicy.shouldAcceptAcknowledgingSnapshot(
-            macPausedAck,
-            current: optimisticMirror,
+        #expect(PendingPlaybackSessionAcknowledgmentPolicy.shouldAcceptAcknowledgingSession(
+            macPausedSession,
             action: .pause
         ) == true)
     }
 
     @Test func remoteSeekRoundTripCanApplyAndAcknowledgeAcrossDevices() {
         let now = Date()
-        let optimisticMirror = makeSnapshot(id: "mac", currentTime: 2, updatedAt: now)
-        let macSeekAck = makeSnapshot(id: "mac", currentTime: 30.5, updatedAt: now.addingTimeInterval(-2))
+        let macSeekSession = makeSession(outputDeviceID: "mac", position: 30.5, updatedAt: now)
 
         #expect(PlaybackCommandReceivePolicy.shouldApplyNormalCommand(
             action: .seek,
             targetDeviceID: "mac",
             localDeviceID: "mac"
         ) == true)
-        #expect(PendingPlaybackAcknowledgmentPolicy.shouldAcceptAcknowledgingSnapshot(
-            macSeekAck,
-            current: optimisticMirror,
+        #expect(PendingPlaybackSessionAcknowledgmentPolicy.shouldAcceptAcknowledgingSession(
+            macSeekSession,
             action: .seek,
             expectedTime: 30
-        ) == true)
-    }
-
-    @Test func stalePlaybackSnapshotIsRejectedBeforeFingerprintingUnlessItAcknowledgesPendingCommand() {
-        let now = Date()
-        let current = makeSnapshot(id: "mac", updatedAt: now)
-        let stale = makeSnapshot(id: "mac", currentTime: 3, updatedAt: now.addingTimeInterval(-31))
-
-        #expect(PlaybackSnapshotReceivePolicy.shouldAccept(
-            stale,
-            current: current,
-            isAcknowledgingPendingCommand: false,
-            now: now
-        ) == false)
-        #expect(PlaybackSnapshotReceivePolicy.shouldAccept(
-            stale,
-            current: current,
-            isAcknowledgingPendingCommand: true,
-            now: now
         ) == true)
     }
 
@@ -1054,25 +702,19 @@ struct PlaybackSyncPolicyTests {
         ) == false)
     }
 
-    @Test func defaultControlTargetYieldsFromStaleSharedOutputToFreshRemotePlayback() {
+    @Test func defaultControlTargetIgnoresLegacyRemotePlaybackState() {
         #expect(PlaybackControlTargetPolicy.resolvedDefaultRemoteTargetID(
             selectedTargetID: "iphone",
             localDeviceID: "iphone-local",
-            availableTargetIDs: ["iphone", "mac"],
-            sharedSessionOutputDeviceID: "iphone",
-            activeSharedPlaybackID: nil,
-            remotePlaybackID: "mac"
-        ) == "mac")
+            availableTargetIDs: ["iphone", "mac"]
+        ) == "iphone")
     }
 
     @Test func defaultControlTargetKeepsSelectedSharedOutputWhenItIsStillActive() {
         #expect(PlaybackControlTargetPolicy.resolvedDefaultRemoteTargetID(
             selectedTargetID: "iphone",
             localDeviceID: "iphone-local",
-            availableTargetIDs: ["iphone", "mac"],
-            sharedSessionOutputDeviceID: "iphone",
-            activeSharedPlaybackID: "iphone",
-            remotePlaybackID: "mac"
+            availableTargetIDs: ["iphone", "mac"]
         ) == "iphone")
     }
 
@@ -1080,10 +722,7 @@ struct PlaybackSyncPolicyTests {
         #expect(PlaybackControlTargetPolicy.resolvedDefaultRemoteTargetID(
             selectedTargetID: "iphone",
             localDeviceID: "iphone-local",
-            availableTargetIDs: ["iphone"],
-            sharedSessionOutputDeviceID: "iphone",
-            activeSharedPlaybackID: nil,
-            remotePlaybackID: "mac"
+            availableTargetIDs: ["iphone"]
         ) == "iphone")
     }
 
@@ -1091,10 +730,7 @@ struct PlaybackSyncPolicyTests {
         #expect(PlaybackControlTargetPolicy.resolvedDefaultRemoteTargetID(
             selectedTargetID: "watch",
             localDeviceID: "iphone-local",
-            availableTargetIDs: ["watch", "mac"],
-            sharedSessionOutputDeviceID: "iphone",
-            activeSharedPlaybackID: nil,
-            remotePlaybackID: "mac"
+            availableTargetIDs: ["watch", "mac"]
         ) == "watch")
     }
 
@@ -1102,18 +738,12 @@ struct PlaybackSyncPolicyTests {
         #expect(PlaybackControlTargetPolicy.resolvedDefaultRemoteTargetID(
             selectedTargetID: "iphone-local",
             localDeviceID: "iphone-local",
-            availableTargetIDs: ["iphone-local", "mac"],
-            sharedSessionOutputDeviceID: "iphone",
-            activeSharedPlaybackID: nil,
-            remotePlaybackID: "mac"
+            availableTargetIDs: ["iphone-local", "mac"]
         ) == nil)
         #expect(PlaybackControlTargetPolicy.resolvedDefaultRemoteTargetID(
             selectedTargetID: "missing",
             localDeviceID: "iphone-local",
-            availableTargetIDs: ["iphone-local", "mac"],
-            sharedSessionOutputDeviceID: "missing",
-            activeSharedPlaybackID: nil,
-            remotePlaybackID: "mac"
+            availableTargetIDs: ["iphone-local", "mac"]
         ) == nil)
     }
 
@@ -1130,37 +760,6 @@ struct PlaybackSyncPolicyTests {
         #expect(trimmed.count == SyncDuplicatePolicy.maxTrackedEnvelopeIDs)
         #expect(trimmed.first == "id-5")
         #expect(trimmed.last == "id-504")
-    }
-
-    @Test func playbackSnapshotFingerprintSuppressesSamePayloadFromSecondTransport() {
-        let snapshot = makeSnapshot(updatedAt: Date())
-        let fingerprint = PlaybackSnapshotFingerprintPolicy.fingerprint(for: snapshot)
-
-        #expect(PlaybackSnapshotFingerprintPolicy.shouldProcess(
-            fingerprint: fingerprint,
-            processedFingerprints: []
-        ) == true)
-        #expect(PlaybackSnapshotFingerprintPolicy.shouldProcess(
-            fingerprint: fingerprint,
-            processedFingerprints: [fingerprint]
-        ) == false)
-    }
-
-    @Test func playbackSnapshotFingerprintNormalizesTransportTimingJitter() {
-        let now = Date()
-        let first = makeSnapshot(currentTime: 42.1, updatedAt: now)
-        let second = makeSnapshot(currentTime: 42.8, updatedAt: now.addingTimeInterval(0.7))
-
-        #expect(PlaybackSnapshotFingerprintPolicy.fingerprint(for: first) == PlaybackSnapshotFingerprintPolicy.fingerprint(for: second))
-    }
-
-    @Test func playbackSnapshotFingerprintKeepsOnlyRecentFingerprints() {
-        let ids = (0..<505).map { "fingerprint-\($0)" }
-        let trimmed = PlaybackSnapshotFingerprintPolicy.trimmedFingerprintOrder(ids)
-
-        #expect(trimmed.count == PlaybackSnapshotFingerprintPolicy.maxTrackedFingerprints)
-        #expect(trimmed.first == "fingerprint-5")
-        #expect(trimmed.last == "fingerprint-504")
     }
 
     @Test func playbackSessionRejectsStaleAndFarFutureUpdates() {
@@ -1188,7 +787,6 @@ struct PlaybackSyncPolicyTests {
             from: session,
             deviceName: "Mac",
             platform: "Mac",
-            remotePlayback: nil,
             now: now
         ))
 
@@ -1196,35 +794,7 @@ struct PlaybackSyncPolicyTests {
         #expect(snapshot.updatedAt == now)
     }
 
-    @Test func playbackSessionSnapshotKeepsPlayingSessionOverPauseTelemetry() throws {
-        let now = Date()
-        let session = makeSession(
-            outputDeviceID: "mac",
-            isPlaying: true,
-            position: 10,
-            updatedAt: now.addingTimeInterval(-5)
-        )
-        let remotePause = makeSnapshot(
-            id: "mac",
-            isPlaying: false,
-            currentTime: 13,
-            updatedAt: now
-        )
-
-        let snapshot = try #require(PlaybackSessionSnapshotPolicy.snapshot(
-            from: session,
-            deviceName: "Mac",
-            platform: "Mac",
-            remotePlayback: remotePause,
-            now: now
-        ))
-
-        #expect(snapshot.isPlaying == true)
-        #expect(snapshot.currentTime == 15)
-        #expect(snapshot.updatedAt == now)
-    }
-
-    @Test func playbackSessionSnapshotKeepsSessionStateWhenRemotePlaybackIsOlder() throws {
+    @Test func playbackSessionSnapshotUsesPausedSessionState() throws {
         let now = Date()
         let session = makeSession(
             outputDeviceID: "mac",
@@ -1232,53 +802,17 @@ struct PlaybackSyncPolicyTests {
             position: 20,
             updatedAt: now
         )
-        let staleRemotePlaying = makeSnapshot(
-            id: "mac",
-            isPlaying: true,
-            currentTime: 12,
-            updatedAt: now.addingTimeInterval(-5)
-        )
 
         let snapshot = try #require(PlaybackSessionSnapshotPolicy.snapshot(
             from: session,
             deviceName: "Mac",
             platform: "Mac",
-            remotePlayback: staleRemotePlaying,
             now: now
         ))
 
         #expect(snapshot.isPlaying == false)
         #expect(snapshot.currentTime == 20)
         #expect(snapshot.updatedAt == now)
-    }
-
-    @Test func stalePlayingTelemetryCannotOverwriteNewerPausedSession() throws {
-        let now = Date()
-        let pausedSession = makeSession(
-            outputDeviceID: "iphone",
-            isPlaying: false,
-            position: 42,
-            revision: 6,
-            updatedAt: now,
-            updatedByDeviceID: "iphone"
-        )
-        let playingTelemetry = makeSnapshot(
-            id: "iphone",
-            isPlaying: true,
-            currentTime: 44,
-            updatedAt: now.addingTimeInterval(2)
-        )
-
-        let snapshot = try #require(PlaybackSessionSnapshotPolicy.snapshot(
-            from: pausedSession,
-            deviceName: "iPhone",
-            platform: "iPhone",
-            remotePlayback: playingTelemetry,
-            now: now.addingTimeInterval(2)
-        ))
-
-        #expect(snapshot.isPlaying == false)
-        #expect(snapshot.currentTime == 42)
     }
 
     @Test func remotePauseCommandFinalTruthComesFromOwnerSessionAcknowledgment() throws {
@@ -1291,12 +825,6 @@ struct PlaybackSyncPolicyTests {
             updatedAt: now,
             updatedByDeviceID: "iphone"
         )
-        let olderPlayingTelemetry = makeSnapshot(
-            id: "iphone",
-            isPlaying: true,
-            currentTime: 119,
-            updatedAt: now.addingTimeInterval(-1)
-        )
 
         #expect(PendingPlaybackSessionAcknowledgmentPolicy.shouldAcceptAcknowledgingSession(
             pausedSession,
@@ -1308,7 +836,6 @@ struct PlaybackSyncPolicyTests {
             from: pausedSession,
             deviceName: "iPhone",
             platform: "iPhone",
-            remotePlayback: olderPlayingTelemetry,
             now: now
         ))
 
@@ -1316,244 +843,30 @@ struct PlaybackSyncPolicyTests {
         #expect(snapshot.currentTime == 120)
     }
 
-    @Test func playbackSessionSnapshotUsesFreshLiveRemotePlayingProgressOverSessionEstimate() throws {
+    @Test func playbackSessionSnapshotIsBuiltOnlyFromSession() throws {
         let now = Date()
+        let song = makeSong(id: "song-1")
         let session = makeSession(
-            outputDeviceID: "mac",
+            songs: [song],
+            outputDeviceID: "iphone",
             isPlaying: true,
-            position: 10,
-            updatedAt: now.addingTimeInterval(-5)
-        )
-        let remotePlaying = makeSnapshot(
-            id: "mac",
-            isPlaying: true,
-            currentTime: 13,
-            updatedAt: now.addingTimeInterval(-1)
+            position: 30,
+            updatedAt: now.addingTimeInterval(-5),
+            updatedByDeviceID: "iphone"
         )
 
         let snapshot = try #require(PlaybackSessionSnapshotPolicy.snapshot(
             from: session,
-            deviceName: "Mac",
-            platform: "Mac",
-            remotePlayback: remotePlaying,
-            now: now
-        ))
-
-        #expect(snapshot.isPlaying == true)
-        #expect(snapshot.currentTime == 14)
-        #expect(snapshot.updatedAt == now)
-    }
-
-    @Test func playbackSessionSnapshotYieldsToFreshDifferentRemoteOutput() {
-        let now = Date()
-        let staleIPhoneSession = makeSession(
-            outputDeviceID: "iphone",
-            isPlaying: true,
-            position: 30,
-            updatedAt: now.addingTimeInterval(-5),
-            updatedByDeviceID: "iphone"
-        )
-        let freshMacPlayback = makeSnapshot(
-            id: "mac",
-            song: makeSong(id: "song-1"),
-            queue: [makeSong(id: "song-1")],
-            isPlaying: true,
-            currentTime: 35,
-            updatedAt: now
-        )
-
-        let snapshot = PlaybackSessionSnapshotPolicy.snapshot(
-            from: staleIPhoneSession,
             deviceName: "iPhone",
             platform: "iPhone",
-            remotePlayback: freshMacPlayback,
-            now: now
-        )
-
-        #expect(snapshot == nil)
-    }
-
-    @Test func playbackSessionSnapshotYieldsToFreshDifferentRemotePause() {
-        let now = Date()
-        let staleIPhoneSession = makeSession(
-            outputDeviceID: "iphone",
-            isPlaying: true,
-            position: 30,
-            updatedAt: now.addingTimeInterval(-5),
-            updatedByDeviceID: "iphone"
-        )
-        let freshMacPause = makeSnapshot(
-            id: "mac",
-            song: makeSong(id: "song-1"),
-            queue: [makeSong(id: "song-1")],
-            isPlaying: false,
-            currentTime: 35,
-            updatedAt: now
-        )
-
-        let snapshot = PlaybackSessionSnapshotPolicy.snapshot(
-            from: staleIPhoneSession,
-            deviceName: "iPhone",
-            platform: "iPhone",
-            remotePlayback: freshMacPause,
-            now: now
-        )
-
-        #expect(snapshot == nil)
-    }
-
-    @Test func playbackSessionSnapshotYieldsToFreshDifferentRemoteWithSparseQueue() {
-        let now = Date()
-        let staleIPhoneSession = makeSession(
-            outputDeviceID: "iphone",
-            isPlaying: true,
-            position: 30,
-            updatedAt: now.addingTimeInterval(-5),
-            updatedByDeviceID: "iphone"
-        )
-        let freshMacPlayback = makeSnapshot(
-            id: "mac",
-            song: makeSong(id: "song-1"),
-            queue: [],
-            isPlaying: true,
-            currentTime: 35,
-            updatedAt: now
-        )
-
-        let snapshot = PlaybackSessionSnapshotPolicy.snapshot(
-            from: staleIPhoneSession,
-            deviceName: "iPhone",
-            platform: "iPhone",
-            remotePlayback: freshMacPlayback,
-            now: now
-        )
-
-        #expect(snapshot == nil)
-    }
-
-    @Test func playbackSessionSnapshotKeepsSessionWhenDifferentRemotePlaybackIsOlder() throws {
-        let now = Date()
-        let currentIPhoneSession = makeSession(
-            outputDeviceID: "iphone",
-            isPlaying: false,
-            position: 40,
-            updatedAt: now,
-            updatedByDeviceID: "iphone"
-        )
-        let staleMacPlayback = makeSnapshot(
-            id: "mac",
-            song: makeSong(id: "song-1"),
-            queue: [makeSong(id: "song-1")],
-            isPlaying: true,
-            currentTime: 35,
-            updatedAt: now.addingTimeInterval(-5)
-        )
-
-        let snapshot = try #require(PlaybackSessionSnapshotPolicy.snapshot(
-            from: currentIPhoneSession,
-            deviceName: "iPhone",
-            platform: "iPhone",
-            remotePlayback: staleMacPlayback,
-            now: now
-        ))
-
-        #expect(snapshot.id == "iphone")
-        #expect(snapshot.isPlaying == false)
-        #expect(snapshot.currentTime == 40)
-    }
-
-    @Test func playbackSessionSnapshotKeepsSessionWhenDifferentRemoteSongDoesNotMatch() throws {
-        let now = Date()
-        let staleIPhoneSession = makeSession(
-            outputDeviceID: "iphone",
-            isPlaying: true,
-            position: 30,
-            updatedAt: now.addingTimeInterval(-5),
-            updatedByDeviceID: "iphone"
-        )
-        let freshMacPlayback = makeSnapshot(
-            id: "mac",
-            song: makeSong(id: "song-2"),
-            queue: [makeSong(id: "song-2")],
-            isPlaying: true,
-            currentTime: 35,
-            updatedAt: now
-        )
-
-        let snapshot = try #require(PlaybackSessionSnapshotPolicy.snapshot(
-            from: staleIPhoneSession,
-            deviceName: "iPhone",
-            platform: "iPhone",
-            remotePlayback: freshMacPlayback,
             now: now
         ))
 
         #expect(snapshot.id == "iphone")
         #expect(snapshot.song?.id == "song-1")
-        #expect(snapshot.currentTime == 35)
-    }
-
-    @Test func playbackSessionSnapshotKeepsSessionWhenDifferentRemoteQueueDoesNotMatch() throws {
-        let now = Date()
-        let staleIPhoneSession = makeSession(
-            songs: [makeSong(id: "song-1"), makeSong(id: "song-2")],
-            outputDeviceID: "iphone",
-            isPlaying: true,
-            position: 30,
-            updatedAt: now.addingTimeInterval(-5),
-            updatedByDeviceID: "iphone"
-        )
-        let freshMacPlayback = makeSnapshot(
-            id: "mac",
-            song: makeSong(id: "song-1"),
-            queue: [makeSong(id: "song-1"), makeSong(id: "song-3")],
-            isPlaying: true,
-            currentTime: 35,
-            updatedAt: now
-        )
-
-        let snapshot = try #require(PlaybackSessionSnapshotPolicy.snapshot(
-            from: staleIPhoneSession,
-            deviceName: "iPhone",
-            platform: "iPhone",
-            remotePlayback: freshMacPlayback,
-            now: now
-        ))
-
-        #expect(snapshot.id == "iphone")
-        #expect(snapshot.queue.map(\.id) == ["song-1", "song-2"])
-        #expect(snapshot.currentTime == 35)
-    }
-
-    @Test func playbackSessionSnapshotKeepsPlayingSessionOverSameOutputPauseTelemetryWithSparseQueue() throws {
-        let now = Date()
-        let session = makeSession(
-            outputDeviceID: "mac",
-            isPlaying: true,
-            position: 10,
-            updatedAt: now.addingTimeInterval(-5)
-        )
-        let remotePause = makeSnapshot(
-            id: "mac",
-            song: makeSong(id: "song-1"),
-            queue: [],
-            isPlaying: false,
-            currentTime: 13,
-            updatedAt: now
-        )
-
-        let snapshot = try #require(PlaybackSessionSnapshotPolicy.snapshot(
-            from: session,
-            deviceName: "Mac",
-            platform: "Mac",
-            remotePlayback: remotePause,
-            now: now
-        ))
-
-        #expect(snapshot.id == "mac")
-        #expect(snapshot.isPlaying == true)
-        #expect(snapshot.currentTime == 15)
         #expect(snapshot.queue.map(\.id) == ["song-1"])
+        #expect(snapshot.isPlaying == true)
+        #expect(snapshot.currentTime == 35)
     }
 
     @Test func playbackRetryPolicyRejectsRetryAfterUserIntentChanges() {
@@ -1649,8 +962,8 @@ struct PlaybackSyncPolicyTests {
         ) == false)
     }
 
-    @Test func remotePlaybackApplicationStateIsReferenceCounted() {
-        var state = RemotePlaybackApplicationState()
+    @Test func remoteCommandApplicationStateIsReferenceCounted() {
+        var state = RemoteCommandApplicationState()
 
         #expect(state.isApplying == false)
         state.begin()
@@ -1855,20 +1168,10 @@ struct PlaybackSyncPolicyTests {
             updatedAt: now,
             updatedByDeviceID: "iphone"
         )
-        let stalePlayingTelemetry = makeSnapshot(
-            id: "iphone",
-            song: song,
-            queue: [song],
-            isPlaying: true,
-            currentTime: 121,
-            updatedAt: now.addingTimeInterval(1)
-        )
-
         let ownerSnapshot = try #require(PlaybackSessionSnapshotPolicy.snapshot(
             from: pausedOwnerSession,
             deviceName: "iPhone",
             platform: "iPhone",
-            remotePlayback: stalePlayingTelemetry,
             now: now.addingTimeInterval(1)
         ))
         let visibility = PlaybackDisplaySourcePolicy.visibility(
@@ -1903,7 +1206,6 @@ struct PlaybackSyncPolicyTests {
             from: pausedOwnerSession,
             deviceName: "iPhone",
             platform: "iPhone",
-            remotePlayback: nil,
             now: now
         ))
         let visibility = PlaybackDisplaySourcePolicy.visibility(

@@ -216,11 +216,7 @@ struct MacSidebar: View {
     }
 
     private var activeRemotePlayback: PlaybackSnapshot? {
-        if let sharedPlayback = deviceSyncManager.activeSharedPlayback {
-            return sharedPlayback
-        }
-        guard let remote = deviceSyncManager.remotePlayback, remote.song != nil else { return nil }
-        return remote
+        deviceSyncManager.activeSharedPlayback
     }
 
     private var displayedQueue: [Song] {
@@ -367,7 +363,7 @@ struct MacMiniPlayerAttachment: View {
 
     var body: some View {
         if selection != .nowPlaying,
-           player.currentSong != nil || deviceSyncManager.activeSharedPlayback?.song != nil || deviceSyncManager.remotePlayback?.song != nil {
+           player.currentSong != nil || deviceSyncManager.activeSharedPlayback?.song != nil {
             Divider()
             MacMiniPlayerBar(selection: $selection)
         }
@@ -402,7 +398,7 @@ struct MacMiniPlayerBar: View {
             }
 
             if deviceSyncManager.syncModeEnabled,
-               let remote = deviceSyncManager.activeSharedPlayback ?? deviceSyncManager.remotePlayback,
+               let remote = deviceSyncManager.activeSharedPlayback,
                let song = remote.song,
                displayVisibility.showsRemote {
                 if player.currentSong != nil, displayVisibility.showsLocal {
@@ -427,7 +423,7 @@ struct MacMiniPlayerBar: View {
                 )
             }
 
-            if player.currentSong != nil || deviceSyncManager.activeSharedPlayback?.song != nil || deviceSyncManager.remotePlayback?.song != nil {
+            if player.currentSong != nil || deviceSyncManager.activeSharedPlayback?.song != nil {
                 Divider()
                 HStack(spacing: 8) {
                     Image(systemName: "speaker.fill")
@@ -444,7 +440,7 @@ struct MacMiniPlayerBar: View {
     }
 
     private var remoteQueue: [Song] {
-        guard let remote = deviceSyncManager.activeSharedPlayback ?? deviceSyncManager.remotePlayback else { return [] }
+        guard let remote = deviceSyncManager.activeSharedPlayback else { return [] }
         return remote.queue.isEmpty ? remote.song.map { [$0] } ?? [] : remote.queue
     }
 
@@ -454,11 +450,11 @@ struct MacMiniPlayerBar: View {
     }
 
     private var displayVisibility: PlaybackDisplayVisibility {
-        let remotePlayback = deviceSyncManager.activeSharedPlayback ?? deviceSyncManager.remotePlayback
+        let sharedPlayback = deviceSyncManager.activeSharedPlayback
         return PlaybackDisplaySourcePolicy.visibility(
             hasLocalSong: player.currentSong != nil,
             localIsPlaying: player.isPlaying,
-            hasRemotePlayback: remotePlayback?.song != nil,
+            hasRemotePlayback: sharedPlayback?.song != nil,
             hasActiveSharedPlayback: deviceSyncManager.activeSharedPlayback != nil,
             remoteQueueMatchesLocal: remoteQueueMatchesLocal,
             localIsPlaybackOutput: deviceSyncManager.isLocalPlaybackOutput
