@@ -54,12 +54,12 @@ struct TrackRowView: View {
                 HStack(spacing: 6) {
                     if isDownloaded {
                         if !offlineMode {
-                            Button(action: onDelete) {
-                                Image(systemName: "arrow.down.circle.fill")
-                                    .font(.caption2)
-                                    .foregroundColor(WRhythmTheme.success)
-                            }
-                            .buttonStyle(.plain)
+                            WRhythmRowIconButton(
+                                systemImage: "arrow.down.circle.fill",
+                                tint: WRhythmTheme.success,
+                                accessibilityLabel: "Delete download",
+                                action: onDelete
+                            )
                         } else {
                             // Offline mode: just an indicator
                             Image(systemName: "arrow.down.circle.fill")
@@ -67,21 +67,21 @@ struct TrackRowView: View {
                                 .foregroundColor(WRhythmTheme.success)
                         }
                     } else if !offlineMode {
-                        Button(action: onDownload) {
-                            Image(systemName: "arrow.down.circle")
-                                .font(.caption2)
-                                .foregroundColor(WRhythmTheme.secondaryAccent)
-                        }
-                        .buttonStyle(.plain)
+                        WRhythmRowIconButton(
+                            systemImage: "arrow.down.circle",
+                            tint: WRhythmTheme.secondaryAccent,
+                            accessibilityLabel: "Download song",
+                            action: onDownload
+                        )
                     }
 
                     if !offlineMode {
-                        Button(action: onToggleFavorite) {
-                            Image(systemName: isStarred ? "heart.fill" : "heart")
-                                .font(.caption2)
-                                .foregroundColor(isStarred ? WRhythmTheme.favorite : .gray)
-                        }
-                        .buttonStyle(.plain)
+                        WRhythmRowIconButton(
+                            systemImage: isStarred ? "heart.fill" : "heart",
+                            tint: isStarred ? WRhythmTheme.favorite : .gray,
+                            accessibilityLabel: isStarred ? "Unfavorite song" : "Favorite song",
+                            action: onToggleFavorite
+                        )
                     }
 
                     if !offlineMode {

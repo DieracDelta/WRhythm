@@ -181,7 +181,7 @@ struct PlaylistDetailView: View {
             }) {
                 Image(systemName: "trash")
             }
-            .tint(.red)
+            .tint(WRhythmTheme.danger)
         } else if isPlaylistDownloading(playlist) {
             Button(action: {}) {
                 HStack(spacing: 4) {

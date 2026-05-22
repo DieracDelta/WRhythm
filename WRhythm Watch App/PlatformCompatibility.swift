@@ -78,7 +78,7 @@ struct PlatformSearchSheet<Content: View>: View {
 #if os(macOS)
         VStack(spacing: 0) {
             content
-                .padding(22)
+                .padding(WRhythmSpacing.xl)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
             Divider()
@@ -142,13 +142,37 @@ enum WRhythmTheme {
     }
 }
 
+enum WRhythmSpacing {
+    static let xxs: CGFloat = 4
+    static let xs: CGFloat = 8
+    static let sm: CGFloat = 12
+    static let md: CGFloat = 16
+    static let lg: CGFloat = 20
+    static let xl: CGFloat = 24
+    static let xxl: CGFloat = 32
+}
+
+enum WRhythmTypography {
+    static let sectionLabel = Font.caption.weight(.semibold)
+    static let rowTitle = Font.subheadline.weight(.semibold)
+    static let rowSubtitle = Font.caption
+    static let metadata = Font.caption2
+    static let controlLabel = Font.caption.weight(.medium)
+}
+
 enum WRhythmVisual {
     static let cornerRadius: CGFloat = 16
     static let compactCornerRadius: CGFloat = 10
     static let thumbnailCornerRadius: CGFloat = 8
-    static let sectionSpacing: CGFloat = 16
-    static let cardPadding: CGFloat = 16
+    static let sectionSpacing: CGFloat = WRhythmSpacing.md
+    static let cardPadding: CGFloat = WRhythmSpacing.md
+    static let bottomNavigationClearance: CGFloat = WRhythmSpacing.xl + WRhythmSpacing.xxl + WRhythmSpacing.xxl
     static let contentMaxWidth: CGFloat = 760
+}
+
+enum WRhythmSurfaceStyle {
+    case grouped
+    case glass
 }
 
 struct WRhythmScreen<Content: View>: View {
@@ -183,6 +207,42 @@ struct WRhythmScreen<Content: View>: View {
 struct WRhythmCard<Content: View>: View {
     @Environment(\.colorScheme) private var colorScheme
     var padding: CGFloat = WRhythmVisual.cardPadding
+    var style: WRhythmSurfaceStyle = .grouped
+    private let content: Content
+
+    init(
+        padding: CGFloat = WRhythmVisual.cardPadding,
+        style: WRhythmSurfaceStyle = .grouped,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.padding = padding
+        self.style = style
+        self.content = content()
+    }
+
+    var body: some View {
+        content
+            .padding(padding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(surfaceFill, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous)
+                    .strokeBorder(WRhythmTheme.surfaceStroke(for: colorScheme), lineWidth: 1)
+            }
+    }
+
+    private var surfaceFill: AnyShapeStyle {
+        switch style {
+        case .grouped:
+            AnyShapeStyle(WRhythmTheme.controlFill(for: colorScheme))
+        case .glass:
+            AnyShapeStyle(.regularMaterial)
+        }
+    }
+}
+
+struct WRhythmGlassCard<Content: View>: View {
+    var padding: CGFloat = WRhythmVisual.cardPadding
     private let content: Content
 
     init(padding: CGFloat = WRhythmVisual.cardPadding, @ViewBuilder content: () -> Content) {
@@ -191,14 +251,9 @@ struct WRhythmCard<Content: View>: View {
     }
 
     var body: some View {
-        content
-            .padding(padding)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous)
-                    .strokeBorder(WRhythmTheme.surfaceStroke(for: colorScheme), lineWidth: 1)
-            }
+        WRhythmCard(padding: padding, style: .glass) {
+            content
+        }
     }
 }
 
@@ -231,10 +286,10 @@ struct WRhythmHeroHeader<Actions: View>: View {
     }
 
     var body: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: WRhythmSpacing.md) {
             heroArt
 
-            VStack(spacing: 5) {
+            VStack(spacing: WRhythmSpacing.xs) {
                 Text(title)
                     .font(.title3.weight(.semibold))
                     .multilineTextAlignment(.center)
@@ -308,13 +363,13 @@ struct WRhythmActionStrip<Content: View>: View {
     }
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: WRhythmSpacing.xs) {
             content
         }
         .buttonStyle(.bordered)
         .controlSize(.regular)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.horizontal, WRhythmSpacing.sm)
+        .padding(.vertical, WRhythmSpacing.xs)
         .background(.regularMaterial, in: Capsule())
         .overlay {
             Capsule()
@@ -354,7 +409,7 @@ struct WRhythmFeatureHeader: View {
     var coverArtId: String?
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: WRhythmSpacing.xs) {
             ZStack {
                 if let coverArtId,
                    let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 180) {
@@ -415,8 +470,8 @@ struct WRhythmSectionHeader<Actions: View>: View {
     }
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(alignment: .firstTextBaseline, spacing: WRhythmSpacing.sm) {
+            VStack(alignment: .leading, spacing: WRhythmSpacing.xxs) {
                 Text(title)
                     .font(.headline)
                 if let subtitle, !subtitle.isEmpty {
@@ -496,32 +551,32 @@ struct WRhythmMediaRow<Trailing: View>: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: WRhythmSpacing.sm) {
             WRhythmArtworkThumbnail(coverArtId: coverArtId, fallbackSystemImage: fallbackSystemImage, size: artworkSize)
 
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 5) {
+            VStack(alignment: .leading, spacing: WRhythmSpacing.xxs) {
+                HStack(spacing: WRhythmSpacing.xs) {
                     if isCurrent {
                         Image(systemName: isPlaying ? "speaker.wave.2.fill" : "speaker")
                             .font(.caption2)
                             .foregroundColor(WRhythmTheme.accent)
                     }
                     Text(title)
-                        .font(.subheadline.weight(.semibold))
+                        .font(WRhythmTypography.rowTitle)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
-                        .font(.caption)
+                        .font(WRhythmTypography.rowSubtitle)
                         .foregroundColor(.secondary)
                         .lineLimit(1)
                 }
 
                 if let detail, !detail.isEmpty {
                     Text(detail)
-                        .font(.caption2)
+                        .font(WRhythmTypography.metadata)
                         .foregroundColor(.secondary)
                         .lineLimit(1)
                 }
@@ -531,7 +586,7 @@ struct WRhythmMediaRow<Trailing: View>: View {
 
             trailing
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, WRhythmSpacing.xs)
         .contentShape(Rectangle())
     }
 }
@@ -631,7 +686,7 @@ struct WRhythmMetricRow: View {
     var valueColor: Color = .primary
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: WRhythmSpacing.xs) {
             Text(title)
                 .font(.caption2)
                 .foregroundColor(.secondary)
@@ -644,6 +699,26 @@ struct WRhythmMetricRow: View {
     }
 }
 
+struct WRhythmRowIconButton: View {
+    let systemImage: String
+    var tint: Color = WRhythmTheme.accent
+    var accessibilityLabel: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.caption2.weight(.semibold))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundColor(tint)
+                .frame(width: 32, height: 32)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityLabel)
+    }
+}
+
 extension View {
     @ViewBuilder
     func wrhythmPageBackground(coverArtId: String? = nil) -> some View {
@@ -652,9 +727,48 @@ extension View {
 
     @ViewBuilder
     func wrhythmListSurface(coverArtId: String? = nil) -> some View {
+#if os(iOS)
         self
             .scrollContentBackground(.hidden)
-            .wrhythmPageBackground(coverArtId: coverArtId)
+            .safeAreaInset(edge: .bottom) {
+                Color.clear.frame(height: WRhythmVisual.bottomNavigationClearance)
+            }
+            .background {
+                if let coverArtId {
+                    WRhythmArtworkBackdrop(coverArtId: coverArtId).ignoresSafeArea()
+                } else {
+                    WRhythmLibraryBackdrop().ignoresSafeArea()
+                }
+            }
+#else
+        self
+            .scrollContentBackground(.hidden)
+            .background {
+                if let coverArtId {
+                    WRhythmArtworkBackdrop(coverArtId: coverArtId).ignoresSafeArea()
+                } else {
+                    WRhythmLibraryBackdrop().ignoresSafeArea()
+                }
+            }
+#endif
+    }
+}
+
+struct WRhythmLibraryBackdrop: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        ZStack {
+            WRhythmTheme.pageGradient(for: colorScheme)
+            LinearGradient(
+                colors: [
+                    Color.primary.opacity(colorScheme == .dark ? 0.03 : 0.02),
+                    Color.clear
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
     }
 }
 
@@ -699,7 +813,7 @@ struct WRhythmStatusPill: View {
     var tint: Color = .secondary
 
     var body: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: WRhythmSpacing.xs) {
             if let systemImage {
                 Image(systemName: systemImage)
                     .imageScale(.small)
@@ -794,7 +908,7 @@ struct WRhythmEmptyState: View {
     var action: (() -> Void)?
 
     var body: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: WRhythmSpacing.md) {
             Image(systemName: systemImage)
                 .font(.system(size: 38, weight: .semibold))
                 .symbolRenderingMode(.hierarchical)
@@ -802,7 +916,7 @@ struct WRhythmEmptyState: View {
                 .frame(width: 72, height: 72)
                 .background(.regularMaterial, in: Circle())
 
-            VStack(spacing: 5) {
+            VStack(spacing: WRhythmSpacing.xs) {
                 Text(title)
                     .font(.headline)
                     .multilineTextAlignment(.center)
@@ -878,7 +992,7 @@ struct WRhythmActionBar<Content: View>: View {
     }
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: WRhythmSpacing.xs) {
             content
         }
         .padding(.horizontal, 12)

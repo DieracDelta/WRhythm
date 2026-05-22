@@ -446,7 +446,7 @@ private struct WRhythmAlbumDetailTrackActionsModifier: ViewModifier {
                     } label: {
                         Label("Queue on Connected Device", systemImage: "display.and.arrow.down")
                     }
-                    .tint(.orange)
+                    .tint(WRhythmTheme.warning)
                 }
 
                 Button {
@@ -551,7 +551,7 @@ private struct WatchTrackSwipeActions: View {
             } label: {
                 Label("Queue on Connected Device", systemImage: "display.and.arrow.down")
             }
-            .tint(.orange)
+            .tint(WRhythmTheme.warning)
         }
     }
 }

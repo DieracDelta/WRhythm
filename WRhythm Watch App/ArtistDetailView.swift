@@ -139,7 +139,7 @@ struct ArtistDetailView: View {
                         }) {
                             Image(systemName: "trash")
                         }
-                        .tint(.red)
+                        .tint(WRhythmTheme.danger)
                     } else {
                         Button(action: {
                             downloadArtist(artist)

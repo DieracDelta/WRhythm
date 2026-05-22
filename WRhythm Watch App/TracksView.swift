@@ -345,15 +345,13 @@ struct TracksView: View {
                             .font(.caption2)
                             .foregroundColor(WRhythmTheme.success)
                     } else if !offlineMode {
-                        Button(action: {
+                        WRhythmRowIconButton(
+                            systemImage: "arrow.down.circle",
+                            tint: WRhythmTheme.secondaryAccent,
+                            accessibilityLabel: "Download song"
+                        ) {
                             DownloadManager.shared.downloadSong(song)
-                        }) {
-                            Image(systemName: "arrow.down.circle")
-                                .font(.caption2)
-                                .foregroundColor(WRhythmTheme.secondaryAccent)
-                                .frame(width: 30, height: 30)
                         }
-                        .buttonStyle(.plain)
                     }
 
                     if !offlineMode {

@@ -16,7 +16,7 @@ struct SongRowView: View {
 
     var body: some View {
         Button(action: onTap) {
-            HStack(spacing: 10) {
+            HStack(spacing: WRhythmSpacing.sm) {
                 if let track = song.track {
                     Text("\(track)")
                         .font(.caption)
@@ -40,7 +40,7 @@ struct SongRowView: View {
                 Spacer()
 
                 if downloadManager.isDownloading(song.id) {
-                    VStack(spacing: 2) {
+                    VStack(spacing: WRhythmSpacing.xxs) {
                         ProgressView()
                             .scaleEffect(0.7)
                         let progress = downloadManager.downloadProgress(song.id)
@@ -73,7 +73,7 @@ struct SongRowView: View {
                 }
                 .buttonStyle(.plain)
             }
-            .padding(8)
+            .padding(WRhythmSpacing.xs)
             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous))
         }
         .buttonStyle(.plain)
@@ -514,7 +514,7 @@ struct AlbumDownloadButton: View {
                     Image(systemName: "trash")
                 }
                 .buttonStyle(.bordered)
-                .tint(.red)
+                .tint(WRhythmTheme.danger)
             } else if isAlbumDownloading() {
                 Button(action: {}) {
                     HStack(spacing: 4) {

@@ -117,7 +117,7 @@ struct DownloadsView: View {
                                     .font(.caption2)
                             }
                             .buttonStyle(.bordered)
-                            .tint(.red)
+                            .tint(WRhythmTheme.danger)
                         }
 
                         NavigationLink(destination: ActiveDownloadsView()) {
@@ -163,7 +163,7 @@ struct DownloadsView: View {
                                 Label("Delete All", systemImage: "trash")
                             }
                             .buttonStyle(.bordered)
-                            .tint(.red)
+                            .tint(WRhythmTheme.danger)
                         }
                         .sheet(item: $presentedSheet) { sheet in
                             switch sheet {
@@ -180,7 +180,7 @@ struct DownloadsView: View {
 
                                     Text("Type DELETE to confirm")
                                         .font(.caption)
-                                        .foregroundColor(.red)
+                                        .foregroundColor(WRhythmTheme.danger)
 
                                     TextField("Type DELETE", text: $deleteConfirmationText)
                                         .platformAutocapitalizationCharacters()
@@ -196,7 +196,7 @@ struct DownloadsView: View {
                                             .frame(maxWidth: .infinity)
                                     }
                                     .buttonStyle(.borderedProminent)
-                                    .tint(.red)
+                                    .tint(WRhythmTheme.danger)
                                     .disabled(deleteConfirmationText != "DELETE")
 
                                     Spacer()
@@ -267,7 +267,7 @@ struct DownloadsView: View {
                                     }) {
                                         Image(systemName: "trash")
                                             .font(.caption)
-                                            .foregroundColor(.red)
+                                            .foregroundColor(WRhythmTheme.danger)
                                     }
                                     .buttonStyle(.plain)
 

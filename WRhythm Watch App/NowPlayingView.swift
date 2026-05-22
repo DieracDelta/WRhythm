@@ -23,24 +23,15 @@ struct NowPlayingView: View {
         WatchNowPlayingView()
 #else
         ScrollView {
-#if os(iOS)
-            Text("Now Playing")
-                .font(.headline)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity)
-                .padding(.top, 12)
-                .padding(.horizontal, 16)
-#endif
-
             if let remote = primaryRemotePlayback {
-                VStack(spacing: 12) {
+                VStack(spacing: WRhythmSpacing.sm) {
                     PlaybackTargetPicker()
                     RemotePlaybackControls(playback: remote, compact: false)
                 }
                 .padding()
             } else if let song = player.currentSong {
                 let localIsPlaying = deviceSyncManager.localPlaybackIsPlayingForDisplay
-                VStack(spacing: 18) {
+                VStack(spacing: WRhythmSpacing.md) {
                     NowPlayingArtwork(coverArtId: song.coverArt, maxSize: 360)
                         .equatable()
 
@@ -72,7 +63,7 @@ struct NowPlayingView: View {
                                 tint: localIsPlaying ? WRhythmTheme.accent : .secondary
                             )
                             if player.isBuffering {
-                                WRhythmStatusPill(text: "Buffering", systemImage: "hourglass", tint: .orange)
+                                WRhythmStatusPill(text: "Buffering", systemImage: "hourglass", tint: WRhythmTheme.warning)
                             }
                             if player.queue.count > player.currentIndex + 1 {
                                 WRhythmStatusPill(
@@ -86,7 +77,7 @@ struct NowPlayingView: View {
 
                     PlaybackTargetPicker()
 
-                    VStack(spacing: 6) {
+                    VStack(spacing: WRhythmSpacing.xs) {
                         let safeDuration = max(1, player.duration.isFinite ? player.duration : 1)
                         let liveTime = player.currentTime.isFinite ? player.currentTime : 0
                         let displayedTime = min(max(scrubTime ?? liveTime, 0), safeDuration)
@@ -117,10 +108,10 @@ struct NowPlayingView: View {
                                 .foregroundColor(.secondary)
                         }
                     }
-                    .padding(14)
+                    .padding(WRhythmSpacing.sm)
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous))
 
-                    HStack(spacing: 22) {
+                    HStack(spacing: WRhythmSpacing.xl) {
                         WRhythmTransportButton(systemImage: "backward.end.fill", action: player.previous)
                         .disabled(player.currentIndex == 0 && player.currentTime < 3)
 
@@ -145,8 +136,7 @@ struct NowPlayingView: View {
                         set: { player.volume = $0 }
                     ))
 
-                    // Action buttons
-                    HStack(spacing: 8) {
+                    WRhythmActionStrip {
                         Button(action: {
                             presentedSheet = .volume
                         }) {
@@ -155,7 +145,7 @@ struct NowPlayingView: View {
                                 .symbolVariant(.fill)
                                 .foregroundStyle(WRhythmTheme.secondaryAccent.gradient)
                         }
-                        .buttonStyle(.bordered)
+                        .accessibilityLabel("Volume")
 
                         Button(action: {
                             presentedSheet = .audioRoute
@@ -165,7 +155,7 @@ struct NowPlayingView: View {
                                 .symbolVariant(.fill)
                                 .foregroundStyle(WRhythmTheme.secondaryAccent.gradient)
                         }
-                        .buttonStyle(.bordered)
+                        .accessibilityLabel("Audio output")
 
                         NavigationLink(destination: RadioOptionsView(
                             sourceSong: song,
@@ -177,7 +167,7 @@ struct NowPlayingView: View {
                                 .symbolVariant(.fill)
                                 .foregroundStyle(WRhythmTheme.accent.gradient)
                         }
-                        .buttonStyle(.bordered)
+                        .accessibilityLabel("Playlist Gen")
 
                         Button(action: {
                             toggleFavorite(song: song)
@@ -187,7 +177,7 @@ struct NowPlayingView: View {
                                 .symbolVariant(.fill)
                                 .foregroundStyle(WRhythmTheme.favorite.gradient)
                         }
-                        .buttonStyle(.bordered)
+                        .accessibilityLabel(downloadManager.starredSongIds.contains(song.id) ? "Unfavorite" : "Favorite")
                         .disabled(isStarring)
                     }
 
@@ -230,7 +220,7 @@ struct NowPlayingView: View {
             } else if deviceSyncManager.syncModeEnabled,
                       let remote = deviceSyncManager.activeSharedPlayback,
                       remote.song != nil {
-                VStack(spacing: 12) {
+                VStack(spacing: WRhythmSpacing.sm) {
                     PlaybackTargetPicker()
                     RemotePlaybackControls(playback: remote, compact: false)
                 }
@@ -486,7 +476,7 @@ struct RemotePlaybackControls: View {
     @State private var scrubTime: TimeInterval?
 
     var body: some View {
-        VStack(spacing: compact ? 8 : 12) {
+        VStack(spacing: compact ? WRhythmSpacing.xs : WRhythmSpacing.sm) {
             HStack(spacing: 8) {
                 Image(systemName: playback.platform == "Mac" ? "desktopcomputer" : playback.platform == "iPhone" ? "iphone" : "applewatch")
                     .foregroundColor(WRhythmTheme.accent)
@@ -500,7 +490,7 @@ struct RemotePlaybackControls: View {
                     tint: playback.isPlaying ? WRhythmTheme.accent : .secondary
                 )
                 if playback.isBuffering == true {
-                    WRhythmStatusPill(text: "Buffering", systemImage: "hourglass", tint: .orange)
+                    WRhythmStatusPill(text: "Buffering", systemImage: "hourglass", tint: WRhythmTheme.warning)
                 }
                 if let bufferedCount = playback.prebufferedTrackCount,
                    !playback.queue.isEmpty,
@@ -686,11 +676,11 @@ struct AudioRouteView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
+            VStack(spacing: WRhythmSpacing.md) {
                 Text("Audio Output")
                     .font(.headline)
 
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: WRhythmSpacing.sm) {
                     if activeOutputs.isEmpty {
                         HStack {
                             Image(systemName: "speaker.slash")
@@ -848,7 +838,7 @@ struct AudioRouteView: View {
 #else
 struct AudioRouteView: View {
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: WRhythmSpacing.sm) {
             Image(systemName: "airplayaudio")
                 .font(.largeTitle)
                 .foregroundColor(.secondary)
@@ -875,7 +865,7 @@ private struct WatchNowPlayingView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 12) {
+            VStack(spacing: WRhythmSpacing.sm) {
                 if let remote = primaryRemotePlayback {
                     WatchRemotePlaybackControls(playback: remote)
                 } else if let song = player.currentSong {
@@ -885,7 +875,7 @@ private struct WatchNowPlayingView: View {
                 }
             }
             .padding(.horizontal, 8)
-            .padding(.vertical, 10)
+            .padding(.vertical, WRhythmSpacing.xs)
         }
         .wrhythmPageBackground(coverArtId: primaryArtworkCoverArtId)
         .navigationTitle("Playing")
@@ -928,11 +918,11 @@ private struct WatchNowPlayingView: View {
 
     @ViewBuilder
     private func localPlaybackContent(song: Song) -> some View {
-        VStack(spacing: 10) {
+        VStack(spacing: WRhythmSpacing.xs) {
             NowPlayingArtwork(coverArtId: song.coverArt, maxSize: 124)
                 .equatable()
 
-            VStack(spacing: 3) {
+            VStack(spacing: WRhythmSpacing.xxs) {
                 Text(song.title)
                     .font(.headline)
                     .lineLimit(2)
@@ -1001,7 +991,7 @@ private struct WatchNowPlayingView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: WRhythmSpacing.xs) {
             PlaybackTargetPicker()
 
             Image(systemName: "music.note")
@@ -1081,8 +1071,8 @@ private struct WatchRemotePlaybackControls: View {
     @State private var scrubTime: TimeInterval?
 
     var body: some View {
-        VStack(spacing: 10) {
-            HStack(spacing: 6) {
+        VStack(spacing: WRhythmSpacing.xs) {
+            HStack(spacing: WRhythmSpacing.xs) {
                 Image(systemName: platformIconName)
                     .foregroundStyle(WRhythmTheme.accent)
                 Text(playback.deviceName)
@@ -1095,7 +1085,7 @@ private struct WatchRemotePlaybackControls: View {
                 NowPlayingArtwork(coverArtId: song.coverArt, maxSize: 116)
                     .equatable()
 
-                VStack(spacing: 3) {
+                VStack(spacing: WRhythmSpacing.xxs) {
                     Text(song.title)
                         .font(.headline)
                         .lineLimit(2)
@@ -1187,7 +1177,7 @@ private struct WatchNowPlayingStatusRow: View {
     let hasQueuedTracks: Bool
 
     var body: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: WRhythmSpacing.xs) {
             WRhythmStatusPill(
                 text: isPlaying ? "Playing" : "Paused",
                 systemImage: isPlaying ? "waveform" : "pause.fill",
@@ -1195,7 +1185,7 @@ private struct WatchNowPlayingStatusRow: View {
             )
 
             if isBuffering {
-                WRhythmStatusPill(text: "Buffering", systemImage: "hourglass", tint: .orange)
+                WRhythmStatusPill(text: "Buffering", systemImage: "hourglass", tint: WRhythmTheme.warning)
             } else if hasQueuedTracks, let prebufferedTrackCount {
                 WRhythmStatusPill(text: "\(prebufferedTrackCount) ready", systemImage: "arrow.down.circle")
             }
@@ -1214,7 +1204,7 @@ private struct WatchProgressCard: View {
         let liveTime = currentTime.isFinite ? currentTime : 0
         let displayedTime = min(max(scrubTime ?? liveTime, 0), safeDuration)
 
-        VStack(spacing: 5) {
+        VStack(spacing: WRhythmSpacing.xs) {
             Slider(
                 value: Binding(
                     get: { displayedTime },
@@ -1238,7 +1228,7 @@ private struct WatchProgressCard: View {
             .monospacedDigit()
             .foregroundStyle(.secondary)
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, WRhythmSpacing.sm)
         .padding(.vertical, 8)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius))
     }

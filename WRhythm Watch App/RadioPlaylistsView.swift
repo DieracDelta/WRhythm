@@ -163,7 +163,7 @@ struct RadioPlaylistDetailView: View {
                     Image(systemName: "trash")
                 }
                 .buttonStyle(.bordered)
-                .tint(.red)
+                .tint(WRhythmTheme.danger)
                 .accessibilityLabel("Delete Playlist Gen")
             }
 

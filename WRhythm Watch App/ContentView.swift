@@ -55,6 +55,10 @@ struct ContentView: View {
                     }
                     .tag(3)
                 }
+#if os(iOS)
+                .toolbarBackground(.visible, for: .tabBar)
+                .toolbarBackground(.ultraThinMaterial, for: .tabBar)
+#endif
 #endif
             } else {
                 LoginView()
@@ -484,15 +488,15 @@ struct MacMiniPlayerBar: View {
         previousDisabled: Bool,
         nextDisabled: Bool
     ) -> some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 12) {
+        VStack(spacing: WRhythmSpacing.xs) {
+            HStack(spacing: WRhythmSpacing.sm) {
                 MiniPlayerArtwork(coverArtId: coverArtId)
 
                 Button(action: {
                     selection = .nowPlaying
                 }) {
                     VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 6) {
+                        HStack(spacing: WRhythmSpacing.xs) {
                             Text(title)
                                 .font(.headline)
                                 .lineLimit(1)
@@ -534,11 +538,11 @@ struct MacMiniPlayerBar: View {
                 seek: seek
             )
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.horizontal, WRhythmSpacing.md)
+        .padding(.vertical, WRhythmSpacing.xs)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous))
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(.horizontal, WRhythmSpacing.sm)
+        .padding(.vertical, WRhythmSpacing.xs)
     }
 
     private func miniStatusText(queuePosition: String, isBuffering: Bool, prebufferedTrackCount: Int?) -> String {
@@ -594,7 +598,7 @@ struct MiniPlayerProgressControl: View {
             let liveTime = sanitizedTime(currentTime())
             let displayedTime = min(max(scrubTime ?? liveTime, 0), safeDuration)
 
-            VStack(spacing: 2) {
+            VStack(spacing: WRhythmSpacing.xxs) {
                 Slider(
                     value: Binding(
                         get: { displayedTime },

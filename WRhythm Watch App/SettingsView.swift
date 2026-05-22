@@ -82,7 +82,7 @@ struct SettingsView: View {
                          ? "Unlimited - Required for fast background downloads"
                          : "Limited concurrent downloads (slower in background)")
                         .font(.caption2)
-                        .foregroundColor(downloadManager.maxConcurrentDownloads == 999 ? .green : .secondary)
+                        .foregroundColor(downloadManager.maxConcurrentDownloads == 999 ? WRhythmTheme.success : .secondary)
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
@@ -152,11 +152,11 @@ struct SettingsView: View {
                     if api.transcodingSupported == false {
                         HStack(spacing: 4) {
                             Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundColor(.orange)
+                                .foregroundColor(WRhythmTheme.warning)
                                 .font(.caption2)
                             Text("Server doesn't support transcoding")
                                 .font(.caption2)
-                                .foregroundColor(.orange)
+                                .foregroundColor(WRhythmTheme.warning)
                         }
                     } else if downloadManager.isExecutingQualityChange {
                         HStack(spacing: 4) {
@@ -285,14 +285,14 @@ struct SettingsView: View {
                         // WARNING ICON
                         Image(systemName: "exclamationmark.triangle.fill")
                             .font(.title2)
-                            .foregroundColor(.orange)
+                            .foregroundColor(WRhythmTheme.warning)
                             .padding(.top, 4)
 
                         // CLEAR WARNING TEXT
                         Text("All Local Data Will Be Deleted")
                             .font(.caption)
                             .fontWeight(.bold)
-                            .foregroundColor(.red)
+                            .foregroundColor(WRhythmTheme.danger)
                             .multilineTextAlignment(.center)
 
                         Text("This will permanently delete:")
@@ -326,7 +326,7 @@ struct SettingsView: View {
 
                         Text("Type LOGOUT to confirm")
                             .font(.caption)
-                            .foregroundColor(.red)
+                            .foregroundColor(WRhythmTheme.danger)
                             .padding(.top, 6)
 
                         TextField("Type LOGOUT", text: $logoutConfirmationText)
@@ -344,7 +344,7 @@ struct SettingsView: View {
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.borderedProminent)
-                        .tint(.red)
+                        .tint(WRhythmTheme.danger)
                         .disabled(logoutConfirmationText != "LOGOUT")
                         .padding(.bottom, 8)
                     }
@@ -376,10 +376,10 @@ private struct SettingsInfoRow: View {
     let systemImage: String
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: WRhythmSpacing.sm) {
             WRhythmIconBadge(systemImage: systemImage, tint: WRhythmTheme.accent, size: 32)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: WRhythmSpacing.xxs) {
                 Text(title)
                     .font(.caption.weight(.medium))
                 Text(value)
@@ -399,10 +399,10 @@ private struct SettingsToggleLabel: View {
     let systemImage: String
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: WRhythmSpacing.sm) {
             WRhythmIconBadge(systemImage: systemImage, tint: WRhythmTheme.accent, size: 32)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: WRhythmSpacing.xxs) {
                 Text(title)
                     .font(.caption.weight(.medium))
                 Text(subtitle)

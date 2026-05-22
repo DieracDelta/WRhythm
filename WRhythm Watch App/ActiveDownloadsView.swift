@@ -144,7 +144,7 @@ private struct QueuedDownloadRow: View {
                             .font(.caption2)
                     }
                     .buttonStyle(.plain)
-                    .foregroundColor(.red)
+                    .foregroundColor(WRhythmTheme.danger)
                     .accessibilityLabel("Cancel queued download")
                 }
             }

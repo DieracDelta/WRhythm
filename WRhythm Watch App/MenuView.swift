@@ -10,6 +10,7 @@ import SwiftUI
 struct MenuView: View {
     var body: some View {
         List {
+#if os(watchOS)
             WRhythmFeatureHeader(
                 title: "WRhythm",
                 subtitle: nil,
@@ -17,6 +18,7 @@ struct MenuView: View {
                 tint: WRhythmTheme.accent
             )
             .listRowBackground(Color.clear)
+#endif
 
             Section("Library") {
                 menuLink("Artists", systemImage: "person.2", tint: WRhythmTheme.secondaryAccent, destination: ArtistsView())
@@ -28,7 +30,7 @@ struct MenuView: View {
             Section("Playback") {
                 menuLink("Favorites", systemImage: "star.fill", tint: WRhythmTheme.favorite, destination: FavouritesView())
                 menuLink("Playlist Gen", systemImage: "radio", tint: WRhythmTheme.accent, destination: RadioPlaylistsView())
-                menuLink("Spontaneous", systemImage: "shuffle", tint: .orange, destination: SpontaneousMusicView())
+                menuLink("Spontaneous", systemImage: "shuffle", tint: WRhythmTheme.warning, destination: SpontaneousMusicView())
             }
 
             Section("Device") {
@@ -37,16 +39,17 @@ struct MenuView: View {
             }
         }
         .navigationTitle("WRhythm")
+        .platformNavigationBarTitleDisplayModeInline()
         .wrhythmListSurface()
     }
 
     private func menuLink<Destination: View>(_ title: String, systemImage: String, tint: Color, destination: Destination) -> some View {
         NavigationLink(destination: destination) {
-            HStack(spacing: 12) {
+            HStack(spacing: WRhythmSpacing.sm) {
                 WRhythmIconBadge(systemImage: systemImage, tint: tint)
 
                 Text(title)
-                    .font(.headline)
+                    .font(WRhythmTypography.rowTitle)
 
                 Spacer(minLength: 6)
             }
