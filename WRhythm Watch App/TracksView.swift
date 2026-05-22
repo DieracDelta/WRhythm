@@ -343,14 +343,14 @@ struct TracksView: View {
                     } else if downloadManager.isDownloaded(song.id) {
                         Image(systemName: "arrow.down.circle.fill")
                             .font(.caption2)
-                            .foregroundColor(.green)
+                            .foregroundColor(WRhythmTheme.success)
                     } else if !offlineMode {
                         Button(action: {
                             DownloadManager.shared.downloadSong(song)
                         }) {
                             Image(systemName: "arrow.down.circle")
                                 .font(.caption2)
-                                .foregroundColor(.blue)
+                                .foregroundColor(WRhythmTheme.secondaryAccent)
                                 .frame(width: 30, height: 30)
                         }
                         .buttonStyle(.plain)
@@ -364,7 +364,7 @@ struct TracksView: View {
                         )) {
                             Image(systemName: "music.note.list")
                                 .font(.caption2)
-                                .foregroundColor(.blue)
+                                .foregroundColor(WRhythmTheme.accent)
                                 .frame(width: 30, height: 30)
                         }
                         .buttonStyle(.plain)

@@ -53,13 +53,13 @@ struct SongRowView: View {
                 } else if downloadManager.isDownloaded(song.id) {
                     Image(systemName: "arrow.down.circle.fill")
                         .font(.caption2)
-                        .foregroundColor(.green)
+                        .foregroundColor(WRhythmTheme.success)
                 }
 
                 if player.currentSong?.id == song.id && player.isPlaying {
                     Image(systemName: "speaker.wave.2.fill")
                         .font(.caption2)
-                        .foregroundColor(.accentColor)
+                        .foregroundColor(WRhythmTheme.accent)
                 }
 
                 NavigationLink(destination: RadioOptionsView(
@@ -69,7 +69,7 @@ struct SongRowView: View {
                 )) {
                     Image(systemName: "music.note.list")
                         .font(.caption2)
-                        .foregroundColor(.blue)
+                        .foregroundColor(WRhythmTheme.accent)
                 }
                 .buttonStyle(.plain)
             }

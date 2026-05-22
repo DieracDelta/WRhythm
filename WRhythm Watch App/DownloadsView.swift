@@ -23,7 +23,7 @@ struct DownloadsView: View {
                     WRhythmCard(padding: 12) {
                         VStack(spacing: 10) {
                         HStack {
-                            WRhythmIconBadge(systemImage: "arrow.down.circle.fill", tint: .blue, size: 30)
+                            WRhythmIconBadge(systemImage: "arrow.down.circle.fill", tint: WRhythmTheme.secondaryAccent, size: 30)
                             Text("Download Status")
                                 .font(.headline)
                             Spacer()
@@ -33,13 +33,13 @@ struct DownloadsView: View {
                             WRhythmMetricRow(
                                 title: "Completed",
                                 value: "\(downloadManager.sessionCompletedCount)",
-                                valueColor: .green
+                                valueColor: WRhythmTheme.success
                             )
 
                             WRhythmMetricRow(
                                 title: "Active",
                                 value: "\(downloadManager.getActiveDownloadCount())",
-                                valueColor: .blue
+                                valueColor: WRhythmTheme.secondaryAccent
                             )
 
                             WRhythmMetricRow(
@@ -56,7 +56,7 @@ struct DownloadsView: View {
 
                                 ProgressView(value: avgProgress)
                                     .progressViewStyle(.linear)
-                                    .tint(.blue)
+                                    .tint(WRhythmTheme.secondaryAccent)
 
                                 Divider()
                                     .padding(.vertical, 2)
@@ -66,7 +66,7 @@ struct DownloadsView: View {
                                 let remainingBytes = downloadManager.getBytesRemaining()
 
                                 VStack(spacing: 4) {
-                                    WRhythmMetricRow(title: "Downloaded", value: formatBytes(downloadedBytes), valueColor: .green)
+                                    WRhythmMetricRow(title: "Downloaded", value: formatBytes(downloadedBytes), valueColor: WRhythmTheme.success)
                                     WRhythmMetricRow(title: "Total Size", value: formatBytes(totalBytes))
                                     WRhythmMetricRow(title: "Remaining", value: formatBytes(remainingBytes), valueColor: .orange)
 
@@ -74,7 +74,7 @@ struct DownloadsView: View {
                                         let bytesProgress = Double(downloadedBytes) / Double(totalBytes)
                                         ProgressView(value: bytesProgress)
                                             .progressViewStyle(.linear)
-                                            .tint(.green)
+                                            .tint(WRhythmTheme.success)
                                     }
                                 }
                             }
@@ -90,7 +90,7 @@ struct DownloadsView: View {
                                         .font(.caption2)
                                 }
                                 .buttonStyle(.bordered)
-                                .tint(.green)
+                                .tint(WRhythmTheme.success)
                             } else {
                                 Button(action: {
                                     downloadManager.pauseDownloads()
@@ -108,7 +108,7 @@ struct DownloadsView: View {
                                     .font(.caption2)
                             }
                             .buttonStyle(.bordered)
-                            .tint(.blue)
+                            .tint(WRhythmTheme.secondaryAccent)
 
                             Button(action: {
                                 downloadManager.cancelAllDownloads()
@@ -128,7 +128,7 @@ struct DownloadsView: View {
                                 Image(systemName: "chevron.right")
                                     .font(.caption2)
                             }
-                            .foregroundColor(.blue)
+                            .foregroundColor(WRhythmTheme.secondaryAccent)
                         }
                         .buttonStyle(.plain)
                     }
@@ -274,7 +274,7 @@ struct DownloadsView: View {
                                     if player.currentSong?.id == downloadedSong.songId && player.isPlaying {
                                         Image(systemName: "speaker.wave.2.fill")
                                             .font(.caption2)
-                                            .foregroundColor(.accentColor)
+                                            .foregroundColor(WRhythmTheme.accent)
                                     }
                                 }
                             }
@@ -297,11 +297,11 @@ struct DownloadsView: View {
                                 HStack {
                                     Text("Load More (\(sortedSongs.count - displayedSongCount) remaining)")
                                         .font(.caption)
-                                        .foregroundColor(.blue)
+                                        .foregroundColor(WRhythmTheme.secondaryAccent)
                                     Spacer()
                                     Image(systemName: "chevron.down")
                                         .font(.caption2)
-                                        .foregroundColor(.blue)
+                                        .foregroundColor(WRhythmTheme.secondaryAccent)
                                 }
                             }
                             .buttonStyle(.plain)

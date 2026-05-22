@@ -69,7 +69,7 @@ struct NowPlayingView: View {
                             WRhythmStatusPill(
                                 text: localIsPlaying ? "Playing" : "Paused",
                                 systemImage: localIsPlaying ? "waveform" : "pause.fill",
-                                tint: localIsPlaying ? .accentColor : .secondary
+                                tint: localIsPlaying ? WRhythmTheme.accent : .secondary
                             )
                             if player.isBuffering {
                                 WRhythmStatusPill(text: "Buffering", systemImage: "hourglass", tint: .orange)
@@ -103,7 +103,7 @@ struct NowPlayingView: View {
                                 self.scrubTime = nil
                             }
                         )
-                        .tint(.accentColor)
+                        .tint(WRhythmTheme.accent)
 
                         HStack {
                             Text(formatTime(displayedTime))
@@ -153,7 +153,7 @@ struct NowPlayingView: View {
                             Image(systemName: "speaker.wave.3.fill")
                                 .font(.title3)
                                 .symbolVariant(.fill)
-                                .foregroundStyle(.blue.gradient)
+                                .foregroundStyle(WRhythmTheme.secondaryAccent.gradient)
                         }
                         .buttonStyle(.bordered)
 
@@ -163,7 +163,7 @@ struct NowPlayingView: View {
                             Image(systemName: "airpodsmax")
                                 .font(.title3)
                                 .symbolVariant(.fill)
-                                .foregroundStyle(.teal.gradient)
+                                .foregroundStyle(WRhythmTheme.secondaryAccent.gradient)
                         }
                         .buttonStyle(.bordered)
 
@@ -175,7 +175,7 @@ struct NowPlayingView: View {
                             Image(systemName: "music.note.list")
                                 .font(.title3)
                                 .symbolVariant(.fill)
-                                .foregroundStyle(.purple.gradient)
+                                .foregroundStyle(WRhythmTheme.accent.gradient)
                         }
                         .buttonStyle(.bordered)
 
@@ -185,7 +185,7 @@ struct NowPlayingView: View {
                             Image(systemName: downloadManager.starredSongIds.contains(song.id) ? "heart.fill" : "heart")
                                 .font(.title3)
                                 .symbolVariant(.fill)
-                                .foregroundStyle(.red.gradient)
+                                .foregroundStyle(WRhythmTheme.favorite.gradient)
                         }
                         .buttonStyle(.bordered)
                         .disabled(isStarring)
@@ -201,7 +201,7 @@ struct NowPlayingView: View {
                         Button(action: player.toggleShuffle) {
                             Image(systemName: player.isShuffled ? "shuffle.circle.fill" : "shuffle.circle")
                                 .font(.caption)
-                                .foregroundColor(player.isShuffled ? .accentColor : .secondary)
+                                .foregroundColor(player.isShuffled ? WRhythmTheme.accent : .secondary)
                         }
                         .buttonStyle(.plain)
 
@@ -209,7 +209,7 @@ struct NowPlayingView: View {
                             Image(systemName: player.repeatMode == .off ? "repeat.circle" :
                                   player.repeatMode == .all ? "repeat.circle.fill" : "repeat.1.circle.fill")
                                 .font(.caption)
-                                .foregroundColor(player.repeatMode == .off ? .secondary : .accentColor)
+                                .foregroundColor(player.repeatMode == .off ? .secondary : WRhythmTheme.accent)
                         }
                         .buttonStyle(.plain)
                     }
@@ -400,6 +400,7 @@ private enum NowPlayingSheet: String, Identifiable {
 }
 
 private struct NowPlayingArtwork: View, Equatable {
+    @Environment(\.colorScheme) private var colorScheme
     let coverArtId: String?
     let maxSize: CGFloat
 
@@ -431,7 +432,7 @@ private struct NowPlayingArtwork: View, Equatable {
         .clipShape(RoundedRectangle(cornerRadius: WRhythmVisual.cornerRadius, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: WRhythmVisual.cornerRadius, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+                .strokeBorder(WRhythmTheme.surfaceStroke(for: colorScheme), lineWidth: 1)
         }
         .shadow(color: Color.black.opacity(0.22), radius: 28, y: 16)
         .frame(maxWidth: .infinity)
@@ -488,7 +489,7 @@ struct RemotePlaybackControls: View {
         VStack(spacing: compact ? 8 : 12) {
             HStack(spacing: 8) {
                 Image(systemName: playback.platform == "Mac" ? "desktopcomputer" : playback.platform == "iPhone" ? "iphone" : "applewatch")
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(WRhythmTheme.accent)
                 Text(playback.deviceName)
                     .font(.caption)
                     .foregroundColor(.secondary)
@@ -496,7 +497,7 @@ struct RemotePlaybackControls: View {
                 WRhythmStatusPill(
                     text: playback.isPlaying ? "Playing" : "Paused",
                     systemImage: playback.isPlaying ? "waveform" : "pause.fill",
-                    tint: playback.isPlaying ? .accentColor : .secondary
+                    tint: playback.isPlaying ? WRhythmTheme.accent : .secondary
                 )
                 if playback.isBuffering == true {
                     WRhythmStatusPill(text: "Buffering", systemImage: "hourglass", tint: .orange)
@@ -546,7 +547,7 @@ struct RemotePlaybackControls: View {
                                     self.scrubTime = nil
                                 }
                             )
-                            .tint(.accentColor)
+                            .tint(WRhythmTheme.accent)
 
                             HStack {
                                 Text(formatTime(currentTime))
@@ -626,7 +627,7 @@ struct InlineVolumeSlider: View {
 
     var body: some View {
         Slider(value: $volume, in: 0...1)
-            .tint(.accentColor)
+            .tint(WRhythmTheme.accent)
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(.thinMaterial, in: Capsule())
@@ -646,11 +647,11 @@ struct VolumeControlView: View {
 
                 HStack {
                     Image(systemName: "speaker.fill")
-                        .foregroundStyle(.green.gradient)
+                        .foregroundStyle(WRhythmTheme.secondaryAccent.gradient)
                     Slider(value: $player.volume, in: 0...1)
-                        .tint(.green)
+                        .tint(WRhythmTheme.secondaryAccent)
                     Image(systemName: "speaker.wave.3.fill")
-                        .foregroundStyle(.green.gradient)
+                        .foregroundStyle(WRhythmTheme.secondaryAccent.gradient)
                 }
 
                 Text("\(Int(player.volume * 100))%")
@@ -715,7 +716,7 @@ struct AudioRouteView: View {
                         ForEach(Array(activeOutputs.enumerated()), id: \.element.name) { index, output in
                             HStack {
                                 Image(systemName: audioRouteIcon(for: output.portType))
-                                    .foregroundStyle(.teal.gradient)
+                                    .foregroundStyle(WRhythmTheme.secondaryAccent.gradient)
                                     .font(.title2)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(output.name)
@@ -727,11 +728,11 @@ struct AudioRouteView: View {
                                 }
                                 Spacer()
                                 Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(.green.gradient)
+                                    .foregroundStyle(WRhythmTheme.success.gradient)
                                     .font(.caption)
                             }
                             .padding(8)
-                            .background(Color.teal.opacity(0.1))
+                            .background(WRhythmTheme.secondaryAccent.opacity(0.10))
                             .cornerRadius(8)
                         }
                     }
@@ -741,7 +742,7 @@ struct AudioRouteView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             Image(systemName: "info.circle")
-                                .foregroundStyle(.blue.gradient)
+                                .foregroundStyle(WRhythmTheme.secondaryAccent.gradient)
                             Text("How to Switch")
                                 .font(.caption)
                                 .fontWeight(.semibold)
@@ -1072,6 +1073,7 @@ private struct WatchNowPlayingView: View {
 }
 
 private struct WatchRemotePlaybackControls: View {
+    @Environment(\.colorScheme) private var colorScheme
     let playback: PlaybackSnapshot
     @ObservedObject var deviceSyncManager = DeviceSyncManager.shared
     @ObservedObject var player = AudioPlayer.shared
@@ -1082,7 +1084,7 @@ private struct WatchRemotePlaybackControls: View {
         VStack(spacing: 10) {
             HStack(spacing: 6) {
                 Image(systemName: platformIconName)
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(WRhythmTheme.accent)
                 Text(playback.deviceName)
                     .font(.caption)
                     .lineLimit(1)
@@ -1154,7 +1156,7 @@ private struct WatchRemotePlaybackControls: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius))
         .overlay {
             RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius)
-                .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
+                .strokeBorder(WRhythmTheme.surfaceStroke(for: colorScheme), lineWidth: 1)
         }
         .onChange(of: playback.volume ?? -1) { _, _ in
             pendingVolume = nil
@@ -1189,7 +1191,7 @@ private struct WatchNowPlayingStatusRow: View {
             WRhythmStatusPill(
                 text: isPlaying ? "Playing" : "Paused",
                 systemImage: isPlaying ? "waveform" : "pause.fill",
-                tint: isPlaying ? .accentColor : .secondary
+                tint: isPlaying ? WRhythmTheme.accent : .secondary
             )
 
             if isBuffering {
@@ -1225,7 +1227,7 @@ private struct WatchProgressCard: View {
                     self.scrubTime = nil
                 }
             )
-            .tint(.accentColor)
+            .tint(WRhythmTheme.accent)
 
             HStack {
                 Text(watchFormatTime(displayedTime))
@@ -1286,7 +1288,7 @@ private struct WatchTransportButton: View {
             .labelStyle(.iconOnly)
             .font(prominent ? .title2 : .headline)
             .frame(width: prominent ? 52 : 38, height: prominent ? 52 : 38)
-            .background(prominent ? AnyShapeStyle(Color.accentColor.gradient) : AnyShapeStyle(.regularMaterial), in: Circle())
+            .background(prominent ? AnyShapeStyle(WRhythmTheme.accent.gradient) : AnyShapeStyle(.regularMaterial), in: Circle())
             .foregroundStyle(prominent ? AnyShapeStyle(Color.white) : AnyShapeStyle(Color.primary))
             .buttonStyle(.plain)
             .shadow(color: Color.black.opacity(prominent ? 0.20 : 0.08), radius: prominent ? 12 : 6, y: prominent ? 6 : 3)

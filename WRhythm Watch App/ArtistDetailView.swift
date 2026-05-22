@@ -173,9 +173,9 @@ struct ArtistDetailView: View {
                                 tint: .teal
                             ) {
                                 if isAlbumDownloaded(album.id) {
-                                    Image(systemName: "arrow.down.circle.fill")
-                                        .font(.caption2)
-                                        .foregroundColor(.green)
+                                        Image(systemName: "arrow.down.circle.fill")
+                                            .font(.caption2)
+                                            .foregroundColor(WRhythmTheme.success)
                                 }
                             }
                         }

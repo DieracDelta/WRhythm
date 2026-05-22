@@ -57,20 +57,20 @@ struct TrackRowView: View {
                             Button(action: onDelete) {
                                 Image(systemName: "arrow.down.circle.fill")
                                     .font(.caption2)
-                                    .foregroundColor(.green)
+                                    .foregroundColor(WRhythmTheme.success)
                             }
                             .buttonStyle(.plain)
                         } else {
                             // Offline mode: just an indicator
                             Image(systemName: "arrow.down.circle.fill")
                                 .font(.caption2)
-                                .foregroundColor(.green)
+                                .foregroundColor(WRhythmTheme.success)
                         }
                     } else if !offlineMode {
                         Button(action: onDownload) {
                             Image(systemName: "arrow.down.circle")
                                 .font(.caption2)
-                                .foregroundColor(.blue)
+                                .foregroundColor(WRhythmTheme.secondaryAccent)
                         }
                         .buttonStyle(.plain)
                     }
@@ -79,7 +79,7 @@ struct TrackRowView: View {
                         Button(action: onToggleFavorite) {
                             Image(systemName: isStarred ? "heart.fill" : "heart")
                                 .font(.caption2)
-                                .foregroundColor(isStarred ? .red : .gray)
+                                .foregroundColor(isStarred ? WRhythmTheme.favorite : .gray)
                         }
                         .buttonStyle(.plain)
                     }
@@ -92,7 +92,7 @@ struct TrackRowView: View {
                         )) {
                             Image(systemName: "music.note.list")
                                 .font(.caption2)
-                                .foregroundColor(.blue)
+                                .foregroundColor(WRhythmTheme.accent)
                         }
                         .buttonStyle(.plain)
                     }

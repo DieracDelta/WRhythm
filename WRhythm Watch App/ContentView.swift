@@ -294,18 +294,25 @@ private struct MacQueueRow: View {
     let isPlaying: Bool
 
     var body: some View {
-        HStack(spacing: 8) {
-            if isCurrent {
-                Image(systemName: isPlaying ? "speaker.wave.2.fill" : "speaker")
-                    .foregroundColor(.accentColor)
-            }
+        HStack(spacing: 10) {
+            WRhythmArtworkThumbnail(coverArtId: song.coverArt, size: 34)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(song.title)
-                    .lineLimit(1)
+                HStack(spacing: 5) {
+                    if isCurrent {
+                        Image(systemName: isPlaying ? "speaker.wave.2.fill" : "speaker")
+                            .font(.caption2)
+                            .foregroundColor(WRhythmTheme.accent)
+                    }
+
+                    Text(song.title)
+                        .font(.caption.weight(isCurrent ? .semibold : .regular))
+                        .lineLimit(1)
+                }
+
                 if let artist = song.artist {
                     Text(artist)
-                        .font(.caption)
+                        .font(.caption2)
                         .foregroundColor(.secondary)
                         .lineLimit(1)
                 }
@@ -426,7 +433,7 @@ struct MacMiniPlayerBar: View {
             if player.currentSong != nil || deviceSyncManager.activeSharedPlayback?.song != nil {
                 Divider()
                 Slider(value: $player.volume, in: 0...1)
-                    .tint(.accentColor)
+                    .tint(WRhythmTheme.accent)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
             }
@@ -547,6 +554,7 @@ struct MacMiniPlayerBar: View {
 }
 
 private struct MiniPlayerArtwork: View {
+    @Environment(\.colorScheme) private var colorScheme
     let coverArtId: String?
 
     var body: some View {
@@ -570,7 +578,7 @@ private struct MiniPlayerArtwork: View {
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+                .strokeBorder(WRhythmTheme.surfaceStroke(for: colorScheme), lineWidth: 1)
         }
     }
 }
@@ -599,7 +607,7 @@ struct MiniPlayerProgressControl: View {
                         self.scrubTime = nil
                     }
                 )
-                .tint(.accentColor)
+                .tint(WRhythmTheme.accent)
 
                 HStack {
                     Text(formatTime(displayedTime))

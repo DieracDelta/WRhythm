@@ -368,7 +368,7 @@ private struct WRhythmAlbumActionsModifier: ViewModifier {
                 } label: {
                     Label("Add to Queue", systemImage: "text.badge.plus")
                 }
-                .tint(.blue)
+                .tint(WRhythmTheme.accent)
             }
 #else
         content
@@ -393,7 +393,7 @@ private struct WRhythmPlaylistActionsModifier: ViewModifier {
                 } label: {
                     Label("Add to Queue", systemImage: "text.badge.plus")
                 }
-                .tint(.blue)
+                .tint(WRhythmTheme.accent)
             }
 #else
         content
@@ -418,7 +418,7 @@ private struct WRhythmArtistActionsModifier: ViewModifier {
                 } label: {
                     Label("Add to Queue", systemImage: "text.badge.plus")
                 }
-                .tint(.blue)
+                .tint(WRhythmTheme.accent)
             }
 #else
         content
@@ -454,14 +454,14 @@ private struct WRhythmAlbumDetailTrackActionsModifier: ViewModifier {
                 } label: {
                     Label("Start Playlist Gen", systemImage: "music.note.list")
                 }
-                .tint(.purple)
+                .tint(WRhythmTheme.accent)
 
                 Button {
                     downloadRadio(song)
                 } label: {
                     Label("Download Playlist Gen", systemImage: "arrow.down.circle")
                 }
-                .tint(.green)
+                .tint(WRhythmTheme.success)
             }
 #else
         content
@@ -509,7 +509,7 @@ private struct WatchTrackSwipeActions: View {
         } label: {
             Label("Add to Queue", systemImage: "text.badge.plus")
         }
-        .tint(.blue)
+        .tint(WRhythmTheme.accent)
 
         if !offlineMode {
             Button {
@@ -518,16 +518,16 @@ private struct WatchTrackSwipeActions: View {
                 Label(
                     downloadManager.starredSongIds.contains(song.id) ? "Unfavorite" : "Favorite",
                     systemImage: downloadManager.starredSongIds.contains(song.id) ? "heart.fill" : "heart"
-                )
-            }
-            .tint(.red)
+            )
+        }
+            .tint(WRhythmTheme.favorite)
 
             Button {
                 TrackActions.startRadio(for: song)
             } label: {
                 Label("Start Playlist Gen", systemImage: "music.note.list")
             }
-            .tint(.purple)
+            .tint(WRhythmTheme.accent)
 
             if downloadManager.isDownloaded(song.id) {
                 Button(role: .destructive) {
@@ -541,7 +541,7 @@ private struct WatchTrackSwipeActions: View {
                 } label: {
                     Label("Download", systemImage: "arrow.down.circle")
                 }
-                .tint(.green)
+                .tint(WRhythmTheme.success)
             }
         }
 

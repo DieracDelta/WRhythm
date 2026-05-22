@@ -106,25 +106,49 @@ struct PlatformSearchSheet<Content: View>: View {
     }
 }
 
-enum WRhythmVisual {
-    static let cornerRadius: CGFloat = 18
-    static let compactCornerRadius: CGFloat = 12
-    static let thumbnailCornerRadius: CGFloat = 9
-    static let sectionSpacing: CGFloat = 14
-    static let cardPadding: CGFloat = 14
-    static let contentMaxWidth: CGFloat = 760
+enum WRhythmTheme {
+    static let accent = Color(red: 1.0, green: 0.67, blue: 0.24)
+    static let secondaryAccent = Color(red: 0.23, green: 0.78, blue: 0.74)
+    static let favorite = Color(red: 1.0, green: 0.30, blue: 0.38)
+    static let warning = Color.orange
+    static let success = Color.green
+    static let danger = Color.red
 
-    static var pageBackground: LinearGradient {
-        LinearGradient(
-            colors: [
-                Color.accentColor.opacity(0.22),
-                Color.black.opacity(0.16),
-                Color.clear
-            ],
+    static func pageGradient(for colorScheme: ColorScheme) -> LinearGradient {
+        let darkColors = [
+            Color(red: 0.04, green: 0.04, blue: 0.04),
+            Color(red: 0.10, green: 0.085, blue: 0.065),
+            Color(red: 0.045, green: 0.055, blue: 0.06)
+        ]
+        let lightColors = [
+            Color(red: 0.98, green: 0.97, blue: 0.94),
+            Color(red: 0.94, green: 0.96, blue: 0.96),
+            Color(red: 0.99, green: 0.98, blue: 0.96)
+        ]
+
+        return LinearGradient(
+            colors: colorScheme == .dark ? darkColors : lightColors,
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
     }
+
+    static func surfaceStroke(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.08)
+    }
+
+    static func controlFill(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.045)
+    }
+}
+
+enum WRhythmVisual {
+    static let cornerRadius: CGFloat = 16
+    static let compactCornerRadius: CGFloat = 10
+    static let thumbnailCornerRadius: CGFloat = 8
+    static let sectionSpacing: CGFloat = 16
+    static let cardPadding: CGFloat = 16
+    static let contentMaxWidth: CGFloat = 760
 }
 
 struct WRhythmScreen<Content: View>: View {
@@ -157,6 +181,7 @@ struct WRhythmScreen<Content: View>: View {
 }
 
 struct WRhythmCard<Content: View>: View {
+    @Environment(\.colorScheme) private var colorScheme
     var padding: CGFloat = WRhythmVisual.cardPadding
     private let content: Content
 
@@ -172,17 +197,18 @@ struct WRhythmCard<Content: View>: View {
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
+                    .strokeBorder(WRhythmTheme.surfaceStroke(for: colorScheme), lineWidth: 1)
             }
     }
 }
 
 struct WRhythmHeroHeader<Actions: View>: View {
+    @Environment(\.colorScheme) private var colorScheme
     let title: String
     let subtitle: String?
     let detail: String?
     let systemImage: String
-    var tint: Color = .accentColor
+    var tint: Color = WRhythmTheme.accent
     var coverArtId: String?
     private let actions: Actions
 
@@ -191,7 +217,7 @@ struct WRhythmHeroHeader<Actions: View>: View {
         subtitle: String? = nil,
         detail: String? = nil,
         systemImage: String,
-        tint: Color = .accentColor,
+        tint: Color = WRhythmTheme.accent,
         coverArtId: String? = nil,
         @ViewBuilder actions: () -> Actions
     ) {
@@ -252,7 +278,7 @@ struct WRhythmHeroHeader<Actions: View>: View {
                 }
             } else {
                 LinearGradient(
-                    colors: [tint.opacity(0.46), Color.primary.opacity(0.10)],
+                    colors: [tint.opacity(0.34), WRhythmTheme.secondaryAccent.opacity(0.16)],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
@@ -267,13 +293,14 @@ struct WRhythmHeroHeader<Actions: View>: View {
         .clipShape(RoundedRectangle(cornerRadius: WRhythmVisual.cornerRadius, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: WRhythmVisual.cornerRadius, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.13), lineWidth: 1)
+                .strokeBorder(WRhythmTheme.surfaceStroke(for: colorScheme), lineWidth: 1)
         }
-        .shadow(color: tint.opacity(0.20), radius: 22, y: 12)
+        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.32 : 0.12), radius: 24, y: 14)
     }
 }
 
 struct WRhythmActionStrip<Content: View>: View {
+    @Environment(\.colorScheme) private var colorScheme
     private let content: Content
 
     init(@ViewBuilder content: () -> Content) {
@@ -291,7 +318,7 @@ struct WRhythmActionStrip<Content: View>: View {
         .background(.regularMaterial, in: Capsule())
         .overlay {
             Capsule()
-                .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
+                .strokeBorder(WRhythmTheme.surfaceStroke(for: colorScheme), lineWidth: 1)
         }
     }
 }
@@ -302,7 +329,7 @@ extension WRhythmHeroHeader where Actions == EmptyView {
         subtitle: String? = nil,
         detail: String? = nil,
         systemImage: String,
-        tint: Color = .accentColor,
+        tint: Color = WRhythmTheme.accent,
         coverArtId: String? = nil
     ) {
         self.init(
@@ -319,10 +346,11 @@ extension WRhythmHeroHeader where Actions == EmptyView {
 }
 
 struct WRhythmFeatureHeader: View {
+    @Environment(\.colorScheme) private var colorScheme
     let title: String
     let subtitle: String?
     let systemImage: String
-    var tint: Color = .accentColor
+    var tint: Color = WRhythmTheme.accent
     var coverArtId: String?
 
     var body: some View {
@@ -338,7 +366,7 @@ struct WRhythmFeatureHeader: View {
                     .saturation(1.08)
                 } else {
                     LinearGradient(
-                        colors: [tint.opacity(0.42), Color.primary.opacity(0.10)],
+                        colors: [tint.opacity(0.32), WRhythmTheme.secondaryAccent.opacity(0.12)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
@@ -352,9 +380,9 @@ struct WRhythmFeatureHeader: View {
             .clipShape(RoundedRectangle(cornerRadius: WRhythmVisual.cornerRadius, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: WRhythmVisual.cornerRadius, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+                    .strokeBorder(WRhythmTheme.surfaceStroke(for: colorScheme), lineWidth: 1)
             }
-            .shadow(color: tint.opacity(0.20), radius: 20, y: 10)
+            .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.24 : 0.10), radius: 20, y: 10)
 
             VStack(spacing: 4) {
                 Text(title)
@@ -415,8 +443,9 @@ extension WRhythmSectionHeader where Actions == EmptyView {
 }
 
 struct WRhythmIconBadge: View {
+    @Environment(\.colorScheme) private var colorScheme
     let systemImage: String
-    var tint: Color = .accentColor
+    var tint: Color = WRhythmTheme.accent
     var size: CGFloat = 34
 
     var body: some View {
@@ -425,10 +454,10 @@ struct WRhythmIconBadge: View {
             .symbolRenderingMode(.hierarchical)
             .foregroundColor(tint)
             .frame(width: size, height: size)
-            .background(tint.opacity(0.14), in: RoundedRectangle(cornerRadius: min(10, size * 0.28), style: .continuous))
+            .background(tint.opacity(colorScheme == .dark ? 0.16 : 0.11), in: RoundedRectangle(cornerRadius: min(10, size * 0.28), style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: min(10, size * 0.28), style: .continuous)
-                    .strokeBorder(tint.opacity(0.18), lineWidth: 1)
+                    .strokeBorder(tint.opacity(colorScheme == .dark ? 0.22 : 0.18), lineWidth: 1)
             }
     }
 }
@@ -467,7 +496,7 @@ struct WRhythmMediaRow<Trailing: View>: View {
     }
 
     var body: some View {
-        HStack(spacing: 11) {
+        HStack(spacing: 12) {
             WRhythmArtworkThumbnail(coverArtId: coverArtId, fallbackSystemImage: fallbackSystemImage, size: artworkSize)
 
             VStack(alignment: .leading, spacing: 3) {
@@ -475,7 +504,7 @@ struct WRhythmMediaRow<Trailing: View>: View {
                     if isCurrent {
                         Image(systemName: isPlaying ? "speaker.wave.2.fill" : "speaker")
                             .font(.caption2)
-                            .foregroundColor(.accentColor)
+                            .foregroundColor(WRhythmTheme.accent)
                     }
                     Text(title)
                         .font(.subheadline.weight(.semibold))
@@ -539,7 +568,7 @@ struct WRhythmCollectionRow<Trailing: View>: View {
     var detail: String?
     var coverArtId: String?
     var fallbackSystemImage: String
-    var tint: Color = .accentColor
+    var tint: Color = WRhythmTheme.accent
     private let trailing: Trailing
 
     init(
@@ -548,7 +577,7 @@ struct WRhythmCollectionRow<Trailing: View>: View {
         detail: String? = nil,
         coverArtId: String? = nil,
         fallbackSystemImage: String,
-        tint: Color = .accentColor,
+        tint: Color = WRhythmTheme.accent,
         @ViewBuilder trailing: () -> Trailing
     ) {
         self.title = title
@@ -581,7 +610,7 @@ extension WRhythmCollectionRow where Trailing == EmptyView {
         detail: String? = nil,
         coverArtId: String? = nil,
         fallbackSystemImage: String,
-        tint: Color = .accentColor
+        tint: Color = WRhythmTheme.accent
     ) {
         self.init(
             title: title,
@@ -630,11 +659,12 @@ extension View {
 }
 
 struct WRhythmArtworkBackdrop: View {
+    @Environment(\.colorScheme) private var colorScheme
     let coverArtId: String?
 
     var body: some View {
         ZStack {
-            WRhythmVisual.pageBackground
+            WRhythmTheme.pageGradient(for: colorScheme)
 
             if let coverArtId,
                let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 120) {
@@ -644,15 +674,26 @@ struct WRhythmArtworkBackdrop: View {
                         .aspectRatio(contentMode: .fill)
                 }
                 .blur(radius: 32)
-                .saturation(1.15)
-                .opacity(0.28)
+                .saturation(1.08)
+                .opacity(colorScheme == .dark ? 0.22 : 0.14)
                 .ignoresSafeArea()
             }
+
+            LinearGradient(
+                colors: [
+                    WRhythmTheme.accent.opacity(colorScheme == .dark ? 0.10 : 0.07),
+                    WRhythmTheme.secondaryAccent.opacity(colorScheme == .dark ? 0.06 : 0.05),
+                    Color.clear
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
         }
     }
 }
 
 struct WRhythmStatusPill: View {
+    @Environment(\.colorScheme) private var colorScheme
     let text: String
     let systemImage: String?
     var tint: Color = .secondary
@@ -672,6 +713,10 @@ struct WRhythmStatusPill: View {
         .padding(.horizontal, 9)
         .padding(.vertical, 5)
         .background(.thinMaterial, in: Capsule())
+        .overlay {
+            Capsule()
+                .strokeBorder(tint.opacity(colorScheme == .dark ? 0.22 : 0.18), lineWidth: 1)
+        }
     }
 }
 
@@ -689,7 +734,7 @@ struct WRhythmTransportButton: View {
                 .font(size)
                 .symbolRenderingMode(.hierarchical)
                 .frame(width: resolvedDiameter, height: resolvedDiameter)
-                .background(prominent ? AnyShapeStyle(Color.accentColor.gradient) : AnyShapeStyle(.regularMaterial), in: Circle())
+                .background(prominent ? AnyShapeStyle(WRhythmTheme.accent.gradient) : AnyShapeStyle(.regularMaterial), in: Circle())
                 .foregroundStyle(prominent ? AnyShapeStyle(Color.white) : AnyShapeStyle(Color.primary))
                 .shadow(color: Color.black.opacity(prominent ? 0.22 : 0.08), radius: prominent ? 16 : 8, y: prominent ? 8 : 4)
         }
@@ -698,6 +743,7 @@ struct WRhythmTransportButton: View {
 }
 
 struct WRhythmArtworkThumbnail: View {
+    @Environment(\.colorScheme) private var colorScheme
     let coverArtId: String?
     var fallbackSystemImage = "music.note"
     var size: CGFloat = 46
@@ -715,8 +761,18 @@ struct WRhythmArtworkThumbnail: View {
                         .aspectRatio(contentMode: .fill)
                 }
             } else {
+                LinearGradient(
+                    colors: [
+                        WRhythmTheme.accent.opacity(colorScheme == .dark ? 0.22 : 0.16),
+                        WRhythmTheme.secondaryAccent.opacity(colorScheme == .dark ? 0.16 : 0.12)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+
                 Image(systemName: fallbackSystemImage)
                     .font(.system(size: max(16, size * 0.38), weight: .semibold))
+                    .symbolRenderingMode(.hierarchical)
                     .foregroundColor(.secondary)
             }
         }
@@ -724,12 +780,13 @@ struct WRhythmArtworkThumbnail: View {
         .clipShape(RoundedRectangle(cornerRadius: WRhythmVisual.thumbnailCornerRadius, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: WRhythmVisual.thumbnailCornerRadius, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+                .strokeBorder(WRhythmTheme.surfaceStroke(for: colorScheme), lineWidth: 1)
         }
     }
 }
 
 struct WRhythmEmptyState: View {
+    @Environment(\.colorScheme) private var colorScheme
     let systemImage: String
     let title: String
     let message: String?
@@ -767,6 +824,10 @@ struct WRhythmEmptyState: View {
         .padding(24)
         .frame(maxWidth: 360)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.cornerRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: WRhythmVisual.cornerRadius, style: .continuous)
+                .strokeBorder(WRhythmTheme.surfaceStroke(for: colorScheme), lineWidth: 1)
+        }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

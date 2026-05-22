@@ -26,7 +26,7 @@ struct LoginView: View {
                         Image(systemName: "waveform.circle.fill")
                             .font(.title)
                             .symbolRenderingMode(.hierarchical)
-                            .foregroundColor(.accentColor)
+                            .foregroundColor(WRhythmTheme.accent)
 
                         Text("WRhythm")
                             .font(.title2.weight(.semibold))
@@ -36,7 +36,7 @@ struct LoginView: View {
                         }) {
                             Image(systemName: "info.circle")
                                 .font(.caption)
-                                .foregroundColor(.blue)
+                                .foregroundColor(WRhythmTheme.secondaryAccent)
                         }
                         .buttonStyle(.plain)
                     }
@@ -80,7 +80,7 @@ struct LoginView: View {
                     if showError {
                         Text(errorMessage)
                             .font(.caption)
-                            .foregroundColor(.red)
+                            .foregroundColor(WRhythmTheme.danger)
                             .multilineTextAlignment(.center)
                             .padding(10)
                             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous))

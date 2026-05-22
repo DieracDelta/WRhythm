@@ -313,7 +313,7 @@ struct SettingsView: View {
 
                         Text("(Server data is NOT affected)")
                             .font(.caption2)
-                            .foregroundColor(.green)
+                            .foregroundColor(WRhythmTheme.success)
                             .italic()
                             .padding(.top, 2)
 
@@ -377,7 +377,7 @@ private struct SettingsInfoRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            WRhythmIconBadge(systemImage: systemImage, tint: .accentColor, size: 32)
+            WRhythmIconBadge(systemImage: systemImage, tint: WRhythmTheme.accent, size: 32)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
@@ -400,7 +400,7 @@ private struct SettingsToggleLabel: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            WRhythmIconBadge(systemImage: systemImage, tint: .accentColor, size: 32)
+            WRhythmIconBadge(systemImage: systemImage, tint: WRhythmTheme.accent, size: 32)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)

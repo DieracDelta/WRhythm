@@ -194,7 +194,7 @@ struct AlbumsView: View {
                             ) {
                                 Image(systemName: "arrow.down.circle.fill")
                                     .font(.caption2)
-                                    .foregroundColor(.green)
+                                    .foregroundColor(WRhythmTheme.success)
                             }
                         }
                         .wrhythmAlbumActions(albumId: album.id, albumName: album.name)

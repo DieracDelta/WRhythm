@@ -135,7 +135,7 @@ struct PlaylistsView: View {
                     ) {
                         Image(systemName: "arrow.down.circle.fill")
                             .font(.caption2)
-                            .foregroundColor(.green)
+                            .foregroundColor(WRhythmTheme.success)
                     }
                 }
                 .wrhythmPlaylistActions(playlistId: playlist.id, playlistName: playlist.name)

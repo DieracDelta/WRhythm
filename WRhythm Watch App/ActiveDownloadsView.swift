@@ -105,14 +105,14 @@ private struct ActiveDownloadRow: View {
                                 .font(.caption2)
                         }
                         .buttonStyle(.plain)
-                        .foregroundColor(.red)
+                        .foregroundColor(WRhythmTheme.danger)
                         .accessibilityLabel("Cancel download")
                     }
                 }
 
                 ProgressView(value: progress)
                     .progressViewStyle(.linear)
-                    .tint(.blue)
+                    .tint(WRhythmTheme.secondaryAccent)
             }
         }
     }

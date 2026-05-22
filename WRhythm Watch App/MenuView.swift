@@ -14,25 +14,25 @@ struct MenuView: View {
                 title: "WRhythm",
                 subtitle: nil,
                 systemImage: "waveform",
-                tint: .accentColor
+                tint: WRhythmTheme.accent
             )
             .listRowBackground(Color.clear)
 
             Section("Library") {
-                menuLink("Artists", systemImage: "person.2", tint: .indigo, destination: ArtistsView())
-                menuLink("Albums", systemImage: "square.stack", tint: .teal, destination: AlbumsView())
-                menuLink("Playlists", systemImage: "music.note.list", tint: .purple, destination: PlaylistsView())
-                menuLink("Tracks", systemImage: "magnifyingglass", tint: .blue, destination: TracksView())
+                menuLink("Artists", systemImage: "person.2", tint: WRhythmTheme.secondaryAccent, destination: ArtistsView())
+                menuLink("Albums", systemImage: "square.stack", tint: WRhythmTheme.accent, destination: AlbumsView())
+                menuLink("Playlists", systemImage: "music.note.list", tint: WRhythmTheme.secondaryAccent, destination: PlaylistsView())
+                menuLink("Tracks", systemImage: "magnifyingglass", tint: WRhythmTheme.accent, destination: TracksView())
             }
 
             Section("Playback") {
-                menuLink("Favorites", systemImage: "star.fill", tint: .yellow, destination: FavouritesView())
-                menuLink("Playlist Gen", systemImage: "radio", tint: .pink, destination: RadioPlaylistsView())
+                menuLink("Favorites", systemImage: "star.fill", tint: WRhythmTheme.favorite, destination: FavouritesView())
+                menuLink("Playlist Gen", systemImage: "radio", tint: WRhythmTheme.accent, destination: RadioPlaylistsView())
                 menuLink("Spontaneous", systemImage: "shuffle", tint: .orange, destination: SpontaneousMusicView())
             }
 
             Section("Device") {
-                menuLink("Downloads", systemImage: "arrow.down.circle", tint: .green, destination: DownloadsView())
+                menuLink("Downloads", systemImage: "arrow.down.circle", tint: WRhythmTheme.success, destination: DownloadsView())
                 menuLink("Settings", systemImage: "gear", tint: .secondary, destination: SettingsView())
             }
         }

@@ -18,6 +18,8 @@ struct WRhythm_Watch_AppApp: App {
             ContentView()
                 .environmentObject(libraryDataManager)
                 .environmentObject(deviceSyncManager)
+                .tint(WRhythmTheme.accent)
+                .accentColor(WRhythmTheme.accent)
                 .preferredColorScheme(darkModeEnabled ? .dark : .light)
         }
 #if os(macOS)

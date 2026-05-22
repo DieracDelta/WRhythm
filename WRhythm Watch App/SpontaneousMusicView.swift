@@ -55,7 +55,7 @@ struct SpontaneousMusicView: View {
                     WRhythmCard {
                         Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
                             .font(.caption)
-                            .foregroundColor(.red)
+                            .foregroundColor(WRhythmTheme.danger)
                             .multilineTextAlignment(.leading)
                     }
                 }
@@ -65,7 +65,7 @@ struct SpontaneousMusicView: View {
                     if offlineMode {
                         HStack {
                             Image(systemName: "info.circle")
-                                .foregroundColor(.blue)
+                                .foregroundColor(WRhythmTheme.secondaryAccent)
                             Text("Offline Mode")
                                 .font(.caption2)
                                 .fontWeight(.semibold)
@@ -77,7 +77,7 @@ struct SpontaneousMusicView: View {
                     } else {
                         HStack {
                             Image(systemName: "info.circle")
-                                .foregroundColor(.blue)
+                                .foregroundColor(WRhythmTheme.secondaryAccent)
                             Text("Online Mode")
                                 .font(.caption2)
                                 .fontWeight(.semibold)

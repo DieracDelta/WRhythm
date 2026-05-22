@@ -152,7 +152,7 @@ struct ArtistsView: View {
                         ) {
                             Image(systemName: "arrow.down.circle.fill")
                                 .font(.caption2)
-                                .foregroundColor(.green)
+                                .foregroundColor(WRhythmTheme.success)
                         }
                     }
                     .wrhythmArtistActions(artistId: "offline-\(artist.name)", artistName: artist.name)
