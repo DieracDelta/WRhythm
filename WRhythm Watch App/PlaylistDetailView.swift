@@ -155,17 +155,19 @@ struct PlaylistDetailView: View {
     }
 
     private func trackSection(songs: [Song], queue: [Song]) -> some View {
-        VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
+        let trackItems = PlaylistTrackPresentationPolicy.displayItems(songs: songs, queue: queue)
+
+        return VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
             WRhythmSectionHeader(
                 title: "Tracks",
                 subtitle: "\(songs.count) song\(songs.count == 1 ? "" : "s")"
             )
 
             WRhythmCard(padding: WRhythmSpacing.sm) {
-                VStack(spacing: 0) {
-                    ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
-                        TrackRowView(song: song, player: player, downloadManager: downloadManager, offlineMode: offlineMode) {
-                            player.playQueue(queue, startingAt: index)
+                LazyVStack(spacing: 0) {
+                    ForEach(trackItems) { item in
+                        TrackRowView(song: item.song, player: player, downloadManager: downloadManager, offlineMode: offlineMode) {
+                            player.playQueue(queue, startingAt: item.queueIndex)
                         }
                     }
                 }
@@ -288,5 +290,57 @@ struct PlaylistDetailView: View {
                     path: nil
                 )
             }
+    }
+}
+
+struct PlaylistTrackDisplayItem: Identifiable, Sendable {
+    let id: String
+    let song: Song
+    let queueIndex: Int
+}
+
+enum PlaylistTrackPresentationPolicy {
+    static func displayItems(songs: [Song], queue: [Song]) -> [PlaylistTrackDisplayItem] {
+        if songs.count == queue.count && zip(songs, queue).allSatisfy({ $0.id == $1.id }) {
+            return songs.indices.map { index in
+                PlaylistTrackDisplayItem(
+                    id: rowID(songID: songs[index].id, displayIndex: index),
+                    song: songs[index],
+                    queueIndex: index
+                )
+            }
+        }
+
+        var queueIndexesBySongID: [String: [Int]] = [:]
+        queueIndexesBySongID.reserveCapacity(queue.count)
+        for (index, song) in queue.enumerated() {
+            queueIndexesBySongID[song.id, default: []].append(index)
+        }
+
+        var consumedBySongID: [String: Int] = [:]
+        consumedBySongID.reserveCapacity(songs.count)
+
+        return songs.indices.map { displayIndex in
+            let song = songs[displayIndex]
+            let consumedCount = consumedBySongID[song.id, default: 0]
+            consumedBySongID[song.id] = consumedCount + 1
+
+            let queueIndex = queueIndexesBySongID[song.id]?[safe: consumedCount] ?? min(displayIndex, max(queue.count - 1, 0))
+            return PlaylistTrackDisplayItem(
+                id: rowID(songID: song.id, displayIndex: displayIndex),
+                song: song,
+                queueIndex: queueIndex
+            )
+        }
+    }
+
+    private static func rowID(songID: String, displayIndex: Int) -> String {
+        "\(displayIndex)-\(songID)"
+    }
+}
+
+private extension Array {
+    subscript(safe index: Int) -> Element? {
+        indices.contains(index) ? self[index] : nil
     }
 }
