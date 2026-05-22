@@ -714,13 +714,87 @@ struct InlineVolumeSlider: View {
     @Binding var volume: Double
 
     var body: some View {
+#if os(watchOS)
+        WatchVolumeControl(volume: $volume)
+#else
         Slider(value: $volume, in: 0...1)
             .tint(WRhythmTheme.accent)
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(.thinMaterial, in: Capsule())
+#endif
     }
 }
+
+#if os(watchOS)
+private struct WatchVolumeControl: View {
+    @Binding var volume: Double
+
+    var body: some View {
+        HStack(spacing: WRhythmSpacing.xs) {
+            volumeButton(systemImage: "speaker.minus.fill", accessibilityLabel: "Lower volume") {
+                adjustVolume(by: -0.05)
+            }
+
+            WatchVolumeBar(volume: $volume)
+                .frame(height: 30)
+
+            volumeButton(systemImage: "speaker.plus.fill", accessibilityLabel: "Raise volume") {
+                adjustVolume(by: 0.05)
+            }
+        }
+        .padding(.horizontal, WRhythmSpacing.xs)
+        .padding(.vertical, WRhythmSpacing.xxs)
+        .background(.thinMaterial, in: Capsule())
+    }
+
+    private func volumeButton(systemImage: String, accessibilityLabel: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.caption.weight(.semibold))
+                .symbolRenderingMode(.hierarchical)
+                .frame(width: 30, height: 30)
+                .background(.regularMaterial, in: Circle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(WRhythmTheme.accent)
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    private func adjustVolume(by delta: Double) {
+        volume = min(max(volume + delta, 0), 1)
+    }
+}
+
+private struct WatchVolumeBar: View {
+    @Binding var volume: Double
+
+    var body: some View {
+        GeometryReader { proxy in
+            let width = max(proxy.size.width, 1)
+            let clampedVolume = min(max(volume, 0), 1)
+
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.secondary.opacity(0.18))
+
+                Capsule()
+                    .fill(WRhythmTheme.accent.gradient)
+                    .frame(width: max(8, width * clampedVolume))
+            }
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        volume = min(max(value.location.x / width, 0), 1)
+                    }
+            )
+            .accessibilityLabel("Volume")
+            .accessibilityValue("\(Int(clampedVolume * 100)) percent")
+        }
+    }
+}
+#endif
 
 struct VolumeControlView: View {
     @ObservedObject var player = AudioPlayer.shared
@@ -1319,19 +1393,13 @@ private struct WatchProgressCard: View {
         let displayedTime = min(max(scrubTime ?? liveTime, 0), safeDuration)
 
         VStack(spacing: WRhythmSpacing.xs) {
-            Slider(
-                value: Binding(
-                    get: { displayedTime },
-                    set: { scrubTime = min(max($0, 0), safeDuration) }
-                ),
-                in: 0...safeDuration,
-                onEditingChanged: { isEditing in
-                    guard !isEditing, let scrubTime else { return }
-                    seek(scrubTime)
-                    self.scrubTime = nil
-                }
+            WatchScrubBar(
+                displayedTime: displayedTime,
+                duration: safeDuration,
+                scrubTime: $scrubTime,
+                seek: seek
             )
-            .tint(WRhythmTheme.accent)
+            .frame(height: 24)
 
             HStack {
                 Text(watchFormatTime(displayedTime))
@@ -1345,6 +1413,49 @@ private struct WatchProgressCard: View {
         .padding(.horizontal, WRhythmSpacing.sm)
         .padding(.vertical, 8)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius))
+    }
+}
+
+private struct WatchScrubBar: View {
+    let displayedTime: TimeInterval
+    let duration: TimeInterval
+    @Binding var scrubTime: TimeInterval?
+    let seek: (TimeInterval) -> Void
+
+    var body: some View {
+        GeometryReader { proxy in
+            let width = max(proxy.size.width, 1)
+            let progress = min(max(displayedTime / max(duration, 1), 0), 1)
+
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.secondary.opacity(0.18))
+
+                Capsule()
+                    .fill(WRhythmTheme.accent.gradient)
+                    .frame(width: max(8, width * progress))
+
+                Circle()
+                    .fill(Color.primary)
+                    .frame(width: 8, height: 8)
+                    .offset(x: min(max(width * progress - 4, 0), width - 8))
+            }
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        let fraction = min(max(value.location.x / width, 0), 1)
+                        scrubTime = fraction * duration
+                    }
+                    .onEnded { value in
+                        let fraction = min(max(value.location.x / width, 0), 1)
+                        seek(fraction * duration)
+                        scrubTime = nil
+                    }
+            )
+            .accessibilityLabel("Playback position")
+            .accessibilityValue(watchFormatTime(displayedTime))
+        }
     }
 }
 
