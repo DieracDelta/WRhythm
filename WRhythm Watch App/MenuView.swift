@@ -55,11 +55,28 @@ struct MenuView: View {
 
     private func menuLink<Destination: View>(_ title: String, systemImage: String, destination: Destination) -> some View {
         NavigationLink(destination: destination) {
+#if os(watchOS)
+            HStack(spacing: WRhythmSpacing.xs) {
+                Text(title)
+                    .font(WRhythmTypography.rowTitle)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+
+                Spacer(minLength: WRhythmSpacing.xs)
+
+                Image(systemName: "chevron.right")
+                    .font(WRhythmTypography.metadata)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.vertical, WRhythmSpacing.xs)
+            .contentShape(Rectangle())
+#else
             HStack(spacing: WRhythmSpacing.sm) {
                 WRhythmIconBadge(systemImage: systemImage, tint: menuIconTint)
 
                 Text(title)
                     .font(WRhythmTypography.rowTitle)
+                    .lineLimit(1)
 
                 Spacer(minLength: 6)
 
@@ -69,6 +86,7 @@ struct MenuView: View {
             }
             .padding(.vertical, WRhythmSpacing.xs)
             .contentShape(Rectangle())
+#endif
         }
         .buttonStyle(.plain)
     }
