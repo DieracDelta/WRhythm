@@ -399,12 +399,12 @@ struct PlaybackSyncPolicyTests {
         (.seek, true),
         (.setVolume, true),
         (.toggle, false),
-        (.next, false),
-        (.previous, false),
-        (.playQueue, false),
-        (.enqueue, false),
-        (.syncQueue, false),
-        (.stop, false)
+        (.next, true),
+        (.previous, true),
+        (.playQueue, true),
+        (.enqueue, true),
+        (.syncQueue, true),
+        (.stop, true)
     ])
     func playbackCommandsThatNeedAcknowledgmentAreRetried(action: PlaybackSyncCommandAction, expected: Bool) {
         #expect(PlaybackCommandSyncPolicy.needsPlaybackAcknowledgment(action) == expected)
@@ -462,6 +462,93 @@ struct PlaybackSyncPolicyTests {
         #expect(PlaybackCommandSyncPolicy.isAcknowledged(action: .setVolume, expectedVolume: 0.5, by: differentVolume) == false)
     }
 
+    @Test func navigationCommandsRequireExpectedQueuePosition() {
+        let now = Date()
+        let first = makeSong(id: "song-1")
+        let second = makeSong(id: "song-2")
+        let playback = makeSnapshot(song: second, queue: [first, second], currentIndex: 1, updatedAt: now)
+
+        #expect(PlaybackCommandSyncPolicy.isAcknowledged(action: .next, expectedIndex: 1, by: playback) == true)
+        #expect(PlaybackCommandSyncPolicy.isAcknowledged(action: .next, expectedIndex: 0, by: playback) == false)
+    }
+
+    @Test func previousCommandCanAcknowledgeRestartingCurrentTrack() {
+        let now = Date()
+        let first = makeSong(id: "song-1")
+        let second = makeSong(id: "song-2")
+        let playback = makeSnapshot(song: second, queue: [first, second], currentTime: 0.5, currentIndex: 1, updatedAt: now)
+
+        #expect(PlaybackCommandSyncPolicy.isAcknowledged(
+            action: .previous,
+            expectedIndex: 1,
+            expectedTime: 0,
+            by: playback
+        ) == true)
+    }
+
+    @Test func playQueueCommandAcknowledgesExpectedQueueAndIndex() {
+        let now = Date()
+        let songs = [makeSong(id: "song-1"), makeSong(id: "song-2")]
+        let playback = makeSnapshot(song: songs[1], queue: songs, currentIndex: 1, updatedAt: now)
+
+        #expect(PlaybackCommandSyncPolicy.isAcknowledged(
+            action: .playQueue,
+            expectedSongs: songs,
+            expectedIndex: 1,
+            by: playback
+        ) == true)
+    }
+
+    @Test func enqueueCommandAcknowledgesInsertedContiguousSongs() {
+        let now = Date()
+        let songs = [makeSong(id: "song-1"), makeSong(id: "song-2"), makeSong(id: "song-3")]
+        let playback = makeSnapshot(song: songs[0], queue: songs, currentIndex: 0, updatedAt: now)
+
+        #expect(PlaybackCommandSyncPolicy.isAcknowledged(
+            action: .enqueue,
+            expectedSongs: Array(songs[1...2]),
+            by: playback
+        ) == true)
+        #expect(PlaybackCommandSyncPolicy.isAcknowledged(
+            action: .enqueue,
+            expectedSongs: [songs[2], songs[1]],
+            by: playback
+        ) == false)
+    }
+
+    @Test func syncQueueCommandAcknowledgesExactQueueAndIndex() {
+        let now = Date()
+        let songs = [makeSong(id: "song-1"), makeSong(id: "song-2")]
+        let playback = makeSnapshot(song: songs[0], queue: songs, currentIndex: 0, updatedAt: now)
+
+        #expect(PlaybackCommandSyncPolicy.isAcknowledged(
+            action: .syncQueue,
+            expectedSongs: songs,
+            expectedIndex: 0,
+            by: playback
+        ) == true)
+    }
+
+    @Test func stopCommandAcknowledgesStoppedEmptySnapshot() {
+        let playback = PlaybackSnapshot(
+            id: "device-1",
+            deviceName: "Mac",
+            platform: "Mac",
+            song: nil,
+            isPlaying: false,
+            isBuffering: false,
+            prebufferedTrackCount: 0,
+            volume: 0.8,
+            currentTime: 0,
+            duration: 0,
+            queue: [],
+            currentIndex: 0,
+            updatedAt: Date()
+        )
+
+        #expect(PlaybackCommandSyncPolicy.isAcknowledged(action: .stop, by: playback) == true)
+    }
+
     @Test func acknowledgingSnapshotCanReplaceNewerOptimisticRemoteMirror() {
         let now = Date()
         let optimisticMirror = makeSnapshot(id: "iphone", isPlaying: true, currentTime: 42, updatedAt: now)
@@ -491,6 +578,59 @@ struct PlaybackSyncPolicyTests {
             current: optimisticMirror,
             action: .pause
         ) == false)
+    }
+
+    @Test func queueAcknowledgmentsCanReplaceChangedOptimisticMirror() {
+        let now = Date()
+        let oldSong = makeSong(id: "song-1")
+        let newSongs = [makeSong(id: "song-2"), makeSong(id: "song-3")]
+        let optimisticMirror = makeSnapshot(id: "iphone", song: oldSong, queue: [oldSong], updatedAt: now)
+        let remoteQueueAck = makeSnapshot(
+            id: "iphone",
+            song: newSongs[1],
+            queue: newSongs,
+            currentIndex: 1,
+            updatedAt: now.addingTimeInterval(-1)
+        )
+
+        #expect(PendingPlaybackAcknowledgmentPolicy.shouldAcceptAcknowledgingSnapshot(
+            remoteQueueAck,
+            current: optimisticMirror,
+            action: .playQueue,
+            expectedSongs: newSongs,
+            expectedIndex: 1
+        ) == true)
+    }
+
+    @Test func queueCommandsInvalidateStalePendingCommandFamilies() {
+        #expect(PendingPlaybackCommandPolicy.commandFamiliesInvalidated(by: .playQueue) == [.transport, .navigation, .seek, .queue, .stop])
+        #expect(PendingPlaybackCommandPolicy.commandFamiliesInvalidated(by: .stop) == [.transport, .navigation, .seek, .queue, .stop])
+        #expect(PendingPlaybackCommandPolicy.commandFamiliesInvalidated(by: .next) == [.navigation, .seek])
+        #expect(PendingPlaybackCommandPolicy.commandFamiliesInvalidated(by: .seek).isEmpty)
+    }
+
+    @Test func expiredCommandInvalidatesMatchingOptimisticRemotePlayback() {
+        #expect(PendingPlaybackCommandExpiryPolicy.shouldInvalidateOptimisticRemotePlayback(
+            remotePlaybackID: "iphone",
+            expiredDeviceID: "iphone"
+        ) == true)
+        #expect(PendingPlaybackCommandExpiryPolicy.shouldInvalidateOptimisticRemotePlayback(
+            remotePlaybackID: "mac",
+            expiredDeviceID: "iphone"
+        ) == false)
+    }
+
+    @Test func playbackBroadcastDeliveryOnlyRecordsSuccessfulSends() {
+        #expect(PlaybackStateBroadcastDeliveryPolicy.shouldRecordAttempt(didSend: true) == true)
+        #expect(PlaybackStateBroadcastDeliveryPolicy.shouldRecordAttempt(didSend: false) == false)
+    }
+
+    @Test func telemetryBroadcastsAreThrottledSeparately() {
+        let now = Date()
+
+        #expect(PlaybackTelemetryBroadcastPolicy.shouldBroadcast(lastBroadcastAt: nil, now: now) == true)
+        #expect(PlaybackTelemetryBroadcastPolicy.shouldBroadcast(lastBroadcastAt: now.addingTimeInterval(-0.5), now: now) == false)
+        #expect(PlaybackTelemetryBroadcastPolicy.shouldBroadcast(lastBroadcastAt: now.addingTimeInterval(-2), now: now) == true)
     }
 
     @Test func stalePlaybackSnapshotIsRejectedBeforeFingerprintingUnlessItAcknowledgesPendingCommand() {

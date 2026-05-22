@@ -628,7 +628,7 @@ class AudioPlayer: NSObject, ObservableObject {
         DeviceSyncManager.shared.broadcastLocalQueueAsShared()
     }
 
-    func playQueue(_ songs: [Song], startingAt index: Int = 0, clearGeneratedPlaylist: Bool = true) {
+    func playQueue(_ songs: [Song], startingAt index: Int = 0, startTime: TimeInterval = 0, clearGeneratedPlaylist: Bool = true) {
         guard !songs.isEmpty, index < songs.count else { return }
         if clearGeneratedPlaylist {
             clearPlaylistGen()
@@ -642,7 +642,7 @@ class AudioPlayer: NSObject, ObservableObject {
         self.originalQueue = []
         self.queue = songs
         self.currentIndex = index
-        startPlayback(songs[index])
+        startPlayback(songs[index], startTime: startTime)
         DeviceSyncManager.shared.broadcastLocalQueueAsShared()
     }
 
