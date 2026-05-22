@@ -69,7 +69,7 @@ struct ArtistDetailView: View {
                 subtitle: "\(albums.count) downloaded album\(albums.count == 1 ? "" : "s")",
                 detail: "Offline artist",
                 systemImage: "person.fill",
-                tint: .indigo,
+                tint: WRhythmTheme.artist,
                 coverArtId: albums.first?.coverArt
             ) {
                 WRhythmActionStrip {
@@ -112,7 +112,7 @@ struct ArtistDetailView: View {
                 subtitle: "\(albums.count) album\(albums.count == 1 ? "" : "s")",
                 detail: "Artist",
                 systemImage: "person.fill",
-                tint: .indigo,
+                tint: WRhythmTheme.artist,
                 coverArtId: albums.first?.coverArt
             ) {
                 WRhythmActionStrip {
@@ -155,13 +155,13 @@ struct ArtistDetailView: View {
     }
 
     private func albumSection(albums: [AlbumSummary]) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
             WRhythmSectionHeader(
                 title: "Albums",
                 subtitle: "\(albums.count) album\(albums.count == 1 ? "" : "s")"
             )
 
-            WRhythmCard(padding: 10) {
+            WRhythmCard(padding: WRhythmSpacing.sm) {
                 VStack(spacing: 0) {
                     ForEach(albums) { album in
                         NavigationLink(destination: AlbumDetailView(albumId: album.id)) {
@@ -170,7 +170,7 @@ struct ArtistDetailView: View {
                                 subtitle: album.year.map(String.init),
                                 coverArtId: album.coverArt,
                                 fallbackSystemImage: "square.stack",
-                                tint: .teal
+                                tint: WRhythmTheme.album
                             ) {
                                 if isAlbumDownloaded(album.id) {
                                         Image(systemName: "arrow.down.circle.fill")

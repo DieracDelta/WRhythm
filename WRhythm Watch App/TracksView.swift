@@ -130,7 +130,7 @@ struct TracksView: View {
                                             detail: "Cached playlist",
                                             coverArtId: playlist.coverArt,
                                             fallbackSystemImage: "music.note.list",
-                                            tint: .purple
+                                            tint: WRhythmTheme.playlistGen
                                         )
                                     }
                                     .wrhythmPlaylistActions(playlistId: playlist.id, playlistName: playlist.name)
@@ -150,7 +150,7 @@ struct TracksView: View {
                                             subtitle: "Artist",
                                             coverArtId: artist.coverArt,
                                             fallbackSystemImage: "person.fill",
-                                            tint: .indigo
+                                            tint: WRhythmTheme.artist
                                         )
                                     }
                                     .wrhythmArtistActions(artistId: "offline-\(artist.name)", artistName: artist.name)
@@ -170,7 +170,7 @@ struct TracksView: View {
                                             subtitle: album.artist,
                                             coverArtId: album.coverArt,
                                             fallbackSystemImage: "square.stack",
-                                            tint: .teal
+                                            tint: WRhythmTheme.album
                                         )
                                     }
                                     .wrhythmAlbumActions(albumId: album.id, albumName: album.name)
@@ -227,7 +227,7 @@ struct TracksView: View {
                                         subtitle: artist.albumCount.map { "\($0) albums" },
                                         coverArtId: artist.coverArt,
                                         fallbackSystemImage: "person.fill",
-                                        tint: .indigo
+                                        tint: WRhythmTheme.artist
                                     )
                                 }
                                 .wrhythmArtistActions(artistId: artist.id, artistName: artist.name)
@@ -245,7 +245,7 @@ struct TracksView: View {
                                         detail: album.year.map(String.init),
                                         coverArtId: album.coverArt,
                                         fallbackSystemImage: "square.stack",
-                                        tint: .teal
+                                        tint: WRhythmTheme.album
                                     )
                                 }
                                 .wrhythmAlbumActions(albumId: album.id, albumName: album.name)

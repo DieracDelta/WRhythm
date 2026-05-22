@@ -60,7 +60,7 @@ struct CurrentPlaylistGenSummary: View {
                     detail: "\(player.playlistGenQueue.count) songs",
                     coverArtId: player.playlistGenQueue.first?.coverArt,
                     fallbackSystemImage: "music.note.list",
-                    tint: .purple
+                    tint: WRhythmTheme.playlistGen
                 )
 
                 HStack(spacing: 8) {
@@ -115,7 +115,7 @@ struct RadioPlaylistRow: View {
                 detail: "\(downloadedCount)/\(radio.songIds.count) songs",
                 coverArtId: radio.coverArt,
                 fallbackSystemImage: "radio",
-                tint: .purple
+                tint: WRhythmTheme.playlistGen
             )
         }
         .buttonStyle(.plain)
@@ -136,7 +136,7 @@ struct RadioPlaylistDetailView: View {
                 subtitle: radio.sourceSongArtist,
                 detail: "\(downloadedSongs.count) of \(radio.songIds.count) songs downloaded",
                 systemImage: "radio",
-                tint: .purple,
+                tint: WRhythmTheme.playlistGen,
                 coverArtId: radio.coverArt
             )
 

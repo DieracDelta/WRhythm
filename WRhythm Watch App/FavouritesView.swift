@@ -204,7 +204,7 @@ struct FavouritesView: View {
                                             detail: album.year.map(String.init),
                                             coverArtId: album.coverArt,
                                             fallbackSystemImage: "square.stack",
-                                            tint: .teal
+                                            tint: WRhythmTheme.album
                                         )
                                     }
                                     .wrhythmAlbumActions(albumId: album.id, albumName: album.name)
@@ -230,7 +230,7 @@ struct FavouritesView: View {
                                             subtitle: artist.albumCount.map { "\($0) albums" },
                                             coverArtId: artist.coverArt,
                                             fallbackSystemImage: "person.fill",
-                                            tint: .indigo
+                                            tint: WRhythmTheme.artist
                                         )
                                     }
                                     .wrhythmArtistActions(artistId: artist.id, artistName: artist.name)

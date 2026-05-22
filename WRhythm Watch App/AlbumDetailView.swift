@@ -243,7 +243,7 @@ struct AlbumDetailView: View {
                     subtitle: songs.first?.artist,
                     detail: "\(songs.count) downloaded song\(songs.count == 1 ? "" : "s")",
                     systemImage: "square.stack",
-                    tint: .teal,
+                    tint: WRhythmTheme.album,
                     coverArtId: songs.first?.coverArt
                 ) {
                     WRhythmActionStrip {
@@ -274,7 +274,7 @@ struct AlbumDetailView: View {
                 subtitle: album.artist,
                 detail: albumDetailText(album),
                 systemImage: "square.stack",
-                tint: .teal,
+                tint: WRhythmTheme.album,
                 coverArtId: album.coverArt
             ) {
                 WRhythmActionStrip {
@@ -313,7 +313,7 @@ struct AlbumDetailView: View {
                             subtitle: "Artist",
                             coverArtId: album.coverArt,
                             fallbackSystemImage: "person.fill",
-                            tint: .indigo
+                            tint: WRhythmTheme.artist
                         ) {
                             Image(systemName: "chevron.right")
                                 .font(.caption)
@@ -345,13 +345,13 @@ struct AlbumDetailView: View {
     }
 
     private func trackSection(songs: [Song], queue: [Song]) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
             WRhythmSectionHeader(
                 title: "Tracks",
                 subtitle: "\(songs.count) song\(songs.count == 1 ? "" : "s")"
             )
 
-            WRhythmCard(padding: 10) {
+            WRhythmCard(padding: WRhythmSpacing.sm) {
                 VStack(spacing: 0) {
                     ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
                         TrackRowView(song: song, player: player, downloadManager: downloadManager, offlineMode: offlineMode) {

@@ -24,12 +24,12 @@ struct ActiveDownloadsView: View {
                         title: "\(downloadManager.activeDownloads.count) downloading",
                         subtitle: downloadManager.downloadQueue.isEmpty ? nil : "\(downloadManager.downloadQueue.count) queued",
                         systemImage: "arrow.down.circle.fill",
-                        tint: .blue
+                        tint: WRhythmTheme.downloads
                     )
 
                     WRhythmSectionHeader(title: "Active", subtitle: "Current transfers")
 
-                    VStack(spacing: 10) {
+                    VStack(spacing: WRhythmSpacing.xs) {
                         ForEach(Array(downloadManager.activeDownloads.keys), id: \.self) { songId in
                             ActiveDownloadRow(songId: songId, song: findSongInfo(songId))
                         }
@@ -38,7 +38,7 @@ struct ActiveDownloadsView: View {
                     if !downloadManager.downloadQueue.isEmpty {
                         WRhythmSectionHeader(title: "Queued", subtitle: "\(downloadManager.downloadQueue.count) waiting")
 
-                        VStack(spacing: 10) {
+                        VStack(spacing: WRhythmSpacing.xs) {
                             ForEach(Array(downloadManager.downloadQueue.prefix(20)), id: \.id) { song in
                                 QueuedDownloadRow(song: song)
                             }

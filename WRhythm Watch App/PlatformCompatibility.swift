@@ -110,6 +110,11 @@ enum WRhythmTheme {
     static let accent = Color(red: 1.0, green: 0.67, blue: 0.24)
     static let secondaryAccent = Color(red: 0.23, green: 0.78, blue: 0.74)
     static let favorite = Color(red: 1.0, green: 0.30, blue: 0.38)
+    static let playlistGen = Color(red: 0.62, green: 0.46, blue: 0.94)
+    static let spontaneous = Color(red: 1.0, green: 0.57, blue: 0.21)
+    static let downloads = Color(red: 0.34, green: 0.78, blue: 0.48)
+    static let artist = Color(red: 0.38, green: 0.56, blue: 0.96)
+    static let album = Color(red: 0.18, green: 0.72, blue: 0.68)
     static let warning = Color.orange
     static let success = Color.green
     static let danger = Color.red
@@ -165,7 +170,11 @@ enum WRhythmVisual {
     static let compactCornerRadius: CGFloat = 10
     static let thumbnailCornerRadius: CGFloat = 8
     static let sectionSpacing: CGFloat = WRhythmSpacing.md
+#if os(watchOS)
+    static let cardPadding: CGFloat = WRhythmSpacing.sm
+#else
     static let cardPadding: CGFloat = WRhythmSpacing.md
+#endif
     static let bottomNavigationClearance: CGFloat = WRhythmSpacing.xl + WRhythmSpacing.xxl + WRhythmSpacing.xxl
     static let contentMaxWidth: CGFloat = 760
 }

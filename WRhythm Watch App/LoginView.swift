@@ -20,106 +20,103 @@ struct LoginView: View {
 
     var body: some View {
         NavigationView {
-            ScrollView {
-                VStack(spacing: 16) {
-                    HStack(spacing: 10) {
-                        Image(systemName: "waveform.circle.fill")
-                            .font(.title)
-                            .symbolRenderingMode(.hierarchical)
-                            .foregroundColor(WRhythmTheme.accent)
+            WRhythmScreen(horizontalPadding: WRhythmSpacing.md) {
+                WRhythmFeatureHeader(
+                    title: "WRhythm",
+                    subtitle: "Connect to your Navidrome library",
+                    systemImage: "waveform.circle.fill",
+                    tint: WRhythmTheme.accent
+                )
 
-                        Text("WRhythm")
-                            .font(.title2.weight(.semibold))
+                WRhythmGlassCard {
+                    VStack(spacing: WRhythmSpacing.md) {
+                        VStack(spacing: WRhythmSpacing.sm) {
+                            TextField("Server URL", text: $serverURL)
+                                .textContentType(.URL)
+                                .platformAutocapitalizationNever()
 
-                        Button(action: {
-                            presentedSheet = .help
-                        }) {
-                            Image(systemName: "info.circle")
-                                .font(.caption)
-                                .foregroundColor(WRhythmTheme.secondaryAccent)
+                            TextField("Username", text: $username)
+                                .textContentType(.username)
+                                .platformAutocapitalizationNever()
+
+                            SecureField("Password", text: $password)
+                                .textContentType(.password)
                         }
-                        .buttonStyle(.plain)
-                    }
-                    .padding(.bottom, 8)
+                        .platformSearchTextFieldStyle()
 
-                    VStack(spacing: 12) {
-                        TextField("Server URL", text: $serverURL)
-                            .textContentType(.URL)
-                            .platformAutocapitalizationNever()
+                        Button(action: login) {
+                            if isLoading {
+                                ProgressView()
+                                    .frame(maxWidth: .infinity)
+                            } else {
+                                Text("Login")
+                                    .frame(maxWidth: .infinity)
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(WRhythmTheme.accent)
+                        .disabled(serverURL.isEmpty || username.isEmpty || password.isEmpty || isLoading)
 
-                        TextField("Username", text: $username)
-                            .textContentType(.username)
-                            .platformAutocapitalizationNever()
-
-                        SecureField("Password", text: $password)
-                            .textContentType(.password)
-                    }
-                    .platformSearchTextFieldStyle()
-
-                    Button(action: login) {
-                        if isLoading {
-                            ProgressView()
-                        } else {
-                            Text("Login")
+                        if showError {
+                            Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                                .font(WRhythmTypography.rowSubtitle)
+                                .foregroundColor(WRhythmTheme.danger)
+                                .multilineTextAlignment(.leading)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(WRhythmSpacing.xs)
+                                .background(WRhythmTheme.danger.opacity(0.10), in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous))
                         }
                     }
-                    .disabled(serverURL.isEmpty || username.isEmpty || password.isEmpty || isLoading)
-                    .padding(.top, 8)
+                }
 
+                WRhythmCard {
                     Toggle(isOn: $deviceSyncManager.credentialSyncEnabled) {
-                        VStack(alignment: .leading, spacing: 3) {
+                        VStack(alignment: .leading, spacing: WRhythmSpacing.xxs) {
                             Text("Sync Credentials")
-                                .font(.caption)
+                                .font(WRhythmTypography.rowTitle)
                             Text(deviceSyncManager.connectedDeviceNames.isEmpty ? "Looking for nearby WRhythm devices" : "Connected: \(deviceSyncManager.connectedDeviceNames.joined(separator: ", "))")
-                                .font(.caption2)
+                                .font(WRhythmTypography.metadata)
                                 .foregroundColor(.secondary)
                         }
                     }
-                    .padding(.top, 4)
-
-                    if showError {
-                        Text(errorMessage)
-                            .font(.caption)
-                            .foregroundColor(WRhythmTheme.danger)
-                            .multilineTextAlignment(.center)
-                            .padding(10)
-                            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous))
-                    }
+                    .tint(WRhythmTheme.secondaryAccent)
                 }
-                .padding(20)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.cornerRadius, style: .continuous))
-                .padding()
+
+                Button(action: {
+                    presentedSheet = .help
+                }) {
+                    Label("Credential Help", systemImage: "info.circle")
+                        .font(WRhythmTypography.controlLabel)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .tint(WRhythmTheme.secondaryAccent)
                 .frame(maxWidth: 460)
-                .frame(maxWidth: .infinity)
             }
-            .wrhythmPageBackground()
+            .navigationTitle("Login")
+            .platformNavigationBarTitleDisplayModeInline()
         }
         .sheet(item: $presentedSheet) { sheet in
             switch sheet {
             case .help:
             NavigationView {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Credential Entry Tips")
-                            .font(.headline)
-                            .padding(.bottom, 4)
+                WRhythmScreen {
+                    WRhythmCard {
+                        VStack(alignment: .leading, spacing: WRhythmSpacing.sm) {
+                            Text("Credential Entry Tips")
+                                .font(.headline)
 
-                        Text("For easier credential entry on Apple Watch:")
-                            .font(.caption)
+                            Text("For easier credential entry on Apple Watch:")
+                                .font(WRhythmTypography.rowSubtitle)
 
-                        VStack(alignment: .leading, spacing: 8) {
-                            Label("Use Settings > Accessibility > Apple Watch Mirroring", systemImage: "applewatch")
-                                .font(.caption2)
-
-                            Label("This mirrors your watch to your iPhone screen", systemImage: "iphone")
-                                .font(.caption2)
-
-                            Label("Type credentials using your iPhone keyboard", systemImage: "keyboard")
-                                .font(.caption2)
+                            VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
+                                Label("Use Apple Watch Mirroring", systemImage: "applewatch")
+                                Label("Type from your iPhone keyboard", systemImage: "keyboard")
+                            }
+                            .font(WRhythmTypography.metadata)
+                            .foregroundColor(.secondary)
                         }
-                        .padding(.leading)
                     }
-                    .padding()
                 }
                 .navigationTitle("Help")
                 .platformNavigationBarTitleDisplayModeInline()

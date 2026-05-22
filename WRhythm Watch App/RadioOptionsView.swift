@@ -93,7 +93,7 @@ struct RadioOptionsView: View {
 
                 if isProcessing {
                     WRhythmCard {
-                        HStack(spacing: 10) {
+                        HStack(spacing: WRhythmSpacing.xs) {
                             ProgressView()
                             Text("Preparing playlist")
                                 .font(.caption)

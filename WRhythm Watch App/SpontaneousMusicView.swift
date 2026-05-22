@@ -16,86 +16,68 @@ struct SpontaneousMusicView: View {
     private var player: AudioPlayer { AudioPlayer.shared }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: WRhythmVisual.sectionSpacing) {
-                WRhythmFeatureHeader(
-                    title: "Spontaneous Music",
-                    subtitle: offlineMode ? "Shuffle downloaded songs" : "Shuffle all songs",
-                    systemImage: "shuffle",
-                    tint: .orange
-                )
+        WRhythmScreen {
+            WRhythmFeatureHeader(
+                title: "Spontaneous Music",
+                subtitle: offlineMode ? "Shuffle downloaded songs" : "Shuffle all songs",
+                systemImage: "shuffle",
+                tint: WRhythmTheme.spontaneous
+            )
 
-                Button(action: {
-                    shuffleAll()
-                }) {
-                    VStack(spacing: 8) {
-                        Image(systemName: "shuffle.circle.fill")
-                            .font(.system(size: 50))
-                        Text("Shuffle All")
+            WRhythmCard(style: .glass) {
+                VStack(spacing: WRhythmSpacing.md) {
+                    Button(action: shuffleAll) {
+                        Label("Shuffle All", systemImage: "shuffle.circle.fill")
                             .font(.headline)
+                            .frame(maxWidth: .infinity)
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 20)
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(isLoading)
+                    .buttonStyle(.borderedProminent)
+                    .tint(WRhythmTheme.spontaneous)
+                    .controlSize(.large)
+                    .disabled(isLoading)
 
-                if isLoading {
-                    WRhythmCard {
-                        HStack(spacing: 10) {
+                    if isLoading {
+                        HStack(spacing: WRhythmSpacing.xs) {
                             ProgressView()
                             Text("Finding music")
-                                .font(.caption)
+                                .font(WRhythmTypography.rowSubtitle)
                                 .foregroundColor(.secondary)
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                }
 
-                if !errorMessage.isEmpty {
-                    WRhythmCard {
+                    if !errorMessage.isEmpty {
                         Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
-                            .font(.caption)
+                            .font(WRhythmTypography.rowSubtitle)
                             .foregroundColor(WRhythmTheme.danger)
                             .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
+            }
 
-                WRhythmCard {
-                    VStack(alignment: .leading, spacing: 8) {
+            WRhythmCard {
+                VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
+                    HStack(spacing: WRhythmSpacing.xs) {
+                        Image(systemName: "shuffle.circle.fill")
+                            .foregroundColor(WRhythmTheme.spontaneous)
+                        Text(offlineMode ? "Offline Mode" : "Online Mode")
+                            .font(WRhythmTypography.sectionLabel)
+                    }
+
                     if offlineMode {
-                        HStack {
-                            Image(systemName: "info.circle")
-                                .foregroundColor(WRhythmTheme.secondaryAccent)
-                            Text("Offline Mode")
-                                .font(.caption2)
-                                .fontWeight(.semibold)
-                        }
-
                         Text("Shuffles from \(downloadManager.getTotalDownloaded()) downloaded songs")
-                            .font(.caption2)
+                            .font(WRhythmTypography.metadata)
                             .foregroundColor(.secondary)
                     } else {
-                        HStack {
-                            Image(systemName: "info.circle")
-                                .foregroundColor(WRhythmTheme.secondaryAccent)
-                            Text("Online Mode")
-                                .font(.caption2)
-                                .fontWeight(.semibold)
-                        }
-
                         Text("Fetches random songs from your entire library")
-                            .font(.caption2)
+                            .font(WRhythmTypography.metadata)
                             .foregroundColor(.secondary)
                     }
-                    }
                 }
-
-                Spacer()
             }
-            .padding()
         }
         .navigationTitle("Spontaneous")
-        .wrhythmPageBackground()
     }
 
     private func shuffleAll() {

@@ -81,7 +81,7 @@ struct PlaylistDetailView: View {
                     subtitle: "\(cachedPlaylist?.songCount ?? 0) songs total",
                     detail: "No downloaded songs",
                     systemImage: "music.note.list",
-                    tint: .purple,
+                    tint: WRhythmTheme.playlistGen,
                     coverArtId: cachedPlaylist?.coverArt
                 )
 
@@ -98,7 +98,7 @@ struct PlaylistDetailView: View {
                     subtitle: "\(songs.count) of \(cachedPlaylist?.songCount ?? songs.count) songs downloaded",
                     detail: "Offline playlist",
                     systemImage: "music.note.list",
-                    tint: .purple,
+                    tint: WRhythmTheme.playlistGen,
                     coverArtId: cachedPlaylist?.coverArt ?? songs.first?.coverArt
                 ) {
                     WRhythmActionStrip {
@@ -129,7 +129,7 @@ struct PlaylistDetailView: View {
                 subtitle: "\(playlist.songCount) song\(playlist.songCount == 1 ? "" : "s")",
                 detail: "Playlist",
                 systemImage: "music.note.list",
-                tint: .purple,
+                tint: WRhythmTheme.playlistGen,
                 coverArtId: playlist.coverArt ?? songs.first?.coverArt
             ) {
                 WRhythmActionStrip {
@@ -155,13 +155,13 @@ struct PlaylistDetailView: View {
     }
 
     private func trackSection(songs: [Song], queue: [Song]) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
             WRhythmSectionHeader(
                 title: "Tracks",
                 subtitle: "\(songs.count) song\(songs.count == 1 ? "" : "s")"
             )
 
-            WRhythmCard(padding: 10) {
+            WRhythmCard(padding: WRhythmSpacing.sm) {
                 VStack(spacing: 0) {
                     ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
                         TrackRowView(song: song, player: player, downloadManager: downloadManager, offlineMode: offlineMode) {

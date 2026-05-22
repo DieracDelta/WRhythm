@@ -190,7 +190,7 @@ struct AlbumsView: View {
                                 subtitle: album.artist,
                                 coverArtId: album.coverArt,
                                 fallbackSystemImage: "square.stack",
-                                tint: .teal
+                                tint: WRhythmTheme.album
                             ) {
                                 Image(systemName: "arrow.down.circle.fill")
                                     .font(.caption2)
@@ -261,7 +261,7 @@ struct AlbumsView: View {
                                 detail: album.year.map(String.init),
                                 coverArtId: album.coverArt,
                                 fallbackSystemImage: "square.stack",
-                                tint: .teal
+                                tint: WRhythmTheme.album
                             )
                         }
                         .wrhythmAlbumActions(albumId: album.id, albumName: album.name)

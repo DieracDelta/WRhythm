@@ -131,7 +131,7 @@ struct PlaylistsView: View {
                         detail: "Cached",
                         coverArtId: playlist.coverArt,
                         fallbackSystemImage: "music.note.list",
-                        tint: .purple
+                        tint: WRhythmTheme.playlistGen
                     ) {
                         Image(systemName: "arrow.down.circle.fill")
                             .font(.caption2)
@@ -177,7 +177,7 @@ struct PlaylistsView: View {
                         subtitle: "\(playlist.songCount) songs",
                         coverArtId: playlist.coverArt,
                         fallbackSystemImage: "music.note.list",
-                        tint: .purple
+                        tint: WRhythmTheme.playlistGen
                     )
                 }
                 .wrhythmPlaylistActions(playlistId: playlist.id, playlistName: playlist.name)

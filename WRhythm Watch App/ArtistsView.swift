@@ -148,7 +148,7 @@ struct ArtistsView: View {
                             subtitle: albumCount > 0 ? "\(albumCount) album\(albumCount == 1 ? "" : "s")" : nil,
                             coverArtId: artist.coverArt,
                             fallbackSystemImage: "person.fill",
-                            tint: .indigo
+                            tint: WRhythmTheme.artist
                         ) {
                             Image(systemName: "arrow.down.circle.fill")
                                 .font(.caption2)
@@ -199,7 +199,7 @@ struct ArtistsView: View {
                             subtitle: artist.albumCount.map { "\($0) albums" },
                             coverArtId: artist.coverArt,
                             fallbackSystemImage: "person.fill",
-                            tint: .indigo
+                            tint: WRhythmTheme.artist
                         )
                     }
                     .wrhythmArtistActions(artistId: artist.id, artistName: artist.name)

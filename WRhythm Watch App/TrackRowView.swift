@@ -51,7 +51,7 @@ struct TrackRowView: View {
                 isCurrent: isCurrentAndPlaying,
                 isPlaying: isCurrentAndPlaying
             ) {
-                HStack(spacing: 6) {
+                HStack(spacing: WRhythmSpacing.xs) {
                     if isDownloaded {
                         if !offlineMode {
                             WRhythmRowIconButton(
@@ -78,7 +78,7 @@ struct TrackRowView: View {
                     if !offlineMode {
                         WRhythmRowIconButton(
                             systemImage: isStarred ? "heart.fill" : "heart",
-                            tint: isStarred ? WRhythmTheme.favorite : .gray,
+                            tint: isStarred ? WRhythmTheme.favorite : .secondary,
                             accessibilityLabel: isStarred ? "Unfavorite song" : "Favorite song",
                             action: onToggleFavorite
                         )

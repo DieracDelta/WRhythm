@@ -298,11 +298,11 @@ private struct MacQueueRow: View {
     let isPlaying: Bool
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: WRhythmSpacing.xs) {
             WRhythmArtworkThumbnail(coverArtId: song.coverArt, size: 34)
 
             VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 5) {
+                HStack(spacing: WRhythmSpacing.xs) {
                     if isCurrent {
                         Image(systemName: isPlaying ? "speaker.wave.2.fill" : "speaker")
                             .font(.caption2)
