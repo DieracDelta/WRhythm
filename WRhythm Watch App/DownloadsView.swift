@@ -268,7 +268,7 @@ struct DownloadsView: View {
     }
 
     private var emptyDownloadsMessage: String? {
-#if os(watchOS)
+#if os(iOS) || os(watchOS)
         nil
 #else
         "Download songs, albums, or playlists for offline playback"
