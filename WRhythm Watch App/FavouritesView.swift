@@ -48,28 +48,30 @@ struct FavouritesView: View {
     }
 
     var body: some View {
+        Group {
 #if os(iOS)
-        VStack(spacing: 0) {
-            PhoneDetailHeader(title: "Favourites")
-                .padding(.horizontal, WRhythmSpacing.md)
-                .padding(.top, WRhythmSpacing.xxl)
-                .padding(.bottom, WRhythmSpacing.xs)
+            VStack(spacing: 0) {
+                PhoneDetailHeader(title: "Favourites")
+                    .padding(.horizontal, WRhythmSpacing.md)
+                    .padding(.top, WRhythmSpacing.xxl)
+                    .padding(.bottom, WRhythmSpacing.xs)
 
-            content
-        }
-            .navigationTitle("")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar(.hidden, for: .navigationBar)
-#else
-        content
-            .navigationTitle("Favourites")
-#endif
-            .wrhythmPageBackground()
-            .onAppear {
-                if !offlineMode && libraryDataManager.starred == nil && !libraryDataManager.isLoadingStarred {
-                    libraryDataManager.fetchStarred()
-                }
+                content
             }
+                .navigationTitle("")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar(.hidden, for: .navigationBar)
+#else
+            content
+                .navigationTitle("Favourites")
+#endif
+        }
+        .wrhythmPageBackground()
+        .onAppear {
+            if !offlineMode && libraryDataManager.starred == nil && !libraryDataManager.isLoadingStarred {
+                libraryDataManager.fetchStarred()
+            }
+        }
     }
 
     @ViewBuilder

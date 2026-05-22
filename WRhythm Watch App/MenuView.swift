@@ -8,24 +8,26 @@
 import SwiftUI
 
 struct MenuView: View {
+    private let menuIconTint = WRhythmTheme.playlistGen
+
     var body: some View {
         WRhythmScreen {
             menuGroup("Library") {
-                menuLink("Artists", systemImage: "person.2", tint: WRhythmTheme.secondaryAccent, destination: ArtistsView())
-                menuLink("Albums", systemImage: "square.stack", tint: WRhythmTheme.accent, destination: AlbumsView())
-                menuLink("Playlists", systemImage: "music.note.list", tint: WRhythmTheme.secondaryAccent, destination: PlaylistsView())
-                menuLink("Tracks", systemImage: "magnifyingglass", tint: WRhythmTheme.accent, destination: TracksView())
+                menuLink("Artists", systemImage: "person.2", destination: ArtistsView())
+                menuLink("Albums", systemImage: "square.stack", destination: AlbumsView())
+                menuLink("Playlists", systemImage: "music.note.list", destination: PlaylistsView())
+                menuLink("Tracks", systemImage: "magnifyingglass", destination: TracksView())
             }
 
             menuGroup("Playback") {
-                menuLink("Favorites", systemImage: "star.fill", tint: WRhythmTheme.favorite, destination: FavouritesView())
-                menuLink("Playlist Gen", systemImage: "radio", tint: WRhythmTheme.playlistGen, destination: RadioPlaylistsView())
-                menuLink("Spontaneous", systemImage: "shuffle", tint: WRhythmTheme.spontaneous, destination: SpontaneousMusicView())
+                menuLink("Favorites", systemImage: "star.fill", destination: FavouritesView())
+                menuLink("Playlist Gen", systemImage: "radio", destination: RadioPlaylistsView())
+                menuLink("Spontaneous", systemImage: "shuffle", destination: SpontaneousMusicView())
             }
 
             menuGroup("Device") {
-                menuLink("Downloads", systemImage: "arrow.down.circle", tint: WRhythmTheme.downloads, destination: DownloadsView())
-                menuLink("Settings", systemImage: "gear", tint: .secondary, destination: SettingsView())
+                menuLink("Downloads", systemImage: "arrow.down.circle", destination: DownloadsView())
+                menuLink("Settings", systemImage: "gear", destination: SettingsView())
             }
         }
         .navigationTitle("")
@@ -51,10 +53,10 @@ struct MenuView: View {
         }
     }
 
-    private func menuLink<Destination: View>(_ title: String, systemImage: String, tint: Color, destination: Destination) -> some View {
+    private func menuLink<Destination: View>(_ title: String, systemImage: String, destination: Destination) -> some View {
         NavigationLink(destination: destination) {
             HStack(spacing: WRhythmSpacing.sm) {
-                WRhythmIconBadge(systemImage: systemImage, tint: tint)
+                WRhythmIconBadge(systemImage: systemImage, tint: menuIconTint)
 
                 Text(title)
                     .font(WRhythmTypography.rowTitle)
