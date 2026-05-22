@@ -21,6 +21,31 @@ struct NowPlayingView: View {
     var body: some View {
 #if os(watchOS)
         WatchNowPlayingView()
+#elseif os(iOS)
+        PhoneNowPlayingView(
+            isStarring: isStarring,
+            presentedSheet: $presentedSheet,
+            scrubTime: $scrubTime,
+            seekLocal: { seekLocal(by: $0) },
+            toggleFavorite: { toggleFavorite(song: $0) }
+        )
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
+        .sheet(item: $presentedSheet) { sheet in
+            switch sheet {
+            case .volume:
+                VolumeControlView()
+            case .audioRoute:
+                AudioRouteView()
+            case .bufferedTracks:
+                BufferedTracksListView(songs: player.prebufferedSongs)
+            }
+        }
+        .onAppear {
+            if !hasLoadedStarredSongs {
+                loadStarredSongs()
+            }
+        }
 #else
         WRhythmScreen(coverArtId: primaryArtworkCoverArtId) {
             if let remote = primaryRemotePlayback {
@@ -242,12 +267,7 @@ struct NowPlayingView: View {
                 }
             }
         }
-#if os(iOS)
-        .navigationTitle("")
-        .navigationBarTitleDisplayMode(.inline)
-#else
         .navigationTitle("Now Playing")
-#endif
         .sheet(item: $presentedSheet) { sheet in
             switch sheet {
             case .volume:
@@ -407,6 +427,482 @@ private enum NowPlayingSheet: String, Identifiable {
 
     var id: String { rawValue }
 }
+
+#if os(iOS)
+private struct PhoneNowPlayingView: View {
+    @ObservedObject var player = AudioPlayer.shared
+    @ObservedObject var downloadManager = DownloadManager.shared
+    @ObservedObject var deviceSyncManager = DeviceSyncManager.shared
+    let isStarring: Bool
+    @Binding var presentedSheet: NowPlayingSheet?
+    @Binding var scrubTime: TimeInterval?
+    let seekLocal: (TimeInterval) -> Void
+    let toggleFavorite: (Song) -> Void
+
+    var body: some View {
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(spacing: WRhythmSpacing.sm) {
+                    PhonePlaybackTargetPicker()
+
+                    if let remote = deviceSyncManager.activeSharedPlayback {
+                        PhoneRemoteNowPlayingContent(
+                            playback: remote,
+                            availableSize: proxy.size,
+                            presentedSheet: $presentedSheet,
+                            scrubTime: $scrubTime
+                        )
+                    } else if let song = player.currentSong {
+                        PhoneLocalNowPlayingContent(
+                            song: song,
+                            availableSize: proxy.size,
+                            isStarring: isStarring,
+                            presentedSheet: $presentedSheet,
+                            scrubTime: $scrubTime,
+                            seekLocal: seekLocal,
+                            toggleFavorite: toggleFavorite
+                        )
+                    } else {
+                        PhoneNoSongContent()
+                    }
+                }
+                .frame(maxWidth: 520)
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: proxy.size.height, alignment: .top)
+                .padding(.horizontal, WRhythmSpacing.md)
+                .padding(.top, WRhythmSpacing.xs)
+                .padding(.bottom, WRhythmVisual.bottomNavigationClearance)
+            }
+            .scrollIndicators(.hidden)
+            .wrhythmPageBackground(coverArtId: primaryCoverArtId)
+        }
+    }
+
+    private var primaryCoverArtId: String? {
+        if let remote = deviceSyncManager.activeSharedPlayback {
+            return remote.song?.coverArt
+        }
+        return player.currentSong?.coverArt
+    }
+}
+
+private struct PhoneLocalNowPlayingContent: View {
+    @ObservedObject var player = AudioPlayer.shared
+    @ObservedObject var downloadManager = DownloadManager.shared
+    @ObservedObject var deviceSyncManager = DeviceSyncManager.shared
+    let song: Song
+    let availableSize: CGSize
+    let isStarring: Bool
+    @Binding var presentedSheet: NowPlayingSheet?
+    @Binding var scrubTime: TimeInterval?
+    let seekLocal: (TimeInterval) -> Void
+    let toggleFavorite: (Song) -> Void
+
+    var body: some View {
+        let localIsPlaying = deviceSyncManager.localPlaybackIsPlayingForDisplay
+
+        VStack(spacing: WRhythmSpacing.sm) {
+            NowPlayingArtwork(coverArtId: song.coverArt, maxSize: artworkSize)
+                .equatable()
+
+            PhoneTrackSummary(
+                title: song.title,
+                artist: song.artist,
+                album: song.album,
+                isPlaying: localIsPlaying,
+                isBuffering: player.isBuffering,
+                bufferedCount: player.prebufferedSongs.count,
+                showBufferedTracks: { presentedSheet = .bufferedTracks }
+            )
+
+            PhoneProgressControl(
+                duration: player.duration,
+                currentTime: player.currentTime,
+                scrubTime: $scrubTime,
+                seek: player.seek
+            )
+
+            HStack(spacing: WRhythmSpacing.xs) {
+                WRhythmTransportButton(systemImage: "backward.end.fill", size: .body, diameter: 44, action: player.previous)
+                    .disabled(player.currentIndex == 0 && player.currentTime < 3)
+
+                WRhythmTransportButton(systemImage: "gobackward.15", size: .body, diameter: 44) {
+                    seekLocal(-15)
+                }
+
+                WRhythmTransportButton(
+                    systemImage: localIsPlaying ? "pause.fill" : "play.fill",
+                    size: .title2,
+                    prominent: true,
+                    diameter: 58,
+                    action: {
+                        deviceSyncManager.setPlaying(
+                            !localIsPlaying,
+                            targetDeviceID: deviceSyncManager.localPlaybackTargetID
+                        )
+                    }
+                )
+
+                WRhythmTransportButton(systemImage: "goforward.15", size: .body, diameter: 44) {
+                    seekLocal(15)
+                }
+
+                WRhythmTransportButton(systemImage: "forward.end.fill", size: .body, diameter: 44, action: player.next)
+                    .disabled(player.currentIndex >= player.queue.count - 1)
+            }
+
+            InlineVolumeSlider(volume: Binding(
+                get: { player.volume },
+                set: { player.volume = $0 }
+            ))
+
+            WRhythmActionStrip {
+                Button(action: { presentedSheet = .volume }) {
+                    Image(systemName: "speaker.wave.3.fill")
+                        .font(.title3)
+                        .symbolVariant(.fill)
+                        .foregroundStyle(WRhythmTheme.secondaryAccent.gradient)
+                }
+                .accessibilityLabel("Volume")
+
+                Button(action: { presentedSheet = .audioRoute }) {
+                    Image(systemName: "airpodsmax")
+                        .font(.title3)
+                        .symbolVariant(.fill)
+                        .foregroundStyle(WRhythmTheme.secondaryAccent.gradient)
+                }
+                .accessibilityLabel("Audio output")
+
+                NavigationLink(destination: RadioOptionsView(
+                    sourceSong: song,
+                    sourceTitle: song.title,
+                    sourceType: .song
+                )) {
+                    Image(systemName: "music.note.list")
+                        .font(.title3)
+                        .symbolVariant(.fill)
+                        .foregroundStyle(WRhythmTheme.accent.gradient)
+                }
+                .accessibilityLabel("Playlist Gen")
+
+                Button(action: { toggleFavorite(song) }) {
+                    Image(systemName: downloadManager.starredSongIds.contains(song.id) ? "heart.fill" : "heart")
+                        .font(.title3)
+                        .symbolVariant(.fill)
+                        .foregroundStyle(WRhythmTheme.favorite.gradient)
+                }
+                .accessibilityLabel(downloadManager.starredSongIds.contains(song.id) ? "Unfavorite" : "Favorite")
+                .disabled(isStarring)
+            }
+
+            HStack(spacing: WRhythmSpacing.xs) {
+                if player.queue.count > 1 {
+                    WRhythmStatusPill(
+                        text: "Track \(player.currentIndex + 1) of \(player.queue.count)",
+                        systemImage: "list.bullet",
+                        tint: .secondary
+                    )
+                }
+
+                Button(action: player.toggleShuffle) {
+                    Image(systemName: player.isShuffled ? "shuffle.circle.fill" : "shuffle.circle")
+                        .font(.title3)
+                        .foregroundColor(player.isShuffled ? WRhythmTheme.accent : .secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Shuffle")
+
+                Button(action: player.toggleRepeat) {
+                    Image(systemName: player.repeatMode == .off ? "repeat.circle" :
+                          player.repeatMode == .all ? "repeat.circle.fill" : "repeat.1.circle.fill")
+                        .font(.title3)
+                        .foregroundColor(player.repeatMode == .off ? .secondary : WRhythmTheme.accent)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Repeat")
+            }
+        }
+    }
+
+    private var artworkSize: CGFloat {
+        min(max(220, availableSize.height * 0.36), availableSize.width - 44)
+    }
+}
+
+private struct PhoneRemoteNowPlayingContent: View {
+    let playback: PlaybackSnapshot
+    let availableSize: CGSize
+    @ObservedObject var deviceSyncManager = DeviceSyncManager.shared
+    @ObservedObject var player = AudioPlayer.shared
+    @Binding var presentedSheet: NowPlayingSheet?
+    @Binding var scrubTime: TimeInterval?
+    @State private var pendingVolume: Double?
+
+    var body: some View {
+        if let song = playback.song {
+            VStack(spacing: WRhythmSpacing.sm) {
+                NowPlayingArtwork(coverArtId: song.coverArt, maxSize: artworkSize)
+                    .equatable()
+
+                PhoneTrackSummary(
+                    title: song.title,
+                    artist: song.artist,
+                    album: song.album,
+                    isPlaying: playback.isPlaying,
+                    isBuffering: playback.isBuffering == true,
+                    bufferedCount: playback.prebufferedTrackCount ?? 0,
+                    showBufferedTracks: { presentedSheet = .bufferedTracks }
+                )
+
+                TimelineView(.periodic(from: .now, by: 1)) { _ in
+                    PhoneProgressControl(
+                        duration: playback.duration,
+                        currentTime: playback.estimatedCurrentTime,
+                        scrubTime: $scrubTime,
+                        seek: { deviceSyncManager.sendSeek(to: $0, targetDeviceID: playback.id) }
+                    )
+                }
+
+                HStack(spacing: WRhythmSpacing.xs) {
+                    WRhythmTransportButton(
+                        systemImage: "backward.end.fill",
+                        size: .body,
+                        diameter: 44,
+                        action: { deviceSyncManager.sendPrevious(targetDeviceID: playback.id) }
+                    )
+
+                    WRhythmTransportButton(systemImage: "gobackward.15", size: .body, diameter: 44) {
+                        seekRemote(by: -15)
+                    }
+
+                    WRhythmTransportButton(
+                        systemImage: playback.isPlaying ? "pause.fill" : "play.fill",
+                        size: .title2,
+                        prominent: true,
+                        diameter: 58,
+                        action: { deviceSyncManager.setPlaying(!playback.isPlaying, targetDeviceID: playback.id) }
+                    )
+
+                    WRhythmTransportButton(systemImage: "goforward.15", size: .body, diameter: 44) {
+                        seekRemote(by: 15)
+                    }
+
+                    WRhythmTransportButton(
+                        systemImage: "forward.end.fill",
+                        size: .body,
+                        diameter: 44,
+                        action: { deviceSyncManager.sendNext(targetDeviceID: playback.id) }
+                    )
+                }
+
+                InlineVolumeSlider(volume: Binding(
+                    get: { displayedVolume },
+                    set: { newVolume in
+                        pendingVolume = newVolume
+                        deviceSyncManager.setVolume(newVolume, targetDeviceID: playback.id)
+                    }
+                ))
+
+                Button(action: deviceSyncManager.takeOverRemotePlayback) {
+                    Label("Play Here", systemImage: "speaker.wave.2.fill")
+                        .font(.subheadline)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(WRhythmTheme.accent)
+            }
+            .onChange(of: playback.volume ?? -1) { _, _ in
+                pendingVolume = nil
+            }
+        } else {
+            PhoneNoSongContent()
+        }
+    }
+
+    private var displayedVolume: Double {
+        let volume = pendingVolume ?? playback.volume ?? player.volume
+        return min(max(volume.isFinite ? volume : 1, 0), 1)
+    }
+
+    private var artworkSize: CGFloat {
+        min(max(220, availableSize.height * 0.36), availableSize.width - 44)
+    }
+
+    private func seekRemote(by delta: TimeInterval) {
+        let upperBound = playback.duration > 0 && playback.duration.isFinite ? playback.duration : .greatestFiniteMagnitude
+        let target = min(max(playback.estimatedCurrentTime + delta, 0), upperBound)
+        deviceSyncManager.sendSeek(to: target, targetDeviceID: playback.id)
+    }
+}
+
+private struct PhonePlaybackTargetPicker: View {
+    @ObservedObject var deviceSyncManager = DeviceSyncManager.shared
+
+    var body: some View {
+        if deviceSyncManager.syncModeEnabled {
+            let targets = deviceSyncManager.availablePlaybackTargets
+            let selectedID = deviceSyncManager.validSelectedPlaybackTargetID
+            let selectedTarget = targets.first(where: { $0.id == selectedID })
+
+            Menu {
+                ForEach(targets) { target in
+                    Button {
+                        deviceSyncManager.selectPlaybackTarget(target.id)
+                    } label: {
+                        Label(target.displayName, systemImage: target.iconName)
+                    }
+                }
+            } label: {
+                HStack(spacing: WRhythmSpacing.xs) {
+                    Image(systemName: selectedTarget?.iconName ?? "speaker.wave.2")
+                    Text(selectedTarget?.displayName ?? "This Device")
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: WRhythmSpacing.xs)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .imageScale(.small)
+                        .foregroundStyle(.secondary)
+                }
+                .font(.subheadline)
+                .foregroundStyle(WRhythmTheme.accent)
+                .padding(.horizontal, WRhythmSpacing.sm)
+                .frame(height: 44)
+                .background(.regularMaterial, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .onAppear {
+                Task { @MainActor in
+                    deviceSyncManager.validateSelectedPlaybackTarget()
+                }
+            }
+            .onChange(of: targets.map(\.id)) { _, _ in
+                Task { @MainActor in
+                    deviceSyncManager.validateSelectedPlaybackTarget()
+                }
+            }
+        }
+    }
+}
+
+private struct PhoneTrackSummary: View {
+    let title: String
+    let artist: String?
+    let album: String?
+    let isPlaying: Bool
+    let isBuffering: Bool
+    let bufferedCount: Int
+    let showBufferedTracks: () -> Void
+
+    var body: some View {
+        VStack(spacing: WRhythmSpacing.xs) {
+            Text(title)
+                .font(.title3.bold())
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+                .contentTransition(.opacity)
+
+            if let artist {
+                Text(artist)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            if let album {
+                Text(album)
+                    .font(WRhythmTypography.metadata)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            HStack(spacing: WRhythmSpacing.xs) {
+                WRhythmStatusPill(
+                    text: isPlaying ? "Playing" : "Paused",
+                    systemImage: isPlaying ? "waveform" : "pause.fill",
+                    tint: isPlaying ? WRhythmTheme.accent : .secondary
+                )
+
+                if isBuffering {
+                    WRhythmStatusPill(text: "Buffering", systemImage: "hourglass", tint: WRhythmTheme.warning)
+                }
+
+                if bufferedCount > 0 {
+                    BufferedTracksButton(count: bufferedCount, action: showBufferedTracks)
+                }
+            }
+        }
+    }
+}
+
+private struct PhoneProgressControl: View {
+    let duration: TimeInterval
+    let currentTime: TimeInterval
+    @Binding var scrubTime: TimeInterval?
+    let seek: (TimeInterval) -> Void
+
+    var body: some View {
+        VStack(spacing: WRhythmSpacing.xs) {
+            let safeDuration = max(1, duration.isFinite ? duration : 1)
+            let liveTime = currentTime.isFinite ? currentTime : 0
+            let displayedTime = min(max(scrubTime ?? liveTime, 0), safeDuration)
+
+            Slider(
+                value: Binding(
+                    get: { displayedTime },
+                    set: { scrubTime = min(max($0, 0), safeDuration) }
+                ),
+                in: 0...safeDuration,
+                onEditingChanged: { isEditing in
+                    guard !isEditing, let scrubTime else { return }
+                    seek(scrubTime)
+                    self.scrubTime = nil
+                }
+            )
+            .tint(WRhythmTheme.accent)
+
+            HStack {
+                Text(formatPhonePlaybackTime(displayedTime))
+                    .font(WRhythmTypography.metadata)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("-" + formatPhonePlaybackTime(max(0, safeDuration - displayedTime)))
+                    .font(WRhythmTypography.metadata)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, WRhythmSpacing.sm)
+        .padding(.vertical, WRhythmSpacing.xs)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius))
+    }
+}
+
+private struct PhoneNoSongContent: View {
+    var body: some View {
+        VStack(spacing: WRhythmSpacing.sm) {
+            Spacer(minLength: WRhythmSpacing.xl)
+            Image(systemName: "music.note")
+                .font(.largeTitle)
+                .foregroundStyle(.secondary)
+            Text("No song playing")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: WRhythmSpacing.xl)
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+private func formatPhonePlaybackTime(_ seconds: TimeInterval) -> String {
+    guard seconds.isFinite else {
+        return "0:00"
+    }
+    let minutes = Int(max(0, seconds)) / 60
+    let remainingSeconds = Int(max(0, seconds)) % 60
+    return String(format: "%d:%02d", minutes, remainingSeconds)
+}
+#endif
 
 private struct BufferedTracksButton: View {
     let count: Int
