@@ -27,6 +27,7 @@ struct NowPlayingView: View {
                 }
                 .padding()
             } else if let song = player.currentSong {
+                let localIsPlaying = deviceSyncManager.localPlaybackIsPlayingForDisplay
                 VStack(spacing: 18) {
                     NowPlayingArtwork(coverArtId: song.coverArt, maxSize: 360)
                         .equatable()
@@ -54,9 +55,9 @@ struct NowPlayingView: View {
 
                         HStack(spacing: 8) {
                             WRhythmStatusPill(
-                                text: player.isPlaying ? "Playing" : "Paused",
-                                systemImage: player.isPlaying ? "waveform" : "pause.fill",
-                                tint: player.isPlaying ? .accentColor : .secondary
+                                text: localIsPlaying ? "Playing" : "Paused",
+                                systemImage: localIsPlaying ? "waveform" : "pause.fill",
+                                tint: localIsPlaying ? .accentColor : .secondary
                             )
                             if player.isBuffering {
                                 WRhythmStatusPill(text: "Buffering", systemImage: "hourglass", tint: .orange)
@@ -112,10 +113,15 @@ struct NowPlayingView: View {
                         .disabled(player.currentIndex == 0 && player.currentTime < 3)
 
                         WRhythmTransportButton(
-                            systemImage: player.isPlaying ? "pause.fill" : "play.fill",
+                            systemImage: localIsPlaying ? "pause.fill" : "play.fill",
                             size: .title,
                             prominent: true,
-                            action: player.togglePlayPause
+                            action: {
+                                deviceSyncManager.setPlaying(
+                                    !localIsPlaying,
+                                    targetDeviceID: deviceSyncManager.localPlaybackTargetID
+                                )
+                            }
                         )
 
                         WRhythmTransportButton(systemImage: "forward.end.fill", action: player.next)

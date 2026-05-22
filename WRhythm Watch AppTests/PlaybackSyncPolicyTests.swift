@@ -267,6 +267,44 @@ struct PlaybackSyncPolicyTests {
         #expect(PlaybackStartupStatePolicy.isPlayingDuringStartup(autoplay: false) == false)
     }
 
+    @Test func localOutputControlsDisplaySharedSessionPlayingWhilePlayerStateLags() {
+        let now = Date()
+        let session = makeSession(
+            outputDeviceID: "mac",
+            isPlaying: true,
+            position: 42,
+            updatedAt: now
+        )
+
+        #expect(LocalPlaybackDisplayStatePolicy.effectiveIsPlaying(
+            playerIsPlaying: false,
+            sharedSession: session,
+            localDeviceID: "mac",
+            localQueueIDs: session.queue.map { $0.id },
+            localCurrentSongID: session.currentSong?.id,
+            localCurrentIndex: session.currentIndex
+        ) == true)
+    }
+
+    @Test func localOutputControlsDisplaySharedSessionPausedWhilePlayerStateLags() {
+        let now = Date()
+        let session = makeSession(
+            outputDeviceID: "mac",
+            isPlaying: false,
+            position: 42,
+            updatedAt: now
+        )
+
+        #expect(LocalPlaybackDisplayStatePolicy.effectiveIsPlaying(
+            playerIsPlaying: true,
+            sharedSession: session,
+            localDeviceID: "mac",
+            localQueueIDs: session.queue.map { $0.id },
+            localCurrentSongID: session.currentSong?.id,
+            localCurrentIndex: session.currentIndex
+        ) == false)
+    }
+
     @Test func localPlaybackTelemetryPublishesActualStateWithoutIntentOverride() {
         #expect(LocalPlaybackPublicationPolicy.publishedIsPlaying(
             playerIsPlaying: false,

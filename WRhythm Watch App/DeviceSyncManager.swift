@@ -745,6 +745,28 @@ struct LocalPlaybackPublicationPolicy: Sendable {
     }
 }
 
+struct LocalPlaybackDisplayStatePolicy: Sendable {
+    static func effectiveIsPlaying(
+        playerIsPlaying: Bool,
+        sharedSession: PlaybackSession?,
+        localDeviceID: String,
+        localQueueIDs: [String],
+        localCurrentSongID: String?,
+        localCurrentIndex: Int
+    ) -> Bool {
+        guard let sharedSession,
+              sharedSession.outputDeviceID == localDeviceID,
+              let sessionSong = sharedSession.currentSong,
+              localCurrentSongID == sessionSong.id,
+              localCurrentIndex == sharedSession.currentIndex,
+              localQueueIDs == sharedSession.queue.map(\.id) else {
+            return playerIsPlaying
+        }
+
+        return sharedSession.isPlaying
+    }
+}
+
 struct RemoteCommandLocalPublicationPolicy: Sendable {
     static func intendedIsPlaying(after action: PlaybackSyncCommandAction) -> Bool? {
         switch action {
@@ -1046,6 +1068,18 @@ final class DeviceSyncManager: NSObject, ObservableObject {
     var isLocalPlaybackOutput: Bool {
         guard syncModeEnabled, let sharedSession else { return true }
         return sharedSession.outputDeviceID == localDeviceID
+    }
+
+    var localPlaybackIsPlayingForDisplay: Bool {
+        let player = AudioPlayer.shared
+        return LocalPlaybackDisplayStatePolicy.effectiveIsPlaying(
+            playerIsPlaying: player.isPlaying,
+            sharedSession: sharedSession,
+            localDeviceID: localDeviceID,
+            localQueueIDs: player.queue.map(\.id),
+            localCurrentSongID: player.currentSong?.id,
+            localCurrentIndex: player.currentIndex
+        )
     }
 
     var activeSharedPlayback: PlaybackSnapshot? {

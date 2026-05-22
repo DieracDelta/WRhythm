@@ -245,6 +245,9 @@ struct MacSidebar: View {
     }
 
     private var displayedQueueIsPlaying: Bool {
+        if deviceSyncManager.isLocalPlaybackOutput {
+            return deviceSyncManager.localPlaybackIsPlayingForDisplay
+        }
         if let sharedPlayback = deviceSyncManager.activeSharedPlayback {
             return sharedPlayback.isPlaying
         }
@@ -378,16 +381,17 @@ struct MacMiniPlayerBar: View {
     var body: some View {
         VStack(spacing: 0) {
             if let song = player.currentSong, displayVisibility.showsLocal {
+                let isPlaying = deviceSyncManager.localPlaybackIsPlayingForDisplay
                 miniRow(
                     coverArtId: song.coverArt,
                     title: song.title,
                     subtitle: [song.artist, song.album].compactMap { $0 }.joined(separator: " • "),
-                    isPlaying: player.isPlaying,
+                    isPlaying: isPlaying,
                     isBuffering: player.isBuffering,
                     prebufferedTrackCount: player.prebufferedTrackCount,
                     queuePosition: player.queue.count > 1 ? "\(localLabel): \(player.currentIndex + 1) of \(player.queue.count)" : localLabel,
                     previous: player.previous,
-                    toggle: { deviceSyncManager.setPlaying(!player.isPlaying, targetDeviceID: deviceSyncManager.localPlaybackTargetID) },
+                    toggle: { deviceSyncManager.setPlaying(!isPlaying, targetDeviceID: deviceSyncManager.localPlaybackTargetID) },
                     next: player.next,
                     currentTime: { player.currentTime },
                     duration: player.duration,
@@ -453,7 +457,7 @@ struct MacMiniPlayerBar: View {
         let sharedPlayback = deviceSyncManager.activeSharedPlayback
         return PlaybackDisplaySourcePolicy.visibility(
             hasLocalSong: player.currentSong != nil,
-            localIsPlaying: player.isPlaying,
+            localIsPlaying: deviceSyncManager.localPlaybackIsPlayingForDisplay,
             hasRemotePlayback: sharedPlayback?.song != nil,
             hasActiveSharedPlayback: deviceSyncManager.activeSharedPlayback != nil,
             remoteQueueMatchesLocal: remoteQueueMatchesLocal,
