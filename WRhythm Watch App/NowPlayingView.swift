@@ -1627,12 +1627,11 @@ private struct WatchNowPlayingView: View {
 
     @ViewBuilder
     private func localPlaybackContent(song: Song) -> some View {
-        VStack(spacing: 5) {
-            WatchTrackHeader(
+        VStack(spacing: 4) {
+            WatchTrackTitleBlock(
                 song: song,
-                coverArtSize: 62,
                 status: {
-                    WatchNowPlayingStatusRow(
+                    WatchNowPlayingStatusText(
                         isPlaying: localIsPlaying,
                         isBuffering: player.isBuffering,
                         prebufferedTrackCount: player.prebufferedTrackCount,
@@ -1640,6 +1639,9 @@ private struct WatchNowPlayingView: View {
                     )
                 }
             )
+
+            NowPlayingArtwork(coverArtId: song.coverArt, maxSize: 52)
+                .equatable()
 
             WatchTransportControls(
                 isPlaying: localIsPlaying,
@@ -1785,11 +1787,10 @@ private struct WatchRemotePlaybackControls: View {
             }
 
             if let song = playback.song {
-                WatchTrackHeader(
+                WatchTrackTitleBlock(
                     song: song,
-                    coverArtSize: 58,
                     status: {
-                        WatchNowPlayingStatusRow(
+                        WatchNowPlayingStatusText(
                             isPlaying: playback.isPlaying,
                             isBuffering: playback.isBuffering == true,
                             prebufferedTrackCount: playback.prebufferedTrackCount,
@@ -1797,6 +1798,9 @@ private struct WatchRemotePlaybackControls: View {
                         )
                     }
                 )
+
+                NowPlayingArtwork(coverArtId: song.coverArt, maxSize: 50)
+                    .equatable()
 
                 WatchTransportControls(
                     isPlaying: playback.isPlaying,
@@ -1869,38 +1873,34 @@ private struct WatchRemotePlaybackControls: View {
     }
 }
 
-private struct WatchTrackHeader<Status: View>: View {
+private struct WatchTrackTitleBlock<Status: View>: View {
     let song: Song
-    let coverArtSize: CGFloat
     @ViewBuilder let status: () -> Status
 
     var body: some View {
-        HStack(spacing: 8) {
-            NowPlayingArtwork(coverArtId: song.coverArt, maxSize: coverArtSize)
-                .equatable()
+        VStack(spacing: 2) {
+            Text(song.title)
+                .font(.headline)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.72)
+                .frame(maxWidth: .infinity)
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(song.title)
-                    .font(.headline)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.75)
-
-                if let artist = song.artist, !artist.isEmpty {
-                    Text(artist)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-
-                status()
+            if let artist = song.artist, !artist.isEmpty {
+                Text(artist)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+
+            status()
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity)
     }
 }
 
-private struct WatchNowPlayingStatusRow: View {
+private struct WatchNowPlayingStatusText: View {
     let isPlaying: Bool
     let isBuffering: Bool
     let prebufferedTrackCount: Int?
@@ -1908,20 +1908,31 @@ private struct WatchNowPlayingStatusRow: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            WRhythmStatusPill(
-                text: isPlaying ? "Playing" : "Paused",
-                systemImage: isPlaying ? "waveform" : "pause.fill",
-                tint: isPlaying ? WRhythmTheme.accent : .secondary
-            )
+            Image(systemName: isPlaying ? "waveform" : "pause.fill")
 
-            if isBuffering {
-                WRhythmStatusPill(text: "Buffering", systemImage: "hourglass", tint: WRhythmTheme.warning)
-            } else if hasQueuedTracks, let prebufferedTrackCount {
-                WRhythmStatusPill(text: "\(prebufferedTrackCount) ready", systemImage: "arrow.down.circle")
+            Text(isPlaying ? "Playing" : "Paused")
+
+            if let detail {
+                Text("•")
+                    .foregroundStyle(.tertiary)
+                Text(detail)
             }
         }
         .font(.caption2)
+        .foregroundStyle(.secondary)
         .lineLimit(1)
+    }
+
+    private var detail: String? {
+        if isBuffering {
+            return "Buffering"
+        }
+
+        if hasQueuedTracks, let prebufferedTrackCount {
+            return "\(prebufferedTrackCount) ready"
+        }
+
+        return nil
     }
 }
 
