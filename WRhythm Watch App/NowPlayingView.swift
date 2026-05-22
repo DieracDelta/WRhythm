@@ -611,15 +611,8 @@ struct InlineVolumeSlider: View {
     @Binding var volume: Double
 
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "speaker.fill")
-                .foregroundColor(.secondary)
-            Slider(value: $volume, in: 0...1)
-                .tint(.accentColor)
-            Image(systemName: "speaker.wave.3.fill")
-                .foregroundColor(.secondary)
-        }
-        .font(.caption)
+        Slider(value: $volume, in: 0...1)
+            .tint(.accentColor)
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(.thinMaterial, in: Capsule())

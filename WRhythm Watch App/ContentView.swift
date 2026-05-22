@@ -425,13 +425,8 @@ struct MacMiniPlayerBar: View {
 
             if player.currentSong != nil || deviceSyncManager.activeSharedPlayback?.song != nil {
                 Divider()
-                HStack(spacing: 8) {
-                    Image(systemName: "speaker.fill")
-                        .foregroundColor(.secondary)
-                    Slider(value: $player.volume, in: 0...1)
-                    Image(systemName: "speaker.wave.3.fill")
-                        .foregroundColor(.secondary)
-                }
+                Slider(value: $player.volume, in: 0...1)
+                    .tint(.accentColor)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
             }
