@@ -69,18 +69,7 @@ struct LoginView: View {
                     }
                 }
 
-                WRhythmCard {
-                    Toggle(isOn: $deviceSyncManager.credentialSyncEnabled) {
-                        VStack(alignment: .leading, spacing: WRhythmSpacing.xxs) {
-                            Text("Sync Credentials")
-                                .font(WRhythmTypography.rowTitle)
-                            Text(deviceSyncManager.connectedDeviceNames.isEmpty ? "Looking for nearby WRhythm devices" : "Connected: \(deviceSyncManager.connectedDeviceNames.joined(separator: ", "))")
-                                .font(WRhythmTypography.metadata)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    .tint(WRhythmTheme.secondaryAccent)
-                }
+                credentialSyncCard
 
                 Button(action: {
                     presentedSheet = .help
@@ -125,6 +114,47 @@ struct LoginView: View {
         }
         .onAppear {
             deviceSyncManager.requestCredentialSyncNow()
+        }
+    }
+
+    private var credentialSyncStatusText: String {
+        deviceSyncManager.connectedDeviceNames.isEmpty
+            ? "Nearby login sync"
+            : "Synced with \(deviceSyncManager.connectedDeviceNames.joined(separator: ", "))"
+    }
+
+    @ViewBuilder
+    private var credentialSyncCard: some View {
+        WRhythmCard {
+#if os(watchOS)
+            VStack(alignment: .leading, spacing: WRhythmSpacing.sm) {
+                Text("Sync Login")
+                    .font(WRhythmTypography.rowTitle)
+                    .lineLimit(1)
+
+                Text(credentialSyncStatusText)
+                    .font(WRhythmTypography.metadata)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+
+                Toggle("Sync Login", isOn: $deviceSyncManager.credentialSyncEnabled)
+                    .labelsHidden()
+                    .tint(WRhythmTheme.secondaryAccent)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .accessibilityLabel("Sync Login")
+            }
+#else
+            Toggle(isOn: $deviceSyncManager.credentialSyncEnabled) {
+                VStack(alignment: .leading, spacing: WRhythmSpacing.xxs) {
+                    Text("Sync Login")
+                        .font(WRhythmTypography.rowTitle)
+                    Text(credentialSyncStatusText)
+                        .font(WRhythmTypography.metadata)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .tint(WRhythmTheme.secondaryAccent)
+#endif
         }
     }
 
