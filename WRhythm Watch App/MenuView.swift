@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct MenuView: View {
-    private let menuIconTint = WRhythmTheme.playlistGen
+    private let menuIconTint = WRhythmTheme.accent
 
     var body: some View {
         WRhythmScreen {

@@ -108,13 +108,13 @@ struct PlatformSearchSheet<Content: View>: View {
 
 enum WRhythmTheme {
     static let accent = Color(red: 1.0, green: 0.67, blue: 0.24)
-    static let secondaryAccent = Color(red: 0.23, green: 0.78, blue: 0.74)
-    static let favorite = Color(red: 1.0, green: 0.30, blue: 0.38)
-    static let playlistGen = Color(red: 0.62, green: 0.46, blue: 0.94)
-    static let spontaneous = Color(red: 1.0, green: 0.57, blue: 0.21)
-    static let downloads = Color(red: 0.34, green: 0.78, blue: 0.48)
-    static let artist = Color(red: 0.38, green: 0.56, blue: 0.96)
-    static let album = Color(red: 0.18, green: 0.72, blue: 0.68)
+    static let secondaryAccent = Color(red: 1.0, green: 0.78, blue: 0.34)
+    static let favorite = accent
+    static let playlistGen = accent
+    static let spontaneous = accent
+    static let downloads = accent
+    static let artist = accent
+    static let album = accent
     static let warning = Color.orange
     static let success = Color.green
     static let danger = Color.red
@@ -158,8 +158,8 @@ enum WRhythmSpacing {
 }
 
 enum WRhythmTypography {
-    static let heroTitle = Font.title3.weight(.semibold)
-    static let featureTitle = Font.headline.weight(.semibold)
+    static let heroTitle = Font.system(.title3, design: .serif).weight(.semibold)
+    static let featureTitle = Font.system(.headline, design: .serif).weight(.semibold)
     static let sectionLabel = Font.caption.weight(.semibold)
     static let rowTitle = Font.subheadline.weight(.semibold)
     static let rowSubtitle = Font.caption
@@ -528,7 +528,7 @@ struct WRhythmSectionHeader<Actions: View>: View {
         HStack(alignment: .firstTextBaseline, spacing: WRhythmSpacing.sm) {
             VStack(alignment: .leading, spacing: WRhythmSpacing.xxs) {
                 Text(title)
-                    .font(.headline)
+                    .font(WRhythmTypography.featureTitle)
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
                         .font(.caption)
@@ -973,7 +973,7 @@ struct WRhythmEmptyState: View {
 
             VStack(spacing: WRhythmSpacing.xs) {
                 Text(title)
-                    .font(.headline)
+                    .font(WRhythmTypography.featureTitle)
                     .multilineTextAlignment(.center)
 
                 if let message {

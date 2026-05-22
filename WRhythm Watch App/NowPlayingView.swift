@@ -62,7 +62,7 @@ struct NowPlayingView: View {
 
                     VStack(spacing: WRhythmSpacing.xs) {
                         Text(song.title)
-                            .font(.title3.weight(.semibold))
+                            .font(WRhythmTypography.heroTitle)
                             .lineLimit(2)
                             .multilineTextAlignment(.center)
                             .contentTransition(.opacity)
@@ -799,7 +799,7 @@ private struct PhoneTrackSummary: View {
     var body: some View {
         VStack(spacing: WRhythmSpacing.xs) {
             Text(title)
-                .font(.title3.bold())
+                .font(WRhythmTypography.heroTitle)
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
                 .contentTransition(.opacity)

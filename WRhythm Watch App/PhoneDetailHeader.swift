@@ -32,7 +32,7 @@ struct PhoneDetailHeader: View {
 
             if let title {
                 Text(title)
-                    .font(.headline)
+                    .font(WRhythmTypography.featureTitle)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity)
                     .padding(.horizontal, 68)
