@@ -680,6 +680,75 @@ struct PlaybackSyncPolicyTests {
         #expect(WatchConnectivitySendFailurePolicy.shouldFallbackToUserInfo(kind: .credentials(hasPayload: false), canQueuePayload: true) == false)
     }
 
+    @Test func credentialSyncBootstrapOffersCredentialsWhenLocalDeviceHasThem() {
+        #expect(CredentialSyncBootstrapPolicy.shouldOfferCredentials(
+            localCredentialSyncEnabled: true,
+            localHasCredentials: true
+        ) == true)
+        #expect(CredentialSyncBootstrapPolicy.shouldOfferCredentials(
+            localCredentialSyncEnabled: false,
+            localHasCredentials: true
+        ) == false)
+        #expect(CredentialSyncBootstrapPolicy.shouldOfferCredentials(
+            localCredentialSyncEnabled: true,
+            localHasCredentials: false
+        ) == false)
+    }
+
+    @Test func credentialSyncRequestsCredentialsWhenHelloAdvertisesAvailableCredentials() {
+        #expect(CredentialSyncBootstrapPolicy.shouldRequestCredentialsFromHello(
+            localCredentialSyncEnabled: true,
+            localHasCredentials: false,
+            senderCredentialSyncEnabled: true,
+            senderHasCredentials: true
+        ) == true)
+        #expect(CredentialSyncBootstrapPolicy.shouldRequestCredentialsFromHello(
+            localCredentialSyncEnabled: true,
+            localHasCredentials: true,
+            senderCredentialSyncEnabled: true,
+            senderHasCredentials: true
+        ) == false)
+        #expect(CredentialSyncBootstrapPolicy.shouldRequestCredentialsFromHello(
+            localCredentialSyncEnabled: true,
+            localHasCredentials: false,
+            senderCredentialSyncEnabled: true,
+            senderHasCredentials: false
+        ) == false)
+    }
+
+    @Test func credentialSyncRequestOffersCredentialsOnlyToEmptyCredentialSyncPeers() {
+        #expect(CredentialSyncBootstrapPolicy.shouldOfferCredentialsToRequester(
+            localCredentialSyncEnabled: true,
+            localHasCredentials: true,
+            requesterCredentialSyncEnabled: true,
+            requesterHasCredentials: false
+        ) == true)
+        #expect(CredentialSyncBootstrapPolicy.shouldOfferCredentialsToRequester(
+            localCredentialSyncEnabled: true,
+            localHasCredentials: true,
+            requesterCredentialSyncEnabled: false,
+            requesterHasCredentials: false
+        ) == false)
+        #expect(CredentialSyncBootstrapPolicy.shouldOfferCredentialsToRequester(
+            localCredentialSyncEnabled: true,
+            localHasCredentials: true,
+            requesterCredentialSyncEnabled: true,
+            requesterHasCredentials: true
+        ) == false)
+        #expect(CredentialSyncBootstrapPolicy.shouldOfferCredentialsToRequester(
+            localCredentialSyncEnabled: true,
+            localHasCredentials: false,
+            requesterCredentialSyncEnabled: true,
+            requesterHasCredentials: false
+        ) == false)
+    }
+
+    @Test func syncRequestTargetsOnlyHandleMatchingDeviceID() {
+        #expect(SyncRequestTargetPolicy.shouldHandle(targetDeviceID: nil, localDeviceID: "iphone") == true)
+        #expect(SyncRequestTargetPolicy.shouldHandle(targetDeviceID: "iphone", localDeviceID: "iphone") == true)
+        #expect(SyncRequestTargetPolicy.shouldHandle(targetDeviceID: "iphone", localDeviceID: "mac") == false)
+    }
+
     @Test func watchAndMacDoNotHaveDirectDiscoveryTransport() {
         #expect(SyncTransportAvailabilityPolicy.canDirectlyDiscover(local: .appleWatch, remote: .mac) == false)
         #expect(SyncTransportAvailabilityPolicy.canDirectlyDiscover(local: .mac, remote: .appleWatch) == false)

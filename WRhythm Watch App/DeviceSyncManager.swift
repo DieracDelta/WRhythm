@@ -222,6 +222,43 @@ struct WatchConnectivitySendFailurePolicy: Sendable {
     }
 }
 
+struct CredentialSyncBootstrapPolicy: Sendable {
+    static func shouldOfferCredentials(localCredentialSyncEnabled: Bool, localHasCredentials: Bool) -> Bool {
+        localCredentialSyncEnabled && localHasCredentials
+    }
+
+    static func shouldRequestCredentialsFromHello(
+        localCredentialSyncEnabled: Bool,
+        localHasCredentials: Bool,
+        senderCredentialSyncEnabled: Bool,
+        senderHasCredentials: Bool
+    ) -> Bool {
+        localCredentialSyncEnabled
+            && !localHasCredentials
+            && senderCredentialSyncEnabled
+            && senderHasCredentials
+    }
+
+    static func shouldOfferCredentialsToRequester(
+        localCredentialSyncEnabled: Bool,
+        localHasCredentials: Bool,
+        requesterCredentialSyncEnabled: Bool,
+        requesterHasCredentials: Bool
+    ) -> Bool {
+        shouldOfferCredentials(
+            localCredentialSyncEnabled: localCredentialSyncEnabled,
+            localHasCredentials: localHasCredentials
+        ) && requesterCredentialSyncEnabled && !requesterHasCredentials
+    }
+}
+
+struct SyncRequestTargetPolicy: Sendable {
+    static func shouldHandle(targetDeviceID: String?, localDeviceID: String) -> Bool {
+        guard let targetDeviceID else { return true }
+        return targetDeviceID == localDeviceID
+    }
+}
+
 enum SyncTransportKind: Sendable {
     case watchConnectivity
     case multipeer
@@ -1736,6 +1773,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         guard credentialSyncEnabled else { return }
         configureTransports()
         broadcastHello()
+        requestCredentialsFromPeers()
         maybeSendCredentialsToInterestedPeers()
     }
 
@@ -1863,8 +1901,26 @@ final class DeviceSyncManager: NSObject, ObservableObject {
     }
 
     private func maybeSendCredentialsToInterestedPeers() {
-        guard credentialSyncEnabled, let credentials = NavidromeAPI.shared.exportCredentialsForSync() else { return }
+        guard CredentialSyncBootstrapPolicy.shouldOfferCredentials(
+            localCredentialSyncEnabled: credentialSyncEnabled,
+            localHasCredentials: NavidromeAPI.shared.hasCredentials
+        ), let credentials = NavidromeAPI.shared.exportCredentialsForSync() else { return }
         _ = sendEnvelope(.init(kind: .credentials, sender: localPeerInfo(), command: nil, credentials: credentials, targetDeviceID: nil))
+    }
+
+    private func requestCredentialsFromPeers(targetDeviceID: String? = nil) {
+        guard credentialSyncEnabled, !NavidromeAPI.shared.hasCredentials else { return }
+        _ = sendEnvelope(.init(kind: .syncRequest, sender: localPeerInfo(), command: nil, credentials: nil, targetDeviceID: targetDeviceID))
+    }
+
+    private func requestCredentialsIfNeeded(from sender: SyncPeerInfo) {
+        guard CredentialSyncBootstrapPolicy.shouldRequestCredentialsFromHello(
+            localCredentialSyncEnabled: credentialSyncEnabled,
+            localHasCredentials: NavidromeAPI.shared.hasCredentials,
+            senderCredentialSyncEnabled: sender.credentialSyncEnabled,
+            senderHasCredentials: sender.hasCredentials
+        ) else { return }
+        requestCredentialsFromPeers(targetDeviceID: sender.id)
     }
 
     private var selectedRemotePlaybackTargetID: String? {
@@ -2080,11 +2136,21 @@ final class DeviceSyncManager: NSObject, ObservableObject {
                let credentials = NavidromeAPI.shared.exportCredentialsForSync() {
                 _ = sendEnvelope(.init(kind: .credentials, sender: localPeerInfo(), command: nil, credentials: credentials, targetDeviceID: nil))
             }
+            requestCredentialsIfNeeded(from: envelope.sender)
             sendCurrentSyncState()
 
         case .syncRequest:
+            guard SyncRequestTargetPolicy.shouldHandle(targetDeviceID: envelope.targetDeviceID, localDeviceID: localDeviceID) else { return }
             flushPendingCommands(for: envelope.sender.id)
             sendCurrentSyncState(includeHello: true)
+            if CredentialSyncBootstrapPolicy.shouldOfferCredentialsToRequester(
+                localCredentialSyncEnabled: credentialSyncEnabled,
+                localHasCredentials: NavidromeAPI.shared.hasCredentials,
+                requesterCredentialSyncEnabled: envelope.sender.credentialSyncEnabled,
+                requesterHasCredentials: envelope.sender.hasCredentials
+            ) {
+                maybeSendCredentialsToInterestedPeers()
+            }
 
         case .playbackSession:
             guard syncModeEnabled,
@@ -2605,6 +2671,7 @@ extension DeviceSyncManager: WCSessionDelegate {
                 DeviceSyncManager.shared.watchConnectivityActivationRetryTask?.cancel()
                 DeviceSyncManager.shared.watchConnectivityActivationRetryTask = nil
                 DeviceSyncManager.shared.sendCurrentSyncState(includeHello: true)
+                DeviceSyncManager.shared.maybeSendCredentialsToInterestedPeers()
             } else {
                 print("⚠️ WatchConnectivity activation did not complete; state=\(activationStateRawValue), error=\(errorDescription ?? "none")")
                 if shouldRetry {
