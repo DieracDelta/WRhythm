@@ -143,6 +143,14 @@ struct PlaybackStartupStatePolicy: Sendable {
     }
 }
 
+struct PlaybackErrorInfo: Identifiable, Equatable {
+    let id = UUID()
+    let title: String
+    let message: String
+    let technicalDetails: String
+    let recoverySuggestion: String
+}
+
 @MainActor
 class AudioPlayer: NSObject, ObservableObject {
     static let shared = AudioPlayer()
@@ -160,13 +168,20 @@ class AudioPlayer: NSObject, ObservableObject {
     @Published var currentTime: TimeInterval = 0
     @Published var duration: TimeInterval = 0
     @Published var isBuffering = false
+    @Published private(set) var currentBufferPercent: Int?
+    @Published private(set) var playbackError: PlaybackErrorInfo?
     @Published private(set) var prebufferedTrackCount = 0
     @Published private(set) var prebufferedSongs: [Song] = []
+    @Published private(set) var prebufferingTrackCount = 0
     @Published var queue: [Song] = []
     @Published var currentIndex: Int = 0
     @Published var playlistGenQueue: [Song] = []
     @Published var playlistGenSourceTitle: String?
     @Published var playlistGenSourceArtist: String?
+    @Published private(set) var playlistGenIsGenerating = false
+    @Published private(set) var playlistGenGeneratingTitle: String?
+    @Published private(set) var playlistGenErrorMessage: String?
+    @Published private(set) var playlistGenErrorDetails: String?
     @Published var isShuffled = false
     @Published var repeatMode: RepeatMode = .off
     @Published var volume: Double = 1.0 {
@@ -205,8 +220,31 @@ class AudioPlayer: NSObject, ObservableObject {
         let asset: AVURLAsset
     }
 
+    private struct PlaylistGenRestoreState {
+        let queue: [Song]
+        let currentIndex: Int
+        let currentSong: Song?
+        let currentTime: TimeInterval
+        let duration: TimeInterval
+        let wasPlaying: Bool
+        let playlistGenQueue: [Song]
+        let playlistGenSourceTitle: String?
+        let playlistGenSourceArtist: String?
+    }
+
     private enum PrebufferPreparationError: Error {
         case notPlayable
+    }
+
+    private enum PlaylistGenerationError: LocalizedError {
+        case noSongs
+
+        var errorDescription: String? {
+            switch self {
+            case .noSongs:
+                return "No similar songs were returned by the server."
+            }
+        }
     }
 
     private static let persistedPlaybackStateKey = "audioPlayerPersistedPlaybackState.v1"
@@ -234,6 +272,8 @@ class AudioPlayer: NSObject, ObservableObject {
     private var playbackRetryTask: Task<Void, Never>?
     private var playbackRetryAttemptsBySongID: [String: Int] = [:]
     private var playbackIntentRevision = 0
+    private var playlistGenTask: Task<Void, Never>?
+    private var playlistGenRestoreState: PlaylistGenRestoreState?
     private let maxPlaybackRetryAttempts = 4
     private let maxPlaybackRetryBackoff: TimeInterval = 30
     private var prebufferRetryAttemptsByKey: [String: Int] = [:]
@@ -282,6 +322,24 @@ class AudioPlayer: NSObject, ObservableObject {
             return absoluteTime
         }
         return min(absoluteTime, duration)
+    }
+
+    var queueBufferStatusSummary: String? {
+        var parts: [String] = []
+        if prebufferedTrackCount > 0 {
+            parts.append("\(prebufferedTrackCount) buffered")
+        }
+        if prebufferingTrackCount > 0 {
+            parts.append("\(prebufferingTrackCount) buffering")
+        }
+        if isBuffering {
+            if let currentBufferPercent {
+                parts.append("\(currentBufferPercent)% complete")
+            } else {
+                parts.append("buffering")
+            }
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " • ")
     }
 
     private func recordPlaybackIntentChange() {
@@ -709,6 +767,13 @@ class AudioPlayer: NSObject, ObservableObject {
 
     func playGeneratedPlaylist(sourceSong: Song, songs: [Song], startingAt index: Int = 0) {
         guard !songs.isEmpty else { return }
+        playlistGenTask?.cancel()
+        playlistGenTask = nil
+        playlistGenRestoreState = nil
+        playlistGenIsGenerating = false
+        playlistGenGeneratingTitle = nil
+        playlistGenErrorMessage = nil
+        playlistGenErrorDetails = nil
         playlistGenSourceTitle = sourceSong.title
         playlistGenSourceArtist = sourceSong.artist
         playlistGenQueue = songs
@@ -716,9 +781,132 @@ class AudioPlayer: NSObject, ObservableObject {
     }
 
     func clearPlaylistGen() {
+        playlistGenTask?.cancel()
+        playlistGenTask = nil
+        playlistGenRestoreState = nil
+        playlistGenIsGenerating = false
+        playlistGenGeneratingTitle = nil
         playlistGenQueue = []
         playlistGenSourceTitle = nil
         playlistGenSourceArtist = nil
+    }
+
+    func dismissPlaylistGenError() {
+        playlistGenErrorMessage = nil
+        playlistGenErrorDetails = nil
+    }
+
+    func dismissPlaybackError() {
+        playbackError = nil
+    }
+
+    func cancelPlaylistGeneration() {
+        playlistGenTask?.cancel()
+        playlistGenTask = nil
+        restorePlaylistGenState()
+        playlistGenIsGenerating = false
+        playlistGenGeneratingTitle = nil
+    }
+
+    func startPlaylistGeneration(for sourceSong: Song, count: Int, fallbackToRandom: Bool = true) {
+        playlistGenTask?.cancel()
+        playlistGenTask = nil
+
+        playlistGenRestoreState = PlaylistGenRestoreState(
+            queue: queue,
+            currentIndex: currentIndex,
+            currentSong: currentSong,
+            currentTime: liveCurrentTime,
+            duration: duration,
+            wasPlaying: isPlaying,
+            playlistGenQueue: playlistGenQueue,
+            playlistGenSourceTitle: playlistGenSourceTitle,
+            playlistGenSourceArtist: playlistGenSourceArtist
+        )
+
+        playlistGenIsGenerating = true
+        playlistGenGeneratingTitle = sourceSong.title
+        playlistGenErrorMessage = nil
+        playlistGenErrorDetails = nil
+        playlistGenQueue = []
+        playlistGenSourceTitle = sourceSong.title
+        playlistGenSourceArtist = sourceSong.artist
+
+        pause()
+        DeviceSyncManager.shared.broadcastLocalQueueAsShared(intendedIsPlaying: false)
+#if os(macOS)
+        NotificationCenter.default.post(name: .wrhythmShowPlaylistGen, object: nil)
+#endif
+
+        let requestedCount = max(count, 1)
+        playlistGenTask = Task { [weak self] in
+            do {
+                var similarSongs = try await NavidromeAPI.shared.getSimilarSongsForSong(sourceSong, count: requestedCount)
+                if similarSongs.isEmpty && fallbackToRandom {
+                    similarSongs = try await NavidromeAPI.shared.getRandomSongs(size: requestedCount)
+                }
+                try Task.checkCancellation()
+
+                let filteredSongs = similarSongs.filter { $0.id != sourceSong.id }
+                guard !filteredSongs.isEmpty else {
+                    throw PlaylistGenerationError.noSongs
+                }
+                let generatedQueue = [sourceSong] + filteredSongs
+
+                await MainActor.run {
+                    guard let self, self.playlistGenIsGenerating else { return }
+                    self.playlistGenTask = nil
+                    self.playGeneratedPlaylist(sourceSong: sourceSong, songs: generatedQueue)
+                }
+            } catch is CancellationError {
+                await MainActor.run {
+                    self?.playlistGenTask = nil
+                }
+            } catch {
+                await MainActor.run {
+                    self?.handlePlaylistGenerationFailure(error, sourceTitle: sourceSong.title)
+                }
+            }
+        }
+    }
+
+    private func handlePlaylistGenerationFailure(_ error: Error, sourceTitle: String) {
+        playlistGenTask = nil
+        restorePlaylistGenState()
+        playlistGenIsGenerating = false
+        playlistGenGeneratingTitle = nil
+        playlistGenErrorMessage = "Unable to generate playlist"
+        playlistGenErrorDetails = "Playlist Gen for \"\(sourceTitle)\" failed: \(error.localizedDescription)"
+    }
+
+    private func restorePlaylistGenState() {
+        guard let state = playlistGenRestoreState else { return }
+        playlistGenRestoreState = nil
+
+        playlistGenQueue = state.playlistGenQueue
+        playlistGenSourceTitle = state.playlistGenSourceTitle
+        playlistGenSourceArtist = state.playlistGenSourceArtist
+
+        queue = state.queue
+        currentIndex = min(max(state.currentIndex, 0), max(state.queue.count - 1, 0))
+        currentSong = state.currentSong
+        currentTime = state.currentTime
+        duration = state.duration
+        queueFinished = false
+
+        guard state.currentSong != nil else {
+            pause()
+            return
+        }
+
+        seek(to: state.currentTime)
+        if state.wasPlaying {
+            play()
+            DeviceSyncManager.shared.broadcastLocalQueueAsShared(intendedIsPlaying: true)
+        } else {
+            pause()
+            DeviceSyncManager.shared.broadcastLocalQueueAsShared(intendedIsPlaying: false)
+        }
     }
 
     func playQueueShuffled(_ songs: [Song]) {
@@ -1222,6 +1410,11 @@ class AudioPlayer: NSObject, ObservableObject {
     }
 
     private func updatePrebufferedTrackCount() {
+        let activeCount = prebufferTasks.count
+        if prebufferingTrackCount != activeCount {
+            prebufferingTrackCount = activeCount
+        }
+
         guard !queue.isEmpty else {
             prebufferedTrackCount = 0
             prebufferedSongs = []
@@ -1288,6 +1481,8 @@ class AudioPlayer: NSObject, ObservableObject {
         print("🎵 Song ID: \(song.id)")
         print("🎵 Content type: \(song.contentType ?? "unknown")")
         print("🎵 Suffix: \(song.suffix ?? "unknown")")
+        playbackError = nil
+        currentBufferPercent = nil
 
         if currentSong?.id != song.id {
             playbackRetryTask?.cancel()
@@ -1341,6 +1536,14 @@ class AudioPlayer: NSObject, ObservableObject {
                     print("🎵 Streaming transcoded: \(streamURL.absoluteString)")
                 } else {
                     print("❌ Failed to get transcoded stream URL")
+                    publishPlaybackError(
+                        title: "Unable to build stream URL",
+                        song: song,
+                        url: nil,
+                        error: nil,
+                        technicalDetails: "WRhythm could not build a Navidrome stream URL for a transcoded request.",
+                        recoverySuggestion: "Check the saved server URL and credentials, then try playing the track again."
+                    )
                     return
                 }
             } else {
@@ -1351,6 +1554,14 @@ class AudioPlayer: NSObject, ObservableObject {
                     print("🎵 Streaming from: \(streamURL.absoluteString)")
                 } else {
                     print("❌ Failed to get stream URL")
+                    publishPlaybackError(
+                        title: "Unable to build stream URL",
+                        song: song,
+                        url: nil,
+                        error: nil,
+                        technicalDetails: "WRhythm could not build a Navidrome stream URL for the original stream.",
+                        recoverySuggestion: "Check the saved server URL and credentials, then try playing the track again."
+                    )
                     return
                 }
             }
@@ -1567,6 +1778,7 @@ class AudioPlayer: NSObject, ObservableObject {
                 print("🎵 Player item status changed: \(status.rawValue) (0=unknown, 1=ready, 2=failed)")
 
                 if status == .readyToPlay {
+                    self.playbackError = nil
                     let dur = item.duration
                     print("✅ Player ready to play")
                     print("📊 Duration details - seconds: \(dur.seconds), isNumeric: \(dur.isNumeric), isIndefinite: \(dur.isIndefinite), isValid: \(dur.isValid)")
@@ -1585,6 +1797,7 @@ class AudioPlayer: NSObject, ObservableObject {
                     self.finishStartingPlayback(item, requestedStartTime: requestedStartTime, autoplay: autoplay)
                 } else if status == .failed {
                     print("❌ Player item failed!")
+                    let failureURL = self.currentPlaybackURL
                     if let error = item.error {
                         print("❌ Error: \(error.localizedDescription)")
                         let nsError = error as NSError
@@ -1615,8 +1828,24 @@ class AudioPlayer: NSObject, ObservableObject {
                                 }
                             }
                         }
+                        self.publishPlaybackError(
+                            title: "Stream failed",
+                            song: self.currentSong,
+                            url: failureURL,
+                            error: error,
+                            technicalDetails: self.playbackFailureDetails(from: item, error: error),
+                            recoverySuggestion: self.playbackRecoverySuggestion(for: nsError)
+                        )
                     } else {
                         print("❌ Player failed but no error object available")
+                        self.publishPlaybackError(
+                            title: "Stream failed",
+                            song: self.currentSong,
+                            url: failureURL,
+                            error: nil,
+                            technicalDetails: self.playbackFailureDetails(from: item, error: nil),
+                            recoverySuggestion: "The player did not provide an error. Try again, or switch streaming quality to a lower bitrate."
+                        )
                     }
                     self.schedulePlaybackRetry(reason: "player item failure")
                 }
@@ -1644,6 +1873,14 @@ class AudioPlayer: NSObject, ObservableObject {
             }
             .store(in: &playerItemCancellables)
 
+        item.publisher(for: \.loadedTimeRanges)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self, self.player.currentItem === item else { return }
+                self.currentBufferPercent = self.bufferPercent(for: item)
+            }
+            .store(in: &playerItemCancellables)
+
         item.publisher(for: \.isPlaybackLikelyToKeepUp)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] likelyToKeepUp in
@@ -1655,8 +1892,89 @@ class AudioPlayer: NSObject, ObservableObject {
             .store(in: &playerItemCancellables)
     }
 
+    private func bufferPercent(for item: AVPlayerItem) -> Int? {
+        let durationSeconds = duration.isFinite && duration > 0 ? duration : item.duration.seconds
+        guard durationSeconds.isFinite, durationSeconds > 0 else { return nil }
+
+        let currentSeconds = max(0, player.currentTime().seconds.isFinite ? player.currentTime().seconds : currentTime)
+        let bufferedEnd = item.loadedTimeRanges
+            .map(\.timeRangeValue)
+            .map { $0.start.seconds + $0.duration.seconds }
+            .filter(\.isFinite)
+            .max() ?? currentSeconds
+        let percent = Int((min(max(bufferedEnd, currentSeconds), durationSeconds) / durationSeconds * 100).rounded())
+        return min(max(percent, 0), 100)
+    }
+
+    private func publishPlaybackError(
+        title: String,
+        song: Song?,
+        url: URL?,
+        error: Error?,
+        technicalDetails: String,
+        recoverySuggestion: String
+    ) {
+        let songTitle = song.map { "\"\($0.title)\"" } ?? "the current track"
+        let errorText = error.map { "\nError: \($0.localizedDescription)" } ?? ""
+        let urlText = url.map { "\nURL: \($0.absoluteString)" } ?? ""
+        playbackError = PlaybackErrorInfo(
+            title: title,
+            message: "Could not play \(songTitle).",
+            technicalDetails: technicalDetails + errorText + urlText,
+            recoverySuggestion: recoverySuggestion
+        )
+    }
+
+    private func playbackFailureDetails(from item: AVPlayerItem, error: Error?) -> String {
+        var lines: [String] = []
+        if let error {
+            let nsError = error as NSError
+            lines.append("AVFoundation domain: \(nsError.domain)")
+            lines.append("AVFoundation code: \(nsError.code)")
+            if let reason = nsError.userInfo[NSLocalizedFailureReasonErrorKey] as? String {
+                lines.append("Failure reason: \(reason)")
+            }
+            if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError {
+                lines.append("Underlying domain: \(underlying.domain)")
+                lines.append("Underlying code: \(underlying.code)")
+            }
+        } else {
+            lines.append("AVFoundation did not attach an error object to the failed player item.")
+        }
+
+        if let accessEvent = item.accessLog()?.events.last {
+            lines.append("Server: \(accessEvent.serverAddress ?? "unknown")")
+            lines.append("URI: \(accessEvent.uri ?? "unknown")")
+            lines.append("Server address changes: \(accessEvent.numberOfServerAddressChanges)")
+        }
+
+        if let errorEvent = item.errorLog()?.events.last {
+            lines.append("Stream error domain: \(errorEvent.errorDomain)")
+            lines.append("Stream status code: \(errorEvent.errorStatusCode)")
+            if let comment = errorEvent.errorComment {
+                lines.append("Stream comment: \(comment)")
+            }
+        }
+
+        return lines.joined(separator: "\n")
+    }
+
+    private func playbackRecoverySuggestion(for error: NSError) -> String {
+        switch error.code {
+        case -11850:
+            return "The stream stopped unexpectedly. Check network reachability to Navidrome, then try again."
+        case -11800:
+            return "AVFoundation reported an unknown playback failure. Try a lower streaming quality or transcoding to MP3."
+        case -1009:
+            return "The device appears offline. Reconnect to the network or Tailscale and retry."
+        default:
+            return "Try again. If this repeats, switch streaming quality to a lower bitrate or verify the server can stream this file."
+        }
+    }
+
     private func finishStartingPlayback(_ item: AVPlayerItem, requestedStartTime: TimeInterval, autoplay: Bool) {
         guard player.currentItem === item else { return }
+        currentBufferPercent = bufferPercent(for: item)
 
         let clampedStart = max(0, requestedStartTime)
         guard clampedStart > 0.25 else {
@@ -1763,6 +2081,14 @@ class AudioPlayer: NSObject, ObservableObject {
         let attempt = playbackRetryAttemptsBySongID[song.id, default: 0]
         guard attempt < maxPlaybackRetryAttempts else {
             print("🛑 Giving up playback retry for \(song.title) after \(attempt) attempts (\(reason))")
+            publishPlaybackError(
+                title: "Playback retry limit reached",
+                song: song,
+                url: currentPlaybackURL,
+                error: nil,
+                technicalDetails: "WRhythm retried playback \(attempt) times after \(reason) and stopped retrying.",
+                recoverySuggestion: "Try playing the track again. If this repeats, lower streaming quality or verify the source file can be streamed by Navidrome."
+            )
             player.pause()
             isBuffering = false
             isPlaying = false

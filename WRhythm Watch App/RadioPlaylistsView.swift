@@ -12,54 +12,114 @@ struct RadioPlaylistsView: View {
     @ObservedObject var player = AudioPlayer.shared
 
     var body: some View {
-        if player.playlistGenQueue.isEmpty && downloadManager.radioPlaylists.isEmpty {
+        Group {
+            if player.playlistGenIsGenerating {
+                playlistGenerationLoadingView
+            } else if player.playlistGenQueue.isEmpty && downloadManager.radioPlaylists.isEmpty {
 #if os(iOS)
-            WRhythmScreen {
-                PhoneDetailHeader(title: "Playlist Gen")
+                WRhythmScreen {
+                    PhoneDetailHeader(title: "Playlist Gen")
 
-                PhonePlaylistGenEmptyView()
-                    .padding(.top, WRhythmSpacing.lg)
-            }
-            .navigationTitle("")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar(.hidden, for: .navigationBar)
+                    PhonePlaylistGenEmptyView()
+                        .padding(.top, WRhythmSpacing.lg)
+                }
+                .navigationTitle("")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar(.hidden, for: .navigationBar)
 #else
-            List {
-                WRhythmEmptyState(
-                    systemImage: "music.note.list",
-                    title: "No Playlist Gen",
-                    message: "Start Playlist Gen from a song, album, artist, or playlist"
-                )
-                .listRowBackground(Color.clear)
-            }
-            .navigationTitle("Playlist Gen")
-            .wrhythmListSurface()
+                List {
+                    WRhythmEmptyState(
+                        systemImage: "music.note.list",
+                        title: "No Playlist Gen",
+                        message: "Start Playlist Gen from a song, album, artist, or playlist"
+                    )
+                    .listRowBackground(Color.clear)
+                }
+                .navigationTitle("Playlist Gen")
+                .wrhythmListSurface()
 #endif
-        } else {
-            List {
-                if !player.playlistGenQueue.isEmpty {
-                    Section("Current Playlist Gen") {
-                        CurrentPlaylistGenSummary()
+            } else {
+                List {
+                    if !player.playlistGenQueue.isEmpty {
+                        Section("Current Playlist Gen") {
+                            CurrentPlaylistGenSummary()
 
-                        ForEach(Array(player.playlistGenQueue.enumerated()), id: \.element.id) { index, song in
-                            TrackRowView(song: song, player: player, downloadManager: downloadManager, offlineMode: false) {
-                                player.playQueue(player.playlistGenQueue, startingAt: index, clearGeneratedPlaylist: false)
+                            ForEach(Array(player.playlistGenQueue.enumerated()), id: \.element.id) { index, song in
+                                TrackRowView(song: song, player: player, downloadManager: downloadManager, offlineMode: false) {
+                                    player.playQueue(player.playlistGenQueue, startingAt: index, clearGeneratedPlaylist: false)
+                                }
+                            }
+                        }
+                    }
+
+                    if !downloadManager.radioPlaylists.isEmpty {
+                        Section("Downloaded Playlist Gen") {
+                            ForEach(downloadManager.radioPlaylists) { radio in
+                                RadioPlaylistRow(radio: radio)
                             }
                         }
                     }
                 }
-
-                if !downloadManager.radioPlaylists.isEmpty {
-                    Section("Downloaded Playlist Gen") {
-                        ForEach(downloadManager.radioPlaylists) { radio in
-                            RadioPlaylistRow(radio: radio)
-                        }
-                    }
-                }
+                .navigationTitle("Playlist Gen")
+                .wrhythmListSurface()
             }
-            .navigationTitle("Playlist Gen")
-            .wrhythmListSurface()
         }
+        .safeAreaInset(edge: .bottom) {
+            if let message = player.playlistGenErrorMessage {
+                playlistGenerationErrorView(message: message, details: player.playlistGenErrorDetails)
+                    .padding(.horizontal, WRhythmSpacing.md)
+                    .padding(.bottom, WRhythmSpacing.sm)
+            }
+        }
+    }
+
+    private var playlistGenerationLoadingView: some View {
+        List {
+            WRhythmCard(padding: WRhythmSpacing.md) {
+                VStack(spacing: WRhythmSpacing.sm) {
+                    ProgressView()
+                        .controlSize(.large)
+                    Text("Generating Playlist")
+                        .font(.headline)
+                    if let title = player.playlistGenGeneratingTitle {
+                        Text(title)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Button("Cancel", role: .cancel) {
+                        player.cancelPlaylistGeneration()
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .listRowBackground(Color.clear)
+        }
+        .navigationTitle("Playlist Gen")
+        .wrhythmListSurface()
+    }
+
+    private func playlistGenerationErrorView(message: String, details: String?) -> some View {
+        VStack(spacing: 3) {
+            Text(message)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(WRhythmTheme.danger)
+            if let details {
+                Text(details)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            Button(action: player.dismissPlaylistGenError) {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss Playlist Gen error")
+        }
+        .padding(.vertical, 6)
+        .padding(.horizontal, 10)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous))
     }
 }
 

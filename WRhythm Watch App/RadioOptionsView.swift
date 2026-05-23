@@ -114,46 +114,9 @@ struct RadioOptionsView: View {
 
     private func playRadio() {
         isProcessing = true
-        Task {
-            do {
-                print("🎵 Starting radio for: \(sourceTitle) (count: \(selectedCount))")
-                var similarSongs = try await NavidromeAPI.shared.getSimilarSongsForSong(sourceSong, count: selectedCount)
-                print("📻 ID3 similar songs returned \(similarSongs.count) songs")
-
-                if similarSongs.isEmpty {
-                    print("📻 Falling back to random songs")
-                    similarSongs = try await NavidromeAPI.shared.getRandomSongs(size: selectedCount)
-                    print("📻 getRandomSongs returned \(similarSongs.count) songs")
-                }
-
-                await MainActor.run {
-                    isProcessing = false
-                    if similarSongs.isEmpty {
-                        print("⚠️ No songs found even with fallbacks, playing original song")
-                        AudioPlayer.shared.playSong(sourceSong)
-                    } else {
-                        // Filter out the source song if it appears in results
-                        let filteredSongs = similarSongs.filter { $0.id != sourceSong.id }
-
-                        // Build queue with source song first, then similar songs
-                        var queue = [sourceSong]
-                        queue.append(contentsOf: filteredSongs)
-
-                        print("✅ Radio queue ready: 1 source song + \(filteredSongs.count) similar songs = \(queue.count) total")
-                        AudioPlayer.shared.playGeneratedPlaylist(sourceSong: sourceSong, songs: queue)
-                        print("📻 Queue after playQueue: \(AudioPlayer.shared.queue.count) songs")
-                    }
-                    dismissAfterStateUpdates()
-                }
-            } catch {
-                print("❌ Failed to start radio: \(error)")
-                await MainActor.run {
-                    isProcessing = false
-                    AudioPlayer.shared.playSong(sourceSong)
-                    dismissAfterStateUpdates()
-                }
-            }
-        }
+        AudioPlayer.shared.startPlaylistGeneration(for: sourceSong, count: selectedCount)
+        isProcessing = false
+        dismissAfterStateUpdates()
     }
 
     private func downloadRadio() {

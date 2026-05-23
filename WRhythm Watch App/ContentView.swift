@@ -7,6 +7,12 @@
 
 import SwiftUI
 
+#if os(macOS)
+extension Notification.Name {
+    static let wrhythmShowPlaylistGen = Notification.Name("wrhythmShowPlaylistGen")
+}
+#endif
+
 struct ContentView: View {
     @ObservedObject var api = NavidromeAPI.shared
 #if os(macOS)
@@ -114,6 +120,11 @@ struct ContentView: View {
                 AudioPlayer.shared.persistPlaybackStateNow()
             }
         }
+#if os(macOS)
+        .onReceive(NotificationCenter.default.publisher(for: .wrhythmShowPlaylistGen)) { _ in
+            selectedMacDestination = .playlistGen
+        }
+#endif
     }
 }
 
@@ -404,6 +415,7 @@ private struct MacQueueRow: View {
 
 struct MacDetailContent: View {
     @Binding var selection: MacDestination?
+    @ObservedObject var player = AudioPlayer.shared
 
     var body: some View {
         NavigationStack {
@@ -412,6 +424,15 @@ struct MacDetailContent: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 MacMiniPlayerAttachment(selection: $selection)
+            }
+        }
+        .safeAreaInset(edge: .bottom) {
+            if let error = player.playbackError {
+                MacPlaybackErrorBanner(error: error) {
+                    player.dismissPlaybackError()
+                }
+                .padding(.horizontal, WRhythmSpacing.md)
+                .padding(.bottom, WRhythmSpacing.sm)
             }
         }
     }
@@ -439,6 +460,47 @@ struct MacDetailContent: View {
             DownloadsView()
         case .settings:
             SettingsView()
+        }
+    }
+}
+
+private struct MacPlaybackErrorBanner: View {
+    let error: PlaybackErrorInfo
+    let dismiss: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
+            HStack(alignment: .firstTextBaseline, spacing: WRhythmSpacing.xs) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(WRhythmTheme.danger)
+                Text(error.title)
+                    .font(.caption.weight(.semibold))
+                Spacer()
+                Button(action: dismiss) {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Dismiss playback error")
+            }
+
+            Text(error.message)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            Text(error.technicalDetails)
+                .font(.caption2.monospaced())
+                .foregroundStyle(.secondary)
+                .lineLimit(4)
+
+            Text(error.recoverySuggestion)
+                .font(.caption2)
+                .foregroundStyle(WRhythmTheme.accent)
+        }
+        .padding(WRhythmSpacing.sm)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous)
+                .stroke(WRhythmTheme.danger.opacity(0.35), lineWidth: 1)
         }
     }
 }
@@ -473,6 +535,7 @@ struct MacMiniPlayerBar: View {
                     subtitle: [song.artist, song.album].compactMap { $0 }.joined(separator: " • "),
                     isPlaying: isPlaying,
                     isBuffering: player.isBuffering,
+                    bufferStatusText: player.queueBufferStatusSummary,
                     bufferedSongs: player.prebufferedSongs,
                     queuePosition: player.queue.count > 1 ? "\(localLabel): \(player.currentIndex + 1) of \(player.queue.count)" : localLabel,
                     previous: player.previous,
@@ -499,6 +562,7 @@ struct MacMiniPlayerBar: View {
                     subtitle: [song.artist, song.album].compactMap { $0 }.joined(separator: " • "),
                     isPlaying: remote.isPlaying,
                     isBuffering: remote.isBuffering == true,
+                    bufferStatusText: nil,
                     bufferedSongs: bufferedSongs(for: remote),
                     queuePosition: remote.queue.count > 1 ? "\(remote.deviceName): \(remote.currentIndex + 1) of \(remote.queue.count)" : remote.deviceName,
                     previous: { deviceSyncManager.sendPrevious(targetDeviceID: remote.id) },
@@ -566,6 +630,7 @@ struct MacMiniPlayerBar: View {
         subtitle: String,
         isPlaying: Bool,
         isBuffering: Bool,
+        bufferStatusText: String?,
         bufferedSongs: [Song],
         queuePosition: String,
         previous: @escaping () -> Void,
@@ -586,7 +651,11 @@ struct MacMiniPlayerBar: View {
                         Text(title)
                             .font(.headline)
                             .lineLimit(1)
-                        Text(miniStatusText(queuePosition: queuePosition, isBuffering: isBuffering))
+                        Text(miniStatusText(
+                            queuePosition: queuePosition,
+                            isBuffering: isBuffering,
+                            bufferStatusText: bufferStatusText
+                        ))
                             .font(.caption2)
                             .foregroundColor(.secondary)
                             .lineLimit(1)
@@ -643,9 +712,11 @@ struct MacMiniPlayerBar: View {
         .padding(.vertical, WRhythmSpacing.xs)
     }
 
-    private func miniStatusText(queuePosition: String, isBuffering: Bool) -> String {
+    private func miniStatusText(queuePosition: String, isBuffering: Bool, bufferStatusText: String?) -> String {
         var parts = [queuePosition]
-        if isBuffering {
+        if let bufferStatusText {
+            parts.append(bufferStatusText)
+        } else if isBuffering {
             parts.append("Buffering")
         }
         return parts.joined(separator: " • ")

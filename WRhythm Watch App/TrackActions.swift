@@ -141,21 +141,9 @@ enum TrackActions {
     }
 
     static func startRadio(for song: Song) {
-        Task {
-            do {
-                let savedCount = UserDefaults.standard.integer(forKey: "radioDownloadCount")
-                let count = savedCount > 0 ? savedCount : 25
-
-                let similarSongs = try await NavidromeAPI.shared.getSimilarSongsForSong(song, count: count)
-
-                let filteredSongs = similarSongs.filter { $0.id != song.id }
-                await MainActor.run {
-                    AudioPlayer.shared.playGeneratedPlaylist(sourceSong: song, songs: [song] + filteredSongs)
-                }
-            } catch {
-                print("❌ Failed to start radio: \(error)")
-            }
-        }
+        let savedCount = UserDefaults.standard.integer(forKey: "radioDownloadCount")
+        let count = savedCount > 0 ? savedCount : 25
+        AudioPlayer.shared.startPlaylistGeneration(for: song, count: count)
     }
 
     private static func downloadedSongsForAlbum(_ albumId: String) -> [Song] {

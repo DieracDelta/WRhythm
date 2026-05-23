@@ -88,7 +88,11 @@ struct NowPlayingView: View {
                                 tint: localIsPlaying ? WRhythmTheme.accent : .secondary
                             )
                             if player.isBuffering {
-                                WRhythmStatusPill(text: "Buffering", systemImage: "hourglass", tint: WRhythmTheme.warning)
+                                WRhythmStatusPill(
+                                    text: player.currentBufferPercent.map { "Buffering \($0)%" } ?? "Buffering",
+                                    systemImage: "hourglass",
+                                    tint: WRhythmTheme.warning
+                                )
                             }
                             if !player.prebufferedSongs.isEmpty {
                                 BufferedTracksButton(count: player.prebufferedSongs.count) {
@@ -368,43 +372,7 @@ struct NowPlayingView: View {
     }
 
     private func startRadio(for song: Song) {
-        Task {
-            do {
-                print("🎵 Starting radio for: \(song.title)")
-                var similarSongs = try await NavidromeAPI.shared.getSimilarSongsForSong(song, count: 100)
-                print("📻 ID3 similar songs returned \(similarSongs.count) songs")
-
-                if similarSongs.isEmpty {
-                    print("📻 Falling back to random songs")
-                    similarSongs = try await NavidromeAPI.shared.getRandomSongs(size: 100)
-                    print("📻 getRandomSongs returned \(similarSongs.count) songs")
-                }
-
-                await MainActor.run {
-                    if similarSongs.isEmpty {
-                        print("⚠️ No songs found even with fallbacks, playing original song")
-                        player.playSong(song)
-                    } else {
-                        // Filter out the source song if it appears in results
-                        let filteredSongs = similarSongs.filter { $0.id != song.id }
-
-                        // Build queue with source song first, then similar songs
-                        var queue = [song]
-                        queue.append(contentsOf: filteredSongs)
-
-                        print("✅ Radio queue ready: 1 source song + \(filteredSongs.count) similar songs = \(queue.count) total")
-                        player.playGeneratedPlaylist(sourceSong: song, songs: queue)
-                        print("📻 Queue after playQueue: \(player.queue.count) songs")
-                    }
-                }
-            } catch {
-                print("❌ Failed to start radio: \(error)")
-                // Final fallback: just play the song
-                await MainActor.run {
-                    player.playSong(song)
-                }
-            }
-        }
+        player.startPlaylistGeneration(for: song, count: 100)
     }
 
     private func formatTime(_ seconds: TimeInterval) -> String {
