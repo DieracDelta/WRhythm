@@ -51,6 +51,7 @@ final class SerialFileWriteQueue: @unchecked Sendable {
 // MARK: - Audio Quality Settings
 
 enum AudioQuality: Int, CaseIterable, Codable, Sendable {
+    case original = 0
     case low = 64
     case medium = 128
     case high = 192
@@ -58,6 +59,7 @@ enum AudioQuality: Int, CaseIterable, Codable, Sendable {
 
     nonisolated var label: String {
         switch self {
+        case .original: return "Original"
         case .low: return "Low"
         case .medium: return "Medium"
         case .high: return "High"
@@ -67,15 +69,52 @@ enum AudioQuality: Int, CaseIterable, Codable, Sendable {
 
     nonisolated var description: String {
         switch self {
-        case .low: return "64 kbps - Smallest files"
-        case .medium: return "128 kbps - Balanced"
-        case .high: return "192 kbps - Better quality"
-        case .max: return "320 kbps - Best quality"
+        case .original: return "Original file - largest downloads"
+        case .low: return "64 kbps MP3 - Smallest files"
+        case .medium: return "128 kbps MP3 - Balanced"
+        case .high: return "192 kbps MP3 - Better quality"
+        case .max: return "320 kbps MP3 - Best lossy quality"
         }
     }
 
     nonisolated var shortDescription: String {
-        "\(rawValue) kbps"
+        switch self {
+        case .original: return "Original"
+        default: return "\(rawValue) kbps"
+        }
+    }
+
+    nonisolated var streamFormat: String? {
+        self == .original ? nil : "mp3"
+    }
+
+    nonisolated var maxBitRate: Int? {
+        self == .original ? nil : rawValue
+    }
+
+    nonisolated var downloadedBitRate: Int {
+        rawValue
+    }
+
+    nonisolated static func savedQuality(from storedValue: Int?) -> AudioQuality {
+        storedValue.flatMap { AudioQuality(rawValue: $0) } ?? .medium
+    }
+
+    nonisolated func localFileExtension(for song: Song) -> String {
+        if let streamFormat {
+            return streamFormat
+        }
+
+        guard let suffix = song.suffix?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased(),
+            !suffix.isEmpty,
+            suffix.allSatisfy({ $0.isLetter || $0.isNumber })
+        else {
+            return "audio"
+        }
+
+        return suffix
     }
 }
 
@@ -220,8 +259,8 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
 
     // Audio quality settings
     @Published var audioQuality: AudioQuality = {
-        let savedValue = UserDefaults.standard.integer(forKey: "audioQuality")
-        return AudioQuality(rawValue: savedValue) ?? .medium
+        let savedValue = UserDefaults.standard.object(forKey: "audioQuality") as? Int
+        return AudioQuality.savedQuality(from: savedValue)
     }()
 
     // Quality change state (for prompting user)
@@ -613,7 +652,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
         }
 
         print("🔄 Found incomplete migration from \(state.startedAt)")
-        print("   Target bitrate: \(state.targetBitRate)kbps")
+        print("   Target quality: \(AudioQuality(rawValue: state.targetBitRate)?.shortDescription ?? "\(state.targetBitRate)kbps")")
         print("   Songs to redownload: \(state.songsToRedownload.count)")
 
         // Resume the migration
@@ -1060,10 +1099,11 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
             let song = downloadQueue.removeFirst()
 
             // Use selected audio quality for transcoding
+            let quality = audioQuality
             guard let streamURL = NavidromeAPI.shared.getStreamURL(
                 id: song.id,
-                format: "mp3",
-                maxBitRate: audioQuality.rawValue
+                format: quality.streamFormat,
+                maxBitRate: quality.maxBitRate
             ) else {
                 print("❌ Failed to get stream URL for: \(song.title)")
                 continue
@@ -1186,8 +1226,8 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
             return
         }
 
-        // Always use .mp3 extension since we're transcoding to MP3
-        let filename = "\(song.id).mp3"
+        let quality = audioQuality
+        let filename = "\(song.id).\(quality.localFileExtension(for: song))"
         let destinationURL = downloadsDirectory.appendingPathComponent(filename)
 
         do {
@@ -1212,7 +1252,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
                 filePath: filename,
                 downloadedAt: Date(),
                 fileSize: fileSize,
-                downloadedBitRate: self.audioQuality.rawValue
+                downloadedBitRate: quality.downloadedBitRate
             )
 
             // Apply any pending progress updates before removing

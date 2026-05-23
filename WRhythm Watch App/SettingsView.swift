@@ -28,6 +28,10 @@ struct SettingsView: View {
         }
     }
 
+    private var downloadQualityOptions: [AudioQuality] {
+        api.transcodingSupported == false ? [.original] : AudioQuality.allCases
+    }
+
     var body: some View {
         settingsRoot
         .onChange(of: offlineMode) { _, newValue in
@@ -47,6 +51,11 @@ struct SettingsView: View {
             // Sync picker with actual quality (e.g., after migration resume)
             if selectedQuality != newValue {
                 selectedQuality = newValue
+            }
+        }
+        .onChange(of: api.transcodingSupported) { _, newValue in
+            if newValue == false && selectedQuality != .original {
+                selectedQuality = .original
             }
         }
         .onChange(of: downloadManager.showQualityChangePrompt) { _, showing in
@@ -284,12 +293,12 @@ struct SettingsView: View {
                 .font(WRhythmTypography.controlLabel)
 
             Picker("Quality", selection: $selectedQuality) {
-                ForEach(AudioQuality.allCases, id: \.self) { quality in
-                    Text("\(quality.label) (\(quality.rawValue)kbps)").tag(quality)
+                ForEach(downloadQualityOptions, id: \.self) { quality in
+                    Text("\(quality.label) (\(quality.shortDescription))").tag(quality)
                 }
             }
-            .disabled(api.transcodingSupported == false || downloadManager.isExecutingQualityChange)
-            .opacity((api.transcodingSupported == false || downloadManager.isExecutingQualityChange) ? 0.5 : 1.0)
+            .disabled(downloadManager.isExecutingQualityChange)
+            .opacity(downloadManager.isExecutingQualityChange ? 0.5 : 1.0)
             .onChange(of: selectedQuality) { _, newValue in
                 if newValue != downloadManager.audioQuality {
                     downloadManager.requestQualityChange(to: newValue)
@@ -304,7 +313,7 @@ struct SettingsView: View {
                 HStack(spacing: WRhythmSpacing.xxs) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundColor(WRhythmTheme.warning)
-                    Text("Server doesn't support transcoding")
+                    Text("Transcoding unavailable; original downloads only")
                 }
                 .font(WRhythmTypography.metadata)
                 .foregroundColor(WRhythmTheme.warning)
