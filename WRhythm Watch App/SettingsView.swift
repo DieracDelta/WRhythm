@@ -247,9 +247,7 @@ struct SettingsView: View {
     private var appearanceSettingsContent: some View {
         Toggle(isOn: $darkModeEnabled) {
             SettingsToggleLabel(
-                title: "Dark Mode",
-                subtitle: darkModeEnabled ? "Use dark appearance" : "Use light appearance",
-                systemImage: darkModeEnabled ? "moon.fill" : "sun.max"
+                title: "Dark Mode"
             )
         }
     }
@@ -361,8 +359,7 @@ struct SettingsView: View {
         Toggle(isOn: $offlineMode) {
             SettingsToggleLabel(
                 title: "Offline Mode",
-                subtitle: "Only show downloaded content",
-                systemImage: "wifi.slash"
+                subtitle: "Only show downloaded content"
             )
         }
     }
@@ -371,17 +368,15 @@ struct SettingsView: View {
     private var deviceSettingsContent: some View {
         Toggle(isOn: $deviceSyncManager.syncModeEnabled) {
             SettingsToggleLabel(
-                title: "Sync Mode",
-                subtitle: "Show and control playback on nearby WRhythm devices",
-                systemImage: "display.2"
+                title: "Sync nearby devices",
+                subtitle: "Show and control playback on nearby WRhythm devices"
             )
         }
 
         Toggle(isOn: $deviceSyncManager.credentialSyncEnabled) {
             SettingsToggleLabel(
                 title: "Sync Credentials",
-                subtitle: "Only fills empty logins on devices that also enabled this",
-                systemImage: "key"
+                subtitle: "Only fills empty logins on devices that also enabled this"
             )
         }
 
@@ -527,16 +522,13 @@ private struct SettingsInfoRow: View {
 
 private struct SettingsToggleLabel: View {
     let title: String
-    let subtitle: String
-    let systemImage: String
+    var subtitle: String?
 
     var body: some View {
-        HStack(spacing: WRhythmSpacing.sm) {
-            WRhythmIconBadge(systemImage: systemImage, tint: WRhythmTheme.accent, size: 32)
-
-            VStack(alignment: .leading, spacing: WRhythmSpacing.xxs) {
-                Text(title)
-                    .font(WRhythmTypography.controlLabel)
+        VStack(alignment: .leading, spacing: WRhythmSpacing.xxs) {
+            Text(title)
+                .font(WRhythmTypography.controlLabel)
+            if let subtitle {
                 Text(subtitle)
                     .font(WRhythmTypography.metadata)
                     .foregroundColor(.secondary)
