@@ -194,78 +194,81 @@ struct MacSidebar: View {
     @ObservedObject var deviceSyncManager = DeviceSyncManager.shared
 
     var body: some View {
-            List(selection: $selection) {
-                Section("Library") {
-                    ForEach(MacDestination.allCases, id: \.self) { destination in
-                        NavigationLink(value: destination) {
-                            Label(destination.title, systemImage: destination.systemImage)
-                        }
-                    }
-                }
-
-                Section(localQueueSectionTitle) {
-                    if displayedQueue.isEmpty {
-                        Text("No queued songs")
-                            .foregroundColor(.secondary)
-                    } else {
-                        ForEach(queueItems(displayedQueue)) { item in
-                            Button(action: {
-                                selection = .nowPlaying
-                                if deviceSyncManager.sharedSession != nil {
-                                    deviceSyncManager.playSharedQueueItem(at: item.index)
-                                } else {
-                                    player.playQueue(player.queue, startingAt: item.index)
-                                }
-                            }) {
-                                MacQueueRow(
-                                    song: item.song,
-                                    isCurrent: displayedCurrentIndex == item.index,
-                                    isPlaying: displayedQueueIsPlaying
-                                )
-                            }
-                            .buttonStyle(.plain)
-                            .wrhythmQueueTrackActions(
-                                song: item.song,
-                                canRemoveFromQueue: canRemoveDisplayedQueueItem(at: item.index),
-                                removeFromQueue: {
-                                    removeDisplayedQueueItem(at: item.index)
-                                },
-                                clearQueue: {
-                                    clearDisplayedQueue()
-                                }
-                            )
-                        }
-                    }
-                }
-
-                if deviceSyncManager.syncModeEnabled,
-                   let remote = activeRemotePlayback,
-                   !remoteQueueMatchesDisplayed {
-                    Section("\(remote.deviceName) Queue") {
-                        if remoteQueue.isEmpty {
-                            Text("No queued songs")
-                                .foregroundColor(.secondary)
-                        } else {
-                            ForEach(queueItems(remoteQueue)) { item in
-                                Button(action: {
-                                    selection = .nowPlaying
-                                    deviceSyncManager.playRemoteQueueItem(remote, at: item.index)
-                                }) {
-                                    MacQueueRow(
-                                        song: item.song,
-                                        isCurrent: remote.currentIndex == item.index,
-                                        isPlaying: remote.isPlaying
-                                    )
-                                }
-                                .buttonStyle(.plain)
-                                .wrhythmTrackActions(song: item.song)
-                            }
-                        }
+        List(selection: $selection) {
+            Section("Library") {
+                ForEach(MacDestination.allCases, id: \.self) { destination in
+                    NavigationLink(value: destination) {
+                        Label(destination.title, systemImage: destination.systemImage)
                     }
                 }
             }
-            .navigationTitle("WRhythm")
-            .wrhythmListSurface()
+            .listRowBackground(Color.clear)
+
+            Section(localQueueSectionTitle) {
+                if displayedQueue.isEmpty {
+                    Text("No queued songs")
+                        .foregroundColor(.secondary)
+                } else {
+                    ForEach(queueItems(displayedQueue)) { item in
+                        Button(action: {
+                            selection = .nowPlaying
+                            if deviceSyncManager.sharedSession != nil {
+                                deviceSyncManager.playSharedQueueItem(at: item.index)
+                            } else {
+                                player.playQueue(player.queue, startingAt: item.index)
+                            }
+                        }) {
+                            MacQueueRow(
+                                song: item.song,
+                                isCurrent: displayedCurrentIndex == item.index,
+                                isPlaying: displayedQueueIsPlaying
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .wrhythmQueueTrackActions(
+                            song: item.song,
+                            canRemoveFromQueue: canRemoveDisplayedQueueItem(at: item.index),
+                            removeFromQueue: {
+                                removeDisplayedQueueItem(at: item.index)
+                            },
+                            clearQueue: {
+                                clearDisplayedQueue()
+                            }
+                        )
+                    }
+                }
+            }
+            .listRowBackground(Color.clear)
+
+            if deviceSyncManager.syncModeEnabled,
+               let remote = activeRemotePlayback,
+               !remoteQueueMatchesDisplayed {
+                Section("\(remote.deviceName) Queue") {
+                    if remoteQueue.isEmpty {
+                        Text("No queued songs")
+                            .foregroundColor(.secondary)
+                    } else {
+                        ForEach(queueItems(remoteQueue)) { item in
+                            Button(action: {
+                                selection = .nowPlaying
+                                deviceSyncManager.playRemoteQueueItem(remote, at: item.index)
+                            }) {
+                                MacQueueRow(
+                                    song: item.song,
+                                    isCurrent: remote.currentIndex == item.index,
+                                    isPlaying: remote.isPlaying
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .wrhythmTrackActions(song: item.song)
+                        }
+                    }
+                }
+                .listRowBackground(Color.clear)
+            }
+        }
+        .navigationTitle("WRhythm")
+        .macTransparentSidebarSurface()
     }
 
     private var activeRemotePlayback: PlaybackSnapshot? {
@@ -353,6 +356,14 @@ struct MacSidebar: View {
         } else {
             player.clearQueueKeepingCurrent()
         }
+    }
+}
+
+private extension View {
+    func macTransparentSidebarSurface() -> some View {
+        self
+            .scrollContentBackground(.hidden)
+            .background(Color.clear)
     }
 }
 
