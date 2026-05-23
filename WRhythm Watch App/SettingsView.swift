@@ -28,212 +28,7 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        List {
-            Section {
-                if let serverURL = UserDefaults.standard.string(forKey: "navidrome_url") {
-                    SettingsInfoRow(title: "Server", value: serverURL, systemImage: "server.rack")
-                }
-
-                if let username = UserDefaults.standard.string(forKey: "navidrome_username") {
-                    SettingsInfoRow(title: "Username", value: username, systemImage: "person.crop.circle")
-                }
-
-                SettingsInfoRow(
-                    title: "Version",
-                    value: "\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"))",
-                    systemImage: "app.badge"
-                )
-            }
-
-            Section(header: Text("Appearance")) {
-                Toggle(isOn: $darkModeEnabled) {
-                    SettingsToggleLabel(
-                        title: "Dark Mode",
-                        subtitle: darkModeEnabled ? "Use dark appearance" : "Use light appearance",
-                        systemImage: darkModeEnabled ? "moon.fill" : "sun.max"
-                    )
-                }
-            }
-
-            Section(header: Text("Downloads")) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Concurrent Downloads")
-                        .font(.caption)
-                    HStack {
-                        Text(downloadManager.maxConcurrentDownloads == 999 ? "∞" : "\(downloadManager.maxConcurrentDownloads)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .monospacedDigit()
-                            .frame(width: 30, alignment: .leading)
-                        Slider(
-                            value: Binding(
-                                get: {
-                                    downloadManager.maxConcurrentDownloads == 999 ? 17 : Double(downloadManager.maxConcurrentDownloads)
-                                },
-                                set: {
-                                    downloadManager.maxConcurrentDownloads = $0 >= 17 ? 999 : Int($0)
-                                }
-                            ),
-                            in: 1...17,
-                            step: 1
-                        )
-                    }
-                    Text(downloadManager.maxConcurrentDownloads == 999
-                         ? "Unlimited - Required for fast background downloads"
-                         : "Limited concurrent downloads (slower in background)")
-                        .font(.caption2)
-                        .foregroundColor(downloadManager.maxConcurrentDownloads == 999 ? WRhythmTheme.success : .secondary)
-                }
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Default Playlist Gen Size")
-                        .font(.caption)
-                    HStack {
-                        Text("\(radioDownloadCount)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .monospacedDigit()
-                            .frame(width: 30, alignment: .leading)
-                        Slider(
-                            value: Binding(
-                                get: { Double(radioDownloadCount) },
-                                set: { radioDownloadCount = Int($0) }
-                            ),
-                            in: 10...500,
-                            step: 10
-                        )
-                    }
-                    Text("Default number of songs for Playlist Gen")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-            }
-
-            Section(header: Text("Audio Quality")) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Streaming Quality")
-                        .font(.caption)
-
-                    Picker("Streaming", selection: streamingQuality) {
-                        ForEach(StreamingQuality.allCases, id: \.self) { quality in
-                            Text(quality.label).tag(quality)
-                        }
-                    }
-
-                    Text(streamingQuality.wrappedValue.description)
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Download Quality")
-                        .font(.caption)
-
-                    Picker("Quality", selection: $selectedQuality) {
-                        ForEach(AudioQuality.allCases, id: \.self) { quality in
-                            Text("\(quality.label) (\(quality.rawValue)kbps)").tag(quality)
-                        }
-                    }
-                    .disabled(api.transcodingSupported == false || downloadManager.isExecutingQualityChange)
-                    .opacity((api.transcodingSupported == false || downloadManager.isExecutingQualityChange) ? 0.5 : 1.0)
-                    .onChange(of: selectedQuality) { _, newValue in
-                        // Only trigger if actually different from current setting
-                        if newValue != downloadManager.audioQuality {
-                            downloadManager.requestQualityChange(to: newValue)
-                        }
-                    }
-
-                    // Show current quality description
-                    Text(selectedQuality.description)
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-
-                    // Transcoding status
-                    if api.transcodingSupported == false {
-                        HStack(spacing: 4) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundColor(WRhythmTheme.warning)
-                                .font(.caption2)
-                            Text("Server doesn't support transcoding")
-                                .font(.caption2)
-                                .foregroundColor(WRhythmTheme.warning)
-                        }
-                    } else if downloadManager.isExecutingQualityChange {
-                        HStack(spacing: 4) {
-                            ProgressView()
-                                .scaleEffect(0.6)
-                            Text("Re-downloading songs...")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                }
-
-                // Recheck transcoding support button
-                Button(action: {
-                    Task {
-                        await api.checkTranscodingSupport()
-                    }
-                }) {
-                    HStack {
-                        if api.isCheckingTranscoding {
-                            ProgressView()
-                                .scaleEffect(0.7)
-                        } else {
-                            Image(systemName: "arrow.clockwise")
-                        }
-                        Text("Check Server Capabilities")
-                            .font(.caption)
-                    }
-                }
-                .disabled(api.isCheckingTranscoding)
-            }
-
-            Section(header: Text("Offline")) {
-                Toggle(isOn: $offlineMode) {
-                    SettingsToggleLabel(
-                        title: "Offline Mode",
-                        subtitle: "Only show downloaded content",
-                        systemImage: "wifi.slash"
-                    )
-                }
-            }
-
-            Section(header: Text("Devices")) {
-                Toggle(isOn: $deviceSyncManager.syncModeEnabled) {
-                    SettingsToggleLabel(
-                        title: "Sync Mode",
-                        subtitle: "Show and control playback on nearby WRhythm devices",
-                        systemImage: "display.2"
-                    )
-                }
-
-                Toggle(isOn: $deviceSyncManager.credentialSyncEnabled) {
-                    SettingsToggleLabel(
-                        title: "Sync Credentials",
-                        subtitle: "Only fills empty logins on devices that also enabled this",
-                        systemImage: "key"
-                    )
-                }
-
-                SettingsInfoRow(
-                    title: "Connected",
-                    value: deviceSyncManager.connectedDeviceNames.isEmpty ? "No nearby devices" : deviceSyncManager.connectedDeviceNames.joined(separator: ", "),
-                    systemImage: "point.3.connected.trianglepath.dotted"
-                )
-            }
-
-            Section {
-                Button(role: .destructive, action: {
-                    presentedSheet = .logout
-                    logoutConfirmationText = ""
-                }) {
-                    Text("Logout")
-                }
-            }
-        }
-        .navigationTitle("Settings")
-        .wrhythmListSurface()
+        settingsRoot
         .onChange(of: offlineMode) { _, newValue in
             if newValue {
                 deviceSyncManager.syncModeEnabled = false
@@ -348,12 +143,363 @@ struct SettingsView: View {
             }
         }
     }
+
+    @ViewBuilder
+    private var settingsRoot: some View {
+#if os(macOS)
+        WRhythmScreen(horizontalPadding: WRhythmSpacing.xl, verticalPadding: WRhythmSpacing.xl) {
+            WRhythmFeatureHeader(
+                title: "Settings",
+                subtitle: "Playback, downloads, and device sync",
+                systemImage: "gearshape.fill"
+            )
+
+            SettingsPanel(title: "Account", systemImage: "person.crop.circle") {
+                accountSettingsContent
+            }
+
+            SettingsPanel(title: "Appearance", systemImage: darkModeEnabled ? "moon.fill" : "sun.max") {
+                appearanceSettingsContent
+            }
+
+            SettingsPanel(title: "Playback", systemImage: "play.circle.fill") {
+                playbackSettingsContent
+            }
+
+            SettingsPanel(title: "Downloads", systemImage: "arrow.down.circle.fill") {
+                downloadsSettingsContent
+            }
+
+            SettingsPanel(title: "Playlist Gen", systemImage: "wand.and.stars") {
+                playlistGenSettingsContent
+            }
+
+            SettingsPanel(title: "Offline", systemImage: "wifi.slash") {
+                offlineSettingsContent
+            }
+
+            SettingsPanel(title: "Devices", systemImage: "display.2") {
+                deviceSettingsContent
+            }
+
+            SettingsPanel(title: "Account Actions", systemImage: "rectangle.portrait.and.arrow.right", tint: WRhythmTheme.danger) {
+                logoutSettingsContent
+            }
+        }
+        .navigationTitle("Settings")
+#else
+        List {
+            Section {
+                accountSettingsContent
+            }
+
+            Section(header: Text("Appearance")) {
+                appearanceSettingsContent
+            }
+
+            Section(header: Text("Playback")) {
+                playbackSettingsContent
+            }
+
+            Section(header: Text("Downloads")) {
+                downloadsSettingsContent
+            }
+
+            Section(header: Text("Playlist Gen")) {
+                playlistGenSettingsContent
+            }
+
+            Section(header: Text("Offline")) {
+                offlineSettingsContent
+            }
+
+            Section(header: Text("Devices")) {
+                deviceSettingsContent
+            }
+
+            Section {
+                logoutSettingsContent
+            }
+        }
+        .navigationTitle("Settings")
+        .wrhythmListSurface()
+#endif
+    }
+
+    @ViewBuilder
+    private var accountSettingsContent: some View {
+        if let serverURL = UserDefaults.standard.string(forKey: "navidrome_url") {
+            SettingsInfoRow(title: "Server", value: serverURL, systemImage: "server.rack")
+        }
+
+        if let username = UserDefaults.standard.string(forKey: "navidrome_username") {
+            SettingsInfoRow(title: "Username", value: username, systemImage: "person.crop.circle")
+        }
+
+        SettingsInfoRow(
+            title: "Version",
+            value: "\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"))",
+            systemImage: "app.badge"
+        )
+    }
+
+    @ViewBuilder
+    private var appearanceSettingsContent: some View {
+        Toggle(isOn: $darkModeEnabled) {
+            SettingsToggleLabel(
+                title: "Dark Mode",
+                subtitle: darkModeEnabled ? "Use dark appearance" : "Use light appearance",
+                systemImage: darkModeEnabled ? "moon.fill" : "sun.max"
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var playbackSettingsContent: some View {
+        VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
+            Text("Streaming Quality")
+                .font(WRhythmTypography.controlLabel)
+
+            Picker("Streaming", selection: streamingQuality) {
+                ForEach(StreamingQuality.allCases, id: \.self) { quality in
+                    Text(quality.label).tag(quality)
+                }
+            }
+
+            Text(streamingQuality.wrappedValue.description)
+                .font(WRhythmTypography.metadata)
+                .foregroundColor(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private var downloadsSettingsContent: some View {
+        VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
+            Text("Download Quality")
+                .font(WRhythmTypography.controlLabel)
+
+            Picker("Quality", selection: $selectedQuality) {
+                ForEach(AudioQuality.allCases, id: \.self) { quality in
+                    Text("\(quality.label) (\(quality.rawValue)kbps)").tag(quality)
+                }
+            }
+            .disabled(api.transcodingSupported == false || downloadManager.isExecutingQualityChange)
+            .opacity((api.transcodingSupported == false || downloadManager.isExecutingQualityChange) ? 0.5 : 1.0)
+            .onChange(of: selectedQuality) { _, newValue in
+                if newValue != downloadManager.audioQuality {
+                    downloadManager.requestQualityChange(to: newValue)
+                }
+            }
+
+            Text(selectedQuality.description)
+                .font(WRhythmTypography.metadata)
+                .foregroundColor(.secondary)
+
+            if api.transcodingSupported == false {
+                HStack(spacing: WRhythmSpacing.xxs) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(WRhythmTheme.warning)
+                    Text("Server doesn't support transcoding")
+                }
+                .font(WRhythmTypography.metadata)
+                .foregroundColor(WRhythmTheme.warning)
+            } else if downloadManager.isExecutingQualityChange {
+                HStack(spacing: WRhythmSpacing.xxs) {
+                    SettingsInlineProgressView()
+                    Text("Re-downloading songs...")
+                        .foregroundColor(.secondary)
+                }
+                .font(WRhythmTypography.metadata)
+            }
+        }
+
+        SettingsSliderRow(
+            title: "Concurrent Downloads",
+            valueText: downloadManager.maxConcurrentDownloads == 999 ? "∞" : "\(downloadManager.maxConcurrentDownloads)",
+            detailText: downloadManager.maxConcurrentDownloads == 999
+                ? "Unlimited - required for fast background downloads"
+                : "Limited concurrent downloads",
+            detailColor: downloadManager.maxConcurrentDownloads == 999 ? WRhythmTheme.success : .secondary,
+            value: concurrentDownloadSliderValue,
+            range: 1...17,
+            step: 1
+        )
+
+        Button(action: {
+            Task {
+                await api.checkTranscodingSupport()
+            }
+        }) {
+            HStack(spacing: WRhythmSpacing.xs) {
+                if api.isCheckingTranscoding {
+                    SettingsInlineProgressView()
+                } else {
+                    Image(systemName: "arrow.clockwise")
+                }
+                Text("Check Server Capabilities")
+                    .font(WRhythmTypography.controlLabel)
+            }
+        }
+        .disabled(api.isCheckingTranscoding)
+    }
+
+    @ViewBuilder
+    private var playlistGenSettingsContent: some View {
+        SettingsSliderRow(
+            title: "Default Playlist Gen Size",
+            valueText: "\(radioDownloadCount)",
+            detailText: "Default number of songs for generated playlists",
+            detailColor: .secondary,
+            value: playlistGenCountSliderValue,
+            range: 10...500,
+            step: 10
+        )
+    }
+
+    @ViewBuilder
+    private var offlineSettingsContent: some View {
+        Toggle(isOn: $offlineMode) {
+            SettingsToggleLabel(
+                title: "Offline Mode",
+                subtitle: "Only show downloaded content",
+                systemImage: "wifi.slash"
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var deviceSettingsContent: some View {
+        Toggle(isOn: $deviceSyncManager.syncModeEnabled) {
+            SettingsToggleLabel(
+                title: "Sync Mode",
+                subtitle: "Show and control playback on nearby WRhythm devices",
+                systemImage: "display.2"
+            )
+        }
+
+        Toggle(isOn: $deviceSyncManager.credentialSyncEnabled) {
+            SettingsToggleLabel(
+                title: "Sync Credentials",
+                subtitle: "Only fills empty logins on devices that also enabled this",
+                systemImage: "key"
+            )
+        }
+
+        SettingsInfoRow(
+            title: "Connected",
+            value: deviceSyncManager.connectedDeviceNames.isEmpty ? "No nearby devices" : deviceSyncManager.connectedDeviceNames.joined(separator: ", "),
+            systemImage: "point.3.connected.trianglepath.dotted"
+        )
+    }
+
+    @ViewBuilder
+    private var logoutSettingsContent: some View {
+        Button(role: .destructive, action: {
+            presentedSheet = .logout
+            logoutConfirmationText = ""
+        }) {
+            Text("Logout")
+        }
+    }
+
+    private var concurrentDownloadSliderValue: Binding<Double> {
+        Binding {
+            downloadManager.maxConcurrentDownloads == 999 ? 17 : Double(downloadManager.maxConcurrentDownloads)
+        } set: { newValue in
+            downloadManager.maxConcurrentDownloads = newValue >= 17 ? 999 : Int(newValue)
+        }
+    }
+
+    private var playlistGenCountSliderValue: Binding<Double> {
+        Binding {
+            Double(radioDownloadCount)
+        } set: { newValue in
+            radioDownloadCount = Int(newValue)
+        }
+    }
 }
 
 private enum SettingsSheet: String, Identifiable {
     case logout
 
     var id: String { rawValue }
+}
+
+private struct SettingsPanel<Content: View>: View {
+    let title: String
+    let systemImage: String
+    var tint: Color = WRhythmTheme.accent
+    private let content: Content
+
+    init(
+        title: String,
+        systemImage: String,
+        tint: Color = WRhythmTheme.accent,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.title = title
+        self.systemImage = systemImage
+        self.tint = tint
+        self.content = content()
+    }
+
+    var body: some View {
+        WRhythmCard(style: .glass) {
+            VStack(alignment: .leading, spacing: WRhythmSpacing.md) {
+                HStack(spacing: WRhythmSpacing.sm) {
+                    WRhythmIconBadge(systemImage: systemImage, tint: tint, size: 34)
+
+                    Text(title)
+                        .font(WRhythmTypography.featureTitle)
+                }
+
+                VStack(alignment: .leading, spacing: WRhythmSpacing.md) {
+                    content
+                }
+            }
+        }
+    }
+}
+
+private struct SettingsSliderRow: View {
+    let title: String
+    let valueText: String
+    let detailText: String
+    let detailColor: Color
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let step: Double
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(title)
+                    .font(WRhythmTypography.controlLabel)
+
+                Spacer(minLength: WRhythmSpacing.sm)
+
+                Text(valueText)
+                    .font(WRhythmTypography.controlLabel)
+                    .foregroundColor(.secondary)
+                    .monospacedDigit()
+            }
+
+            Slider(value: $value, in: range, step: step)
+                .tint(WRhythmTheme.accent)
+
+            Text(detailText)
+                .font(WRhythmTypography.metadata)
+                .foregroundColor(detailColor)
+        }
+    }
+}
+
+private struct SettingsInlineProgressView: View {
+    var body: some View {
+        ProgressView()
+            .controlSize(.small)
+            .frame(width: 16, height: 16)
+    }
 }
 
 private struct SettingsInfoRow: View {
