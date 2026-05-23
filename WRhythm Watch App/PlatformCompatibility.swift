@@ -223,11 +223,11 @@ struct WRhythmScreen<Content: View>: View {
                 .frame(maxWidth: .infinity)
                 .frame(minHeight: max(0, proxy.size.height - WRhythmVisual.bottomNavigationClearance), alignment: .top)
                 .padding(.horizontal, horizontalPadding)
-                .padding(.top, topNavigationClearance)
+                .padding(.top, topNavigationClearance - WRhythmSpacing.sm)
                 .padding(.bottom, WRhythmVisual.bottomNavigationClearance)
             }
             .scrollIndicators(.hidden)
-            .safeAreaPadding(.top, WRhythmSpacing.xxs)
+            .safeAreaPadding(.top, 0)
             .ignoresSafeArea(.container, edges: .top)
         }
         .wrhythmPageBackground(coverArtId: coverArtId)

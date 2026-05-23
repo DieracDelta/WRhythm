@@ -442,7 +442,7 @@ private struct PhoneNowPlayingView: View {
                 .padding(.bottom, WRhythmVisual.bottomNavigationClearance)
             }
             .scrollIndicators(.hidden)
-            .safeAreaPadding(.top, WRhythmSpacing.xxs)
+            .safeAreaPadding(.top, -WRhythmSpacing.sm)
             .ignoresSafeArea(.container, edges: .top)
             .wrhythmPageBackground(coverArtId: primaryCoverArtId)
         }
