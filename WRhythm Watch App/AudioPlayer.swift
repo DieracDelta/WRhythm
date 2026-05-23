@@ -100,9 +100,14 @@ struct PrebufferSchedulingPolicy: Sendable {
 
 struct PrebufferRetryPolicy: Sendable {
     static let maxRetryDelay: TimeInterval = 30
+    static let maxRetryAttempts = 6
 
     static func retryDelay(forAttempt attempt: Int) -> TimeInterval {
         min(pow(2.0, Double(max(0, attempt))), maxRetryDelay)
+    }
+
+    static func shouldRetry(afterAttempt attempt: Int) -> Bool {
+        attempt < maxRetryAttempts
     }
 }
 
@@ -331,6 +336,7 @@ class AudioPlayer: NSObject, ObservableObject {
     private let maxPlaybackRetryBackoff: TimeInterval = 30
     private var prebufferRetryAttemptsByKey: [String: Int] = [:]
     private var prebufferRetryTasksByKey: [String: Task<Void, Never>] = [:]
+    private var exhaustedPrebufferRetryKeys: Set<String> = []
 #if os(iOS) || os(watchOS) || os(macOS)
     private var nowPlayingArtworkTask: Task<Void, Never>?
     private var nowPlayingArtworkSongID: String?
@@ -1392,7 +1398,7 @@ class AudioPlayer: NSObject, ObservableObject {
             candidateKeys: candidateKeys,
             activeKeys: Set(prebufferTasks.keys),
             preparedKeys: Set(preparedPrebuffers.keys),
-            failedKeys: Set(prebufferRetryTasksByKey.keys),
+            failedKeys: Set(prebufferRetryTasksByKey.keys).union(exhaustedPrebufferRetryKeys),
             maxConcurrentTasks: maxConcurrentPrebuffers
         )
 
@@ -1546,6 +1552,16 @@ class AudioPlayer: NSObject, ObservableObject {
         guard desiredPrebufferKeys().contains(key) else { return }
 
         let attempt = prebufferRetryAttemptsByKey[key, default: 0]
+        guard PrebufferRetryPolicy.shouldRetry(afterAttempt: attempt) else {
+            exhaustedPrebufferRetryKeys.insert(key)
+            print("⚠️ Giving up prebuffer for \(song.title) after \(attempt) attempts")
+            updatePrebufferedTrackCount()
+            Task { @MainActor [weak self] in
+                self?.scheduleQueuePrebuffer()
+            }
+            return
+        }
+
         let delay = PrebufferRetryPolicy.retryDelay(forAttempt: attempt)
         prebufferRetryAttemptsByKey[key] = attempt + 1
         print("⏳ Retrying prebuffer for \(song.title) in \(Int(delay))s (attempt \(attempt + 1))")
@@ -1565,12 +1581,14 @@ class AudioPlayer: NSObject, ObservableObject {
     private func clearPrebufferRetryState(for key: String) {
         prebufferRetryAttemptsByKey.removeValue(forKey: key)
         prebufferRetryTasksByKey.removeValue(forKey: key)?.cancel()
+        exhaustedPrebufferRetryKeys.remove(key)
     }
 
     private func clearPrebufferRetryState() {
         prebufferRetryTasksByKey.values.forEach { $0.cancel() }
         prebufferRetryTasksByKey.removeAll()
         prebufferRetryAttemptsByKey.removeAll()
+        exhaustedPrebufferRetryKeys.removeAll()
     }
 
     private func prunePrebufferRetryState(keeping desiredKeys: Set<String>) {
@@ -1580,6 +1598,7 @@ class AudioPlayer: NSObject, ObservableObject {
         for key in Array(prebufferRetryTasksByKey.keys) where !desiredKeys.contains(key) {
             prebufferRetryTasksByKey.removeValue(forKey: key)?.cancel()
         }
+        exhaustedPrebufferRetryKeys = exhaustedPrebufferRetryKeys.intersection(desiredKeys)
     }
 
     private func updatePrebufferedTrackCount() {

@@ -1645,6 +1645,24 @@ struct PlaybackSyncPolicyTests {
         #expect(PrebufferRetryPolicy.retryDelay(forAttempt: 20) == 30)
     }
 
+    @Test func prebufferRetryStopsAfterBoundedAttempts() {
+        #expect(PrebufferRetryPolicy.shouldRetry(afterAttempt: 0))
+        #expect(PrebufferRetryPolicy.shouldRetry(afterAttempt: PrebufferRetryPolicy.maxRetryAttempts - 1))
+        #expect(PrebufferRetryPolicy.shouldRetry(afterAttempt: PrebufferRetryPolicy.maxRetryAttempts) == false)
+    }
+
+    @Test func prebufferSchedulingSkipsRetryExhaustedKeys() {
+        let scheduled = PrebufferSchedulingPolicy.keysToSchedule(
+            candidateKeys: ["a", "b", "c"],
+            activeKeys: [],
+            preparedKeys: [],
+            failedKeys: ["a"],
+            maxConcurrentTasks: 2
+        )
+
+        #expect(scheduled == ["b", "c"])
+    }
+
     @Test func prebufferSchedulingCountsOnlyPreparedTracksAsReady() {
         #expect(PrebufferSchedulingPolicy.readyCount(
             upcomingKeys: ["a", "b", "c"],
