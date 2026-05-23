@@ -44,11 +44,11 @@ struct PhoneSearchPromptView: View {
                 }
                 .frame(minHeight: usableHeight(for: proxy.size), alignment: .top)
                 .padding(.horizontal, WRhythmSpacing.md)
-                .padding(.top, 0)
+                .padding(.top, WRhythmSpacing.sm)
                 .padding(.bottom, WRhythmVisual.bottomNavigationClearance)
             }
             .scrollIndicators(.hidden)
-            .safeAreaPadding(.top, -WRhythmSpacing.sm)
+            .safeAreaPadding(.top, WRhythmSpacing.xs)
             .ignoresSafeArea(.container, edges: .top)
             .wrhythmPageBackground()
         }
