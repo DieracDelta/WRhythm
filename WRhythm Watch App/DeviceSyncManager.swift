@@ -900,6 +900,34 @@ struct SyncStateRefreshPublicationPolicy: Sendable {
     }
 }
 
+struct ConnectivityLossPlaybackPolicy: Sendable {
+    static func sessionAfterDisconnectedOutput(
+        disconnectedDeviceID: String,
+        currentSession: PlaybackSession?,
+        localDeviceID: String,
+        disconnectedAt: Date = Date()
+    ) -> PlaybackSession? {
+        guard let currentSession,
+              currentSession.outputDeviceID == disconnectedDeviceID,
+              currentSession.isPlaying else {
+            return nil
+        }
+
+        return PlaybackSession(
+            id: currentSession.id,
+            revision: currentSession.revision,
+            queue: currentSession.queue,
+            currentIndex: currentSession.currentIndex,
+            position: currentSession.estimatedPosition(at: disconnectedAt),
+            isPlaying: false,
+            volume: currentSession.volume,
+            outputDeviceID: currentSession.outputDeviceID,
+            updatedAt: disconnectedAt,
+            updatedByDeviceID: localDeviceID
+        )
+    }
+}
+
 struct LocalPlaybackPublicationPositionPolicy: Sendable {
     static let liveTimeTolerance: TimeInterval = 1
 
@@ -2092,6 +2120,28 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         requestCredentialsFromPeers(targetDeviceID: sender.id)
     }
 
+    private func handlePeerUnavailable(deviceID: String) {
+        clearAllPendingCommands(for: deviceID)
+        peerInfos.removeValue(forKey: deviceID)
+
+        if selectedPlaybackTargetID == deviceID {
+            selectedPlaybackTargetID = localDeviceID
+        }
+
+        connectedDeviceNames = Array(Set(peerInfos.values.map(\.name))).sorted()
+        pauseSharedPlaybackForDisconnectedOutput(deviceID)
+    }
+
+    private func pauseSharedPlaybackForDisconnectedOutput(_ deviceID: String) {
+        guard let pausedSession = ConnectivityLossPlaybackPolicy.sessionAfterDisconnectedOutput(
+            disconnectedDeviceID: deviceID,
+            currentSession: sharedSession,
+            localDeviceID: localDeviceID
+        ) else { return }
+
+        publishSharedSession(pausedSession, applyLocally: true)
+    }
+
     private var selectedRemotePlaybackTargetID: String? {
         validateSelectedPlaybackTarget()
         let availableTargetIDs = Set(availablePlaybackTargets.map(\.id))
@@ -2580,6 +2630,12 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         pendingTargetedCommandRetryTasks.removeValue(forKey: key)?.cancel()
     }
 
+    private func clearAllPendingCommands(for deviceID: String) {
+        for key in pendingCommandKeys(for: deviceID) {
+            clearPendingCommand(forKey: key)
+        }
+    }
+
     private func flushPendingCommands(for deviceID: String) {
         for key in pendingCommandKeys(for: deviceID) {
             flushPendingCommand(forKey: key)
@@ -2678,6 +2734,35 @@ final class DeviceSyncManager: NSObject, ObservableObject {
                 self.hasBootstrappedWatchConnectivitySession = false
                 session.activate()
             }
+        }
+    }
+
+    private func handleWatchConnectivityReachabilityChanged(isReachable: Bool) {
+        if isReachable {
+            sendCurrentSyncState(includeHello: true)
+            maybeSendCredentialsToInterestedPeers()
+            return
+        }
+
+        guard let peer = watchConnectivityPeerInfo() else { return }
+        handlePeerUnavailable(deviceID: peer.id)
+    }
+
+    private func watchConnectivityPeerInfo() -> SyncPeerInfo? {
+        let localPlatform = SyncPlatformKind(platformName: platformName)
+        let remotePlatform: SyncPlatformKind
+
+        switch localPlatform {
+        case .iPhone:
+            remotePlatform = .appleWatch
+        case .appleWatch:
+            remotePlatform = .iPhone
+        case .mac, .other:
+            return nil
+        }
+
+        return peerInfos.values.first {
+            SyncPlatformKind(platformName: $0.platform) == remotePlatform
         }
     }
 #endif
@@ -2810,11 +2895,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
 
         if let deviceID = deviceIDsByPeerDisplayName.removeValue(forKey: peerID.displayName) {
             multipeerDeviceIDs.remove(deviceID)
-            peerInfos.removeValue(forKey: deviceID)
-
-            if selectedPlaybackTargetID == deviceID {
-                selectedPlaybackTargetID = localDeviceID
-            }
+            handlePeerUnavailable(deviceID: deviceID)
         }
 
         connectedDeviceNames = Array(Set(peerInfos.values.map(\.name))).sorted()
@@ -2859,6 +2940,13 @@ extension DeviceSyncManager: WCSessionDelegate {
         guard let data = userInfo["payload"] as? Data else { return }
         Self.enqueueDelegateEvent {
             DeviceSyncManager.shared.handleEnvelopeData(data)
+        }
+    }
+
+    nonisolated func sessionReachabilityDidChange(_ session: WCSession) {
+        let isReachable = session.isReachable
+        Self.enqueueDelegateEvent {
+            DeviceSyncManager.shared.handleWatchConnectivityReachabilityChanged(isReachable: isReachable)
         }
     }
 

@@ -1392,6 +1392,149 @@ struct PlaybackSyncPolicyTests {
         #expect(snapshot.updatedAt == now)
     }
 
+    @Test func disconnectedPlayingOutputProducesPausedConnectivitySession() throws {
+        let now = Date()
+        let song = makeSong(id: "song-1")
+        let playingSession = makeSession(
+            songs: [song],
+            outputDeviceID: "watch",
+            isPlaying: true,
+            position: 20,
+            revision: 7,
+            updatedAt: now.addingTimeInterval(-5),
+            updatedByDeviceID: "watch"
+        )
+
+        let pausedSession = try #require(ConnectivityLossPlaybackPolicy.sessionAfterDisconnectedOutput(
+            disconnectedDeviceID: "watch",
+            currentSession: playingSession,
+            localDeviceID: "iphone",
+            disconnectedAt: now
+        ))
+
+        #expect(pausedSession.id == playingSession.id)
+        #expect(pausedSession.revision == playingSession.revision)
+        #expect(pausedSession.outputDeviceID == "watch")
+        #expect(pausedSession.updatedByDeviceID == "iphone")
+        #expect(pausedSession.isPlaying == false)
+        #expect(pausedSession.position == 25)
+        #expect(pausedSession.currentSong?.id == song.id)
+    }
+
+    @Test func disconnectedNonOutputOrAlreadyPausedSessionDoesNotCreateConnectivityPause() {
+        let now = Date()
+        let playingElsewhere = makeSession(
+            outputDeviceID: "mac",
+            isPlaying: true,
+            updatedAt: now,
+            updatedByDeviceID: "mac"
+        )
+        let alreadyPaused = makeSession(
+            outputDeviceID: "watch",
+            isPlaying: false,
+            updatedAt: now,
+            updatedByDeviceID: "watch"
+        )
+
+        #expect(ConnectivityLossPlaybackPolicy.sessionAfterDisconnectedOutput(
+            disconnectedDeviceID: "watch",
+            currentSession: playingElsewhere,
+            localDeviceID: "iphone",
+            disconnectedAt: now
+        ) == nil)
+        #expect(ConnectivityLossPlaybackPolicy.sessionAfterDisconnectedOutput(
+            disconnectedDeviceID: "watch",
+            currentSession: alreadyPaused,
+            localDeviceID: "iphone",
+            disconnectedAt: now
+        ) == nil)
+    }
+
+    @Test func reconnectedOwnerPlayingSessionOverwritesConnectivityPauseWhenNewer() throws {
+        let now = Date()
+        let ownerPlayingBeforeDisconnect = makeSession(
+            outputDeviceID: "watch",
+            isPlaying: true,
+            position: 20,
+            revision: 7,
+            updatedAt: now.addingTimeInterval(-5),
+            updatedByDeviceID: "watch"
+        )
+        let connectivityPause = try #require(ConnectivityLossPlaybackPolicy.sessionAfterDisconnectedOutput(
+            disconnectedDeviceID: "watch",
+            currentSession: ownerPlayingBeforeDisconnect,
+            localDeviceID: "iphone",
+            disconnectedAt: now
+        ))
+        let ownerStillPlayingAfterReconnect = makeSession(
+            outputDeviceID: "watch",
+            isPlaying: true,
+            position: 40,
+            revision: 7,
+            updatedAt: now.addingTimeInterval(1),
+            updatedByDeviceID: "watch"
+        )
+
+        #expect(PlaybackSessionSyncPolicy.shouldApply(ownerStillPlayingAfterReconnect, over: connectivityPause, now: now.addingTimeInterval(1)) == true)
+    }
+
+    @Test func connectivityPauseRejectsOlderInFlightPlayingSessionAfterDisconnect() throws {
+        let now = Date()
+        let ownerPlayingBeforeDisconnect = makeSession(
+            outputDeviceID: "watch",
+            isPlaying: true,
+            position: 20,
+            revision: 7,
+            updatedAt: now.addingTimeInterval(-5),
+            updatedByDeviceID: "watch"
+        )
+        let connectivityPause = try #require(ConnectivityLossPlaybackPolicy.sessionAfterDisconnectedOutput(
+            disconnectedDeviceID: "watch",
+            currentSession: ownerPlayingBeforeDisconnect,
+            localDeviceID: "iphone",
+            disconnectedAt: now
+        ))
+        let delayedPreDisconnectPlayingSession = makeSession(
+            outputDeviceID: "watch",
+            isPlaying: true,
+            position: 24,
+            revision: 7,
+            updatedAt: now.addingTimeInterval(-1),
+            updatedByDeviceID: "watch"
+        )
+
+        #expect(PlaybackSessionSyncPolicy.shouldApply(delayedPreDisconnectPlayingSession, over: connectivityPause, now: now) == false)
+    }
+
+    @Test func localActivePlaybackCanCompeteWithConnectivityPauseWhenNewer() throws {
+        let now = Date()
+        let ownerPlayingBeforeDisconnect = makeSession(
+            outputDeviceID: "watch",
+            isPlaying: true,
+            position: 20,
+            revision: 7,
+            updatedAt: now.addingTimeInterval(-5),
+            updatedByDeviceID: "watch"
+        )
+        let connectivityPause = try #require(ConnectivityLossPlaybackPolicy.sessionAfterDisconnectedOutput(
+            disconnectedDeviceID: "watch",
+            currentSession: ownerPlayingBeforeDisconnect,
+            localDeviceID: "iphone",
+            disconnectedAt: now
+        ))
+        let localPlayingSession = makeSession(
+            id: "mac-session",
+            outputDeviceID: "mac",
+            isPlaying: true,
+            position: 3,
+            revision: 1,
+            updatedAt: now.addingTimeInterval(1),
+            updatedByDeviceID: "mac"
+        )
+
+        #expect(PlaybackSessionSyncPolicy.shouldApply(localPlayingSession, over: connectivityPause, now: now.addingTimeInterval(1)) == true)
+    }
+
     @Test func remotePauseCommandFinalTruthComesFromOwnerSessionAcknowledgment() throws {
         let now = Date()
         let pausedSession = makeSession(
