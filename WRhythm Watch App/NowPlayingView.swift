@@ -438,11 +438,11 @@ private struct PhoneNowPlayingView: View {
                 .frame(maxWidth: .infinity)
                 .frame(minHeight: proxy.size.height, alignment: .top)
                 .padding(.horizontal, WRhythmSpacing.md)
-                .padding(.top, WRhythmSpacing.xs)
+                .padding(.top, 0)
                 .padding(.bottom, WRhythmVisual.bottomNavigationClearance)
             }
             .scrollIndicators(.hidden)
-            .safeAreaPadding(.top, WRhythmSpacing.md)
+            .safeAreaPadding(.top, WRhythmSpacing.xxs)
             .ignoresSafeArea(.container, edges: .top)
             .wrhythmPageBackground(coverArtId: primaryCoverArtId)
         }
