@@ -25,7 +25,8 @@ struct LoginView: View {
                     title: "WRhythm",
                     subtitle: "Connect to your Navidrome library",
                     systemImage: "waveform.circle.fill",
-                    tint: WRhythmTheme.accent
+                    tint: WRhythmTheme.accent,
+                    logoImageName: "WRhythmLogoYellow"
                 )
 
                 WRhythmGlassCard {

@@ -453,6 +453,7 @@ struct WRhythmFeatureHeader: View {
     let systemImage: String
     var tint: Color = WRhythmTheme.accent
     var coverArtId: String?
+    var logoImageName: String?
 
     var body: some View {
         VStack(spacing: WRhythmSpacing.xs) {
@@ -467,10 +468,18 @@ struct WRhythmFeatureHeader: View {
                     .saturation(1.08)
                 } else {
                     tint.opacity(colorScheme == .dark ? 0.18 : 0.12)
-                    Image(systemName: systemImage)
-                        .font(.system(size: featureSymbolSize, weight: .semibold))
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundColor(tint)
+                    if let logoImageName {
+                        Image(logoImageName)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .padding(featureLogoPadding)
+                            .accessibilityHidden(true)
+                    } else {
+                        Image(systemName: systemImage)
+                            .font(.system(size: featureSymbolSize, weight: .semibold))
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundColor(tint)
+                    }
                 }
             }
             .frame(width: featureArtSize, height: featureArtSize)
@@ -512,6 +521,14 @@ struct WRhythmFeatureHeader: View {
         30
 #else
         38
+#endif
+    }
+
+    private var featureLogoPadding: CGFloat {
+#if os(watchOS)
+        10
+#else
+        12
 #endif
     }
 }
