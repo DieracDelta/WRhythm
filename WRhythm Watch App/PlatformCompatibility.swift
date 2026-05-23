@@ -178,6 +178,7 @@ enum WRhythmVisual {
     static let cardPadding: CGFloat = WRhythmSpacing.md
 #endif
     static let bottomNavigationClearance: CGFloat = WRhythmSpacing.xl + WRhythmSpacing.xxl + WRhythmSpacing.xxl
+    static let topNavigationClearance: CGFloat = WRhythmSpacing.xxl + WRhythmSpacing.xxl + WRhythmSpacing.xs
     static let contentMaxWidth: CGFloat = 760
 }
 
@@ -187,6 +188,9 @@ enum WRhythmSurfaceStyle {
 }
 
 struct WRhythmScreen<Content: View>: View {
+#if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+#endif
     var coverArtId: String?
     var horizontalPadding: CGFloat = 16
     var verticalPadding: CGFloat = 16
@@ -215,7 +219,7 @@ struct WRhythmScreen<Content: View>: View {
                 .frame(maxWidth: .infinity)
                 .frame(minHeight: max(0, proxy.size.height - WRhythmVisual.bottomNavigationClearance), alignment: .top)
                 .padding(.horizontal, horizontalPadding)
-                .padding(.top, WRhythmSpacing.md)
+                .padding(.top, WRhythmSpacing.md + topNavigationClearance)
                 .padding(.bottom, WRhythmVisual.bottomNavigationClearance)
             }
             .scrollIndicators(.hidden)
@@ -236,6 +240,12 @@ struct WRhythmScreen<Content: View>: View {
         .wrhythmPageBackground(coverArtId: coverArtId)
 #endif
     }
+
+#if os(iOS)
+    private var topNavigationClearance: CGFloat {
+        horizontalSizeClass == .regular ? WRhythmVisual.topNavigationClearance : 0
+    }
+#endif
 }
 
 struct WRhythmCard<Content: View>: View {
@@ -858,6 +868,7 @@ extension View {
 #if os(iOS)
         self
             .scrollContentBackground(.hidden)
+            .modifier(WRhythmTopNavigationInset())
             .safeAreaInset(edge: .bottom) {
                 Color.clear.frame(height: WRhythmVisual.bottomNavigationClearance)
             }
@@ -881,6 +892,20 @@ extension View {
 #endif
     }
 }
+
+#if os(iOS)
+private struct WRhythmTopNavigationInset: ViewModifier {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    func body(content: Content) -> some View {
+        content.safeAreaInset(edge: .top) {
+            if horizontalSizeClass == .regular {
+                Color.clear.frame(height: WRhythmVisual.topNavigationClearance)
+            }
+        }
+    }
+}
+#endif
 
 struct WRhythmLibraryBackdrop: View {
     @Environment(\.colorScheme) private var colorScheme
