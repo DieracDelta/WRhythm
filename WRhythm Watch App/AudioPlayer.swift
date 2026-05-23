@@ -106,6 +106,56 @@ struct PrebufferRetryPolicy: Sendable {
     }
 }
 
+struct PrebufferProgressPolicy: Sendable {
+    static func normalizedProgress(receivedBytes: Int64, expectedBytes: Int64) -> Double? {
+        guard expectedBytes > 0 else { return nil }
+        let progress = Double(max(0, receivedBytes)) / Double(expectedBytes)
+        return min(max(progress, 0), 0.99)
+    }
+
+    static func percent(for progress: Double?) -> Int? {
+        guard let progress else { return nil }
+        let clamped = min(max(progress, 0), 1)
+        guard clamped > 0 else { return 0 }
+        return min(99, max(1, Int((clamped * 100).rounded())))
+    }
+
+    static func aggregatePercent(progressByKey: [String: Double], activeKeys: Set<String>) -> Int? {
+        let activeProgress = activeKeys.compactMap { progressByKey[$0] }
+        guard !activeProgress.isEmpty else { return nil }
+        let average = activeProgress.reduce(0, +) / Double(activeProgress.count)
+        return percent(for: average)
+    }
+
+    static func statusSummary(
+        readyCount: Int,
+        activeCount: Int,
+        activePercent: Int?,
+        playerIsBuffering: Bool,
+        playerBufferPercent: Int?
+    ) -> String? {
+        var parts: [String] = []
+        if readyCount > 0 {
+            parts.append("\(readyCount) buffered")
+        }
+        if activeCount > 0 {
+            if let activePercent {
+                parts.append("\(activeCount) buffering \(activePercent)%")
+            } else {
+                parts.append("\(activeCount) buffering")
+            }
+        }
+        if playerIsBuffering && activeCount == 0 {
+            if let playerBufferPercent, playerBufferPercent > 0 {
+                parts.append("stream buffering \(playerBufferPercent)%")
+            } else {
+                parts.append("stream buffering")
+            }
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " • ")
+    }
+}
+
 struct PrebufferPublicationPolicy: Sendable {
     static func shouldPublishPreparedBuffer(
         key: String,
@@ -173,6 +223,7 @@ class AudioPlayer: NSObject, ObservableObject {
     @Published private(set) var prebufferedTrackCount = 0
     @Published private(set) var prebufferedSongs: [Song] = []
     @Published private(set) var prebufferingTrackCount = 0
+    @Published private(set) var prebufferingProgressPercent: Int?
     @Published var queue: [Song] = []
     @Published var currentIndex: Int = 0
     @Published var playlistGenQueue: [Song] = []
@@ -265,6 +316,7 @@ class AudioPlayer: NSObject, ObservableObject {
     private let maxConcurrentPrebuffers = 3
     private var prebufferTasks: [String: Task<Void, Never>] = [:]
     private var prebufferTaskTokens: [String: String] = [:]
+    private var prebufferProgressByKey: [String: Double] = [:]
     private var prebufferURLs: [String: URL] = [:]
     private var preparedPrebuffers: [String: PreparedPrebuffer] = [:]
     private var currentPlaybackURL: URL?
@@ -325,21 +377,13 @@ class AudioPlayer: NSObject, ObservableObject {
     }
 
     var queueBufferStatusSummary: String? {
-        var parts: [String] = []
-        if prebufferedTrackCount > 0 {
-            parts.append("\(prebufferedTrackCount) buffered")
-        }
-        if prebufferingTrackCount > 0 {
-            parts.append("\(prebufferingTrackCount) buffering")
-        }
-        if isBuffering {
-            if let currentBufferPercent {
-                parts.append("\(currentBufferPercent)% complete")
-            } else {
-                parts.append("buffering")
-            }
-        }
-        return parts.isEmpty ? nil : parts.joined(separator: " • ")
+        PrebufferProgressPolicy.statusSummary(
+            readyCount: prebufferedTrackCount,
+            activeCount: prebufferingTrackCount,
+            activePercent: prebufferingProgressPercent,
+            playerIsBuffering: isBuffering,
+            playerBufferPercent: currentBufferPercent
+        )
     }
 
     private func recordPlaybackIntentChange() {
@@ -1189,11 +1233,65 @@ class AudioPlayer: NSObject, ObservableObject {
         return PreparedPrebuffer(url: url, asset: asset)
     }
 
+    private nonisolated static func downloadPrebufferFile(
+        from url: URL,
+        to destinationURL: URL,
+        progressHandler: @escaping @Sendable (Double?) async -> Void
+    ) async throws {
+        let temporaryURL = destinationURL
+            .deletingLastPathComponent()
+            .appendingPathComponent("\(UUID().uuidString).download", isDirectory: false)
+        try? FileManager.default.removeItem(at: temporaryURL)
+        FileManager.default.createFile(atPath: temporaryURL.path, contents: nil)
+
+        let fileHandle = try FileHandle(forWritingTo: temporaryURL)
+        var didMoveFile = false
+        defer {
+            try? fileHandle.close()
+            if !didMoveFile {
+                try? FileManager.default.removeItem(at: temporaryURL)
+            }
+        }
+
+        let (bytes, response) = try await URLSession.shared.bytes(from: url)
+        let expectedBytes = response.expectedContentLength
+        await progressHandler(PrebufferProgressPolicy.normalizedProgress(receivedBytes: 0, expectedBytes: expectedBytes))
+
+        var receivedBytes: Int64 = 0
+        var chunk = Data()
+        chunk.reserveCapacity(64 * 1_024)
+
+        for try await byte in bytes {
+            try Task.checkCancellation()
+            chunk.append(byte)
+
+            if chunk.count >= 64 * 1_024 {
+                try fileHandle.write(contentsOf: chunk)
+                receivedBytes += Int64(chunk.count)
+                chunk.removeAll(keepingCapacity: true)
+                await progressHandler(PrebufferProgressPolicy.normalizedProgress(receivedBytes: receivedBytes, expectedBytes: expectedBytes))
+            }
+        }
+
+        if !chunk.isEmpty {
+            try fileHandle.write(contentsOf: chunk)
+            receivedBytes += Int64(chunk.count)
+            chunk.removeAll(keepingCapacity: true)
+            await progressHandler(PrebufferProgressPolicy.normalizedProgress(receivedBytes: receivedBytes, expectedBytes: expectedBytes))
+        }
+
+        try fileHandle.close()
+        try? FileManager.default.removeItem(at: destinationURL)
+        try FileManager.default.moveItem(at: temporaryURL, to: destinationURL)
+        didMoveFile = true
+    }
+
     private func scheduleQueuePrebuffer() {
         guard !queue.isEmpty else {
             prebufferTasks.values.forEach { $0.cancel() }
             prebufferTasks.removeAll()
             prebufferTaskTokens.removeAll()
+            prebufferProgressByKey.removeAll()
             preparedPrebuffers.removeAll()
             clearPrebufferRetryState()
             updatePrebufferedTrackCount()
@@ -1221,6 +1319,7 @@ class AudioPlayer: NSObject, ObservableObject {
             prebufferTasks[key]?.cancel()
             prebufferTasks.removeValue(forKey: key)
             prebufferTaskTokens.removeValue(forKey: key)
+            prebufferProgressByKey.removeValue(forKey: key)
         }
 
         for key in Array(preparedPrebuffers.keys) where !desiredKeys.contains(key) {
@@ -1258,14 +1357,24 @@ class AudioPlayer: NSObject, ObservableObject {
         let destinationURL = prebufferURL(for: song)
         let taskToken = UUID().uuidString
         prebufferTaskTokens[key] = taskToken
+        prebufferProgressByKey[key] = 0
+        updatePrebufferedTrackCount()
 
         prebufferTasks[key] = Task { [weak self] in
             do {
-                let (temporaryURL, _) = try await URLSession.shared.download(from: url)
+                try await Self.downloadPrebufferFile(from: url, to: destinationURL) { [weak self] progress in
+                    await MainActor.run { [weak self] in
+                        guard let player = self else { return }
+                        guard AsyncTaskOwnershipPolicy.isCurrent(capturedToken: taskToken, activeToken: player.prebufferTaskTokens[key]) else { return }
+                        if let progress {
+                            player.prebufferProgressByKey[key] = progress
+                        } else {
+                            player.prebufferProgressByKey.removeValue(forKey: key)
+                        }
+                        player.updatePrebufferedTrackCount()
+                    }
+                }
                 try Task.checkCancellation()
-
-                try? FileManager.default.removeItem(at: destinationURL)
-                try FileManager.default.moveItem(at: temporaryURL, to: destinationURL)
 
                 await self?.prepareDownloadedPrebuffer(song, key: key, url: destinationURL, taskToken: taskToken)
             } catch is CancellationError {
@@ -1274,6 +1383,7 @@ class AudioPlayer: NSObject, ObservableObject {
                     guard AsyncTaskOwnershipPolicy.isCurrent(capturedToken: taskToken, activeToken: player.prebufferTaskTokens[key]) else { return }
                     player.prebufferTasks.removeValue(forKey: key)
                     player.prebufferTaskTokens.removeValue(forKey: key)
+                    player.prebufferProgressByKey.removeValue(forKey: key)
                     player.updatePrebufferedTrackCount()
                 }
             } catch {
@@ -1282,6 +1392,7 @@ class AudioPlayer: NSObject, ObservableObject {
                     guard AsyncTaskOwnershipPolicy.isCurrent(capturedToken: taskToken, activeToken: player.prebufferTaskTokens[key]) else { return }
                     player.prebufferTasks.removeValue(forKey: key)
                     player.prebufferTaskTokens.removeValue(forKey: key)
+                    player.prebufferProgressByKey.removeValue(forKey: key)
                     player.updatePrebufferedTrackCount()
                     print("⚠️ Failed to prebuffer \(song.title): \(error)")
                     player.schedulePrebufferRetry(for: song, key: key)
@@ -1315,6 +1426,7 @@ class AudioPlayer: NSObject, ObservableObject {
                     if AsyncTaskOwnershipPolicy.isCurrent(capturedToken: taskToken, activeToken: player.prebufferTaskTokens[key]) {
                         player.prebufferTasks.removeValue(forKey: key)
                         player.prebufferTaskTokens.removeValue(forKey: key)
+                        player.prebufferProgressByKey.removeValue(forKey: key)
                         player.preparedPrebuffers.removeValue(forKey: key)
                         player.prebufferURLs.removeValue(forKey: key)
                         if player.prebufferURL(for: song) == url {
@@ -1329,6 +1441,7 @@ class AudioPlayer: NSObject, ObservableObject {
                 player.clearPrebufferRetryState(for: key)
                 player.prebufferTasks.removeValue(forKey: key)
                 player.prebufferTaskTokens.removeValue(forKey: key)
+                player.prebufferProgressByKey.removeValue(forKey: key)
                 player.updatePrebufferedTrackCount()
                 print("✅ Prebuffered and prepared next queue item: \(song.title)")
                 player.scheduleQueuePrebuffer()
@@ -1339,6 +1452,7 @@ class AudioPlayer: NSObject, ObservableObject {
                 guard AsyncTaskOwnershipPolicy.isCurrent(capturedToken: taskToken, activeToken: player.prebufferTaskTokens[key]) else { return }
                 player.prebufferTasks.removeValue(forKey: key)
                 player.prebufferTaskTokens.removeValue(forKey: key)
+                player.prebufferProgressByKey.removeValue(forKey: key)
                 player.updatePrebufferedTrackCount()
             }
         } catch {
@@ -1347,6 +1461,7 @@ class AudioPlayer: NSObject, ObservableObject {
                 guard AsyncTaskOwnershipPolicy.isCurrent(capturedToken: taskToken, activeToken: player.prebufferTaskTokens[key]) else { return }
                 player.prebufferTasks.removeValue(forKey: key)
                 player.prebufferTaskTokens.removeValue(forKey: key)
+                player.prebufferProgressByKey.removeValue(forKey: key)
                 player.preparedPrebuffers.removeValue(forKey: key)
                 player.prebufferURLs.removeValue(forKey: key)
                 if player.prebufferURL(for: song) == url {
@@ -1413,6 +1528,13 @@ class AudioPlayer: NSObject, ObservableObject {
         let activeCount = prebufferTasks.count
         if prebufferingTrackCount != activeCount {
             prebufferingTrackCount = activeCount
+        }
+        let activePercent = PrebufferProgressPolicy.aggregatePercent(
+            progressByKey: prebufferProgressByKey,
+            activeKeys: Set(prebufferTasks.keys)
+        )
+        if prebufferingProgressPercent != activePercent {
+            prebufferingProgressPercent = activePercent
         }
 
         guard !queue.isEmpty else {

@@ -1703,6 +1703,36 @@ struct PlaybackSyncPolicyTests {
         #expect(scheduled == ["d"])
     }
 
+    @Test func prebufferProgressPercentUsesActualReceivedBytes() {
+        let progress = PrebufferProgressPolicy.normalizedProgress(receivedBytes: 800, expectedBytes: 1_000)
+
+        #expect(progress == 0.8)
+        #expect(PrebufferProgressPolicy.percent(for: progress) == 80)
+    }
+
+    @Test func prebufferProgressDoesNotReportZeroForNonzeroProgress() {
+        let progress = PrebufferProgressPolicy.normalizedProgress(receivedBytes: 1, expectedBytes: 1_000)
+
+        #expect(PrebufferProgressPolicy.percent(for: progress) == 1)
+    }
+
+    @Test func prebufferProgressIgnoresUnknownContentLength() {
+        #expect(PrebufferProgressPolicy.normalizedProgress(receivedBytes: 500, expectedBytes: -1) == nil)
+        #expect(PrebufferProgressPolicy.percent(for: nil) == nil)
+    }
+
+    @Test func prebufferProgressSummaryShowsActiveDownloadPercent() {
+        let summary = PrebufferProgressPolicy.statusSummary(
+            readyCount: 7,
+            activeCount: 1,
+            activePercent: 80,
+            playerIsBuffering: false,
+            playerBufferPercent: nil
+        )
+
+        #expect(summary == "7 buffered • 1 buffering 80%")
+    }
+
     @Test func nowPlayingArtworkPolicyAvoidsDuplicateLoadsForCachedOrInFlightSongs() {
         #expect(NowPlayingArtworkLoadPolicy.shouldStartLoad(
             songID: "song-1",
