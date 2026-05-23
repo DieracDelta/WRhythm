@@ -104,7 +104,6 @@ struct ContentView: View {
 #if os(iOS)
                 .toolbarBackground(.visible, for: .tabBar)
                 .toolbarBackground(.ultraThinMaterial, for: .tabBar)
-                .ignoresSafeArea(.container, edges: .top)
 #endif
 #endif
             } else {
