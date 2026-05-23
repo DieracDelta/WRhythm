@@ -840,6 +840,39 @@ final class NavidromeAPI: ObservableObject {
         print("✅ Song unstarred successfully")
     }
 
+    func scrobble(songId: String, submission: Bool) async throws {
+        guard let url = buildURL(endpoint: "scrobble.view", additionalParams: [
+            "id": songId,
+            "submission": submission ? "true" : "false"
+        ]) else {
+            throw NavidromeError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 10
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw NavidromeError.unknown
+        }
+
+        guard httpResponse.statusCode == 200 else {
+            throw NavidromeError.apiError("HTTP \(httpResponse.statusCode)")
+        }
+
+        let result = try JSONDecoder().decode(SubsonicResponse<BaseResponse>.self, from: data)
+
+        guard result.subsonicResponse.status == "ok" else {
+            if let error = result.subsonicResponse.error {
+                throw NavidromeError.apiError(error.message)
+            }
+            throw NavidromeError.unknown
+        }
+
+        print("✅ Scrobble \(submission ? "submission" : "now-playing") sent for song: \(songId)")
+    }
+
     func search(query: String) async throws -> SearchResult {
         guard let url = buildURL(endpoint: "search3", additionalParams: ["query": query]) else {
             throw NavidromeError.invalidURL

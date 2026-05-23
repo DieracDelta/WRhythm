@@ -18,6 +18,7 @@ struct SettingsView: View {
     @State private var selectedQuality: AudioQuality = DownloadManager.shared.audioQuality
     @AppStorage("streamingQuality") private var streamingQualityRaw = StreamingQuality.platformDefault.rawValue
     @AppStorage("darkModeEnabled") private var darkModeEnabled = true
+    @AppStorage("scrobblingEnabled") private var scrobblingEnabled = true
 
     private var streamingQuality: Binding<StreamingQuality> {
         Binding {
@@ -267,6 +268,12 @@ struct SettingsView: View {
             Text(streamingQuality.wrappedValue.description)
                 .font(WRhythmTypography.metadata)
                 .foregroundColor(.secondary)
+        }
+
+        Toggle(isOn: $scrobblingEnabled) {
+            SettingsToggleLabel(
+                title: "Scrobbling"
+            )
         }
     }
 

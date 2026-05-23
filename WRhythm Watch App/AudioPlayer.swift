@@ -326,6 +326,7 @@ class AudioPlayer: NSObject, ObservableObject {
     private var playbackIntentRevision = 0
     private var playlistGenTask: Task<Void, Never>?
     private var playlistGenRestoreState: PlaylistGenRestoreState?
+    private var scrobbleTracker = ScrobbleProgressTracker()
     private let maxPlaybackRetryAttempts = 4
     private let maxPlaybackRetryBackoff: TimeInterval = 30
     private var prebufferRetryAttemptsByKey: [String: Int] = [:]
@@ -394,6 +395,63 @@ class AudioPlayer: NSObject, ObservableObject {
         recordPlaybackIntentChange()
         playbackRetryTask?.cancel()
         playbackRetryTask = nil
+    }
+
+    private var scrobblingEnabled: Bool {
+        UserDefaults.standard.object(forKey: "scrobblingEnabled") as? Bool ?? true
+    }
+
+    private var scrobblingAllowedForCurrentContext: Bool {
+        scrobblingEnabled &&
+        !UserDefaults.standard.bool(forKey: "offlineMode") &&
+        NavidromeAPI.shared.hasCredentials
+    }
+
+    private func beginScrobbleTracking(for song: Song, startTime: TimeInterval) {
+        guard scrobblingAllowedForCurrentContext else {
+            scrobbleTracker.reset()
+            return
+        }
+
+        sendScrobbleEvent(scrobbleTracker.start(songID: song.id, currentTime: startTime, now: Date()))
+    }
+
+    private func updateScrobbleTracking() {
+        guard let song = currentSong else {
+            scrobbleTracker.reset()
+            return
+        }
+
+        guard scrobblingAllowedForCurrentContext else {
+            scrobbleTracker.reset()
+            return
+        }
+
+        let effectiveDuration = duration > 0 ? duration : TimeInterval(song.duration ?? 0)
+        if let event = scrobbleTracker.update(
+            songID: song.id,
+            currentTime: liveCurrentTime,
+            duration: effectiveDuration,
+            isPlaying: isPlaying,
+            now: Date()
+        ) {
+            sendScrobbleEvent(event)
+        }
+    }
+
+    private func sendScrobbleEvent(_ event: ScrobblePlaybackEvent) {
+        Task { @MainActor in
+            do {
+                switch event {
+                case .nowPlaying(let songID):
+                    try await NavidromeAPI.shared.scrobble(songId: songID, submission: false)
+                case .submission(let songID):
+                    try await NavidromeAPI.shared.scrobble(songId: songID, submission: true)
+                }
+            } catch {
+                print("⚠️ Scrobble failed: \(error.localizedDescription)")
+            }
+        }
     }
 
     func persistPlaybackStateNow() {
@@ -1628,6 +1686,7 @@ class AudioPlayer: NSObject, ObservableObject {
             self.duration = 0
             print("🔄 Reset duration to 0, will try to get from stream")
         }
+        beginScrobbleTracking(for: song, startTime: startTime)
         scheduleQueuePrebuffer()
 
         // Check if song is downloaded first
@@ -1766,6 +1825,7 @@ class AudioPlayer: NSObject, ObservableObject {
         isBuffering = false
         isPlaying = false
         currentSong = nil
+        scrobbleTracker.reset()
         currentPlaybackURL = nil
         currentPlaybackIsLocalFile = false
         queue = []
@@ -1862,6 +1922,7 @@ class AudioPlayer: NSObject, ObservableObject {
                 // AVPlayer's item time is the actual playback position. Keep the optional
                 // offset at zero unless a future stream type explicitly requires it.
                 self.currentTime = self.baseTimeOffset + time.seconds
+                self.updateScrobbleTracking()
 
                 // Update duration if it's available and we don't have it yet
                 if let item = self.player.currentItem {
