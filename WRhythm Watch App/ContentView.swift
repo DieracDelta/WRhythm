@@ -384,6 +384,21 @@ private struct MacQueueRow: View {
                 }
             }
         }
+        .padding(.vertical, 4)
+        .padding(.horizontal, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            if isCurrent {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(WRhythmTheme.accent.opacity(0.18))
+            }
+        }
+        .overlay {
+            if isCurrent {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(WRhythmTheme.accent.opacity(0.55), lineWidth: 1)
+            }
+        }
     }
 }
 
