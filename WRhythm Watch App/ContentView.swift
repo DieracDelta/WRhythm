@@ -213,7 +213,16 @@ struct MacSidebar: View {
                                 )
                             }
                             .buttonStyle(.plain)
-                            .wrhythmTrackActions(song: item.song)
+                            .wrhythmQueueTrackActions(
+                                song: item.song,
+                                canRemoveFromQueue: canRemoveDisplayedQueueItem(at: item.index),
+                                removeFromQueue: {
+                                    removeDisplayedQueueItem(at: item.index)
+                                },
+                                clearQueue: {
+                                    clearDisplayedQueue()
+                                }
+                            )
                         }
                     }
                 }
@@ -253,8 +262,8 @@ struct MacSidebar: View {
     }
 
     private var displayedQueue: [Song] {
-        if !deviceSyncManager.sharedQueue.isEmpty {
-            return deviceSyncManager.sharedQueue
+        if let sharedSession = deviceSyncManager.sharedSession {
+            return sharedSession.queue
         }
         return player.queue
     }
@@ -312,6 +321,26 @@ struct MacSidebar: View {
     private func queueItems(_ songs: [Song]) -> [QueueDisplayItem] {
         songs.enumerated().map { index, song in
             QueueDisplayItem(index: index, song: song)
+        }
+    }
+
+    private func canRemoveDisplayedQueueItem(at index: Int) -> Bool {
+        displayedQueue.indices.contains(index) && index != displayedCurrentIndex
+    }
+
+    private func removeDisplayedQueueItem(at index: Int) {
+        if deviceSyncManager.sharedSession != nil {
+            deviceSyncManager.removeSharedQueueItem(at: index)
+        } else {
+            player.removeQueueItem(at: index)
+        }
+    }
+
+    private func clearDisplayedQueue() {
+        if deviceSyncManager.sharedSession != nil {
+            deviceSyncManager.clearSharedQueueKeepingCurrent()
+        } else {
+            player.clearQueueKeepingCurrent()
         }
     }
 }

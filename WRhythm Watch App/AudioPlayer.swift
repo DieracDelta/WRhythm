@@ -810,6 +810,37 @@ class AudioPlayer: NSObject, ObservableObject {
         DeviceSyncManager.shared.broadcastLocalQueueAsShared(intendedIsPlaying: shouldStartAppendedSongs ? true : nil)
     }
 
+    @discardableResult
+    func removeQueueItem(at index: Int) -> Bool {
+        guard queue.indices.contains(index), index != currentIndex else { return false }
+        recordQueueIntentChange()
+        queue.remove(at: index)
+        if index < currentIndex {
+            currentIndex -= 1
+        } else if currentIndex >= queue.count {
+            currentIndex = max(queue.count - 1, 0)
+        }
+        queueFinished = false
+        return true
+    }
+
+    @discardableResult
+    func clearQueueKeepingCurrent() -> Bool {
+        let retainedSong = currentSong ?? (queue.indices.contains(currentIndex) ? queue[currentIndex] : nil)
+        guard queue.count != 1 || queue.first?.id != retainedSong?.id else { return false }
+
+        recordQueueIntentChange()
+        if let retainedSong {
+            queue = [retainedSong]
+            currentIndex = 0
+        } else {
+            queue = []
+            currentIndex = 0
+        }
+        queueFinished = false
+        return true
+    }
+
     func mirrorQueueWithoutPlayback(_ songs: [Song], currentIndex index: Int, currentTime: TimeInterval = 0) {
         guard !songs.isEmpty else { return }
         recordQueueIntentChange()

@@ -823,16 +823,17 @@ struct PlaybackSessionSyncPolicy: Sendable {
         }
 
         let sessionPosition = session.estimatedPosition(at: now)
-        let currentMatches = localState.currentSongID == sessionSong.id && localState.currentIndex == session.currentIndex
+        let currentSongMatches = localState.currentSongID == sessionSong.id
+        let currentIndexMatches = localState.currentIndex == session.currentIndex
         let queueMatches = localState.queueIDs == session.queue.map(\.id)
 
         return PlaybackSessionReconciliationPlan(
             shouldStop: false,
-            shouldReplaceQueue: !currentMatches || !queueMatches,
-            shouldSeek: !currentMatches || abs(localState.currentTime - sessionPosition) > seekDriftTolerance,
+            shouldReplaceQueue: !currentSongMatches || !currentIndexMatches || !queueMatches,
+            shouldSeek: !currentSongMatches || abs(localState.currentTime - sessionPosition) > seekDriftTolerance,
             shouldSetVolume: session.volume.map { abs(localState.volume - $0) > volumeTolerance } ?? false,
             shouldPlay: session.isPlaying && !localState.isPlaying,
-            shouldPause: !session.isPlaying && (localState.isPlaying || !currentMatches)
+            shouldPause: !session.isPlaying && (localState.isPlaying || !currentSongMatches)
         )
     }
 }
@@ -1450,7 +1451,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
                     return
                 }
 
-                let currentMatches = localState.currentSongID == song.id && localState.currentIndex == session.currentIndex
+                let currentMatches = localState.currentSongID == song.id
 
                 if currentMatches {
                     if plan.shouldReplaceQueue {
@@ -1699,6 +1700,67 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             outputDeviceID: sharedSession.outputDeviceID
         ))
 
+    }
+
+    @discardableResult
+    func removeSharedQueueItem(at index: Int) -> Bool {
+        guard syncModeEnabled,
+              let sharedSession,
+              sharedSession.queue.indices.contains(index),
+              index != sharedSession.currentIndex else {
+            return false
+        }
+
+        var queue = sharedSession.queue
+        queue.remove(at: index)
+        guard !queue.isEmpty else { return false }
+
+        let currentIndex = index < sharedSession.currentIndex
+            ? sharedSession.currentIndex - 1
+            : min(sharedSession.currentIndex, queue.count - 1)
+        let didMutateLocalQueue = mutateLocalQueueIfBackingSharedSession {
+            AudioPlayer.shared.removeQueueItem(at: index)
+        }
+
+        publishSharedSession(makeSession(
+            queue: queue,
+            currentIndex: currentIndex,
+            position: sharedSession.estimatedPosition,
+            isPlaying: sharedSession.isPlaying,
+            outputDeviceID: sharedSession.outputDeviceID,
+            volume: sharedSession.volume
+        ), applyLocally: !didMutateLocalQueue)
+        return true
+    }
+
+    @discardableResult
+    func clearSharedQueueKeepingCurrent() -> Bool {
+        guard syncModeEnabled, let sharedSession, !sharedSession.queue.isEmpty else { return false }
+        let safeIndex = min(max(sharedSession.currentIndex, 0), sharedSession.queue.count - 1)
+        let retainedQueue = [sharedSession.queue[safeIndex]]
+        guard sharedSession.queue.map(\.id) != retainedQueue.map(\.id) else { return false }
+
+        let didMutateLocalQueue = mutateLocalQueueIfBackingSharedSession {
+            AudioPlayer.shared.clearQueueKeepingCurrent()
+        }
+
+        publishSharedSession(makeSession(
+            queue: retainedQueue,
+            currentIndex: 0,
+            position: sharedSession.estimatedPosition,
+            isPlaying: sharedSession.isPlaying,
+            outputDeviceID: sharedSession.outputDeviceID,
+            volume: sharedSession.volume
+        ), applyLocally: !didMutateLocalQueue)
+        return true
+    }
+
+    private func mutateLocalQueueIfBackingSharedSession(_ mutation: () -> Bool) -> Bool {
+        guard sharedSession?.outputDeviceID == localDeviceID,
+              AudioPlayer.shared.queue.map(\.id) == sharedSession?.queue.map(\.id) else {
+            return false
+        }
+        return mutation()
     }
 
     func takeOverRemotePlayback() {

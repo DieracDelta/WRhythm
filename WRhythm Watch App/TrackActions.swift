@@ -310,6 +310,20 @@ extension View {
         modifier(WRhythmTrackActionsModifier(song: song))
     }
 
+    func wrhythmQueueTrackActions(
+        song: Song,
+        canRemoveFromQueue: Bool,
+        removeFromQueue: @escaping () -> Void,
+        clearQueue: @escaping () -> Void
+    ) -> some View {
+        modifier(WRhythmQueueTrackActionsModifier(
+            song: song,
+            canRemoveFromQueue: canRemoveFromQueue,
+            removeFromQueue: removeFromQueue,
+            clearQueue: clearQueue
+        ))
+    }
+
     func wrhythmAlbumActions(albumId: String, albumName: String?) -> some View {
         modifier(WRhythmAlbumActionsModifier(albumId: albumId, albumName: albumName))
     }
@@ -348,6 +362,39 @@ private struct WRhythmTrackActionsModifier: ViewModifier {
 #else
         content
             .contextMenu {
+                TrackContextMenuItems(song: song)
+            }
+#endif
+    }
+}
+
+private struct WRhythmQueueTrackActionsModifier: ViewModifier {
+    let song: Song
+    let canRemoveFromQueue: Bool
+    let removeFromQueue: () -> Void
+    let clearQueue: () -> Void
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+#if os(watchOS)
+        content
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                WatchTrackSwipeActions(song: song)
+            }
+#else
+        content
+            .contextMenu {
+                Button(role: .destructive, action: removeFromQueue) {
+                    Label("Remove from Queue", systemImage: "text.badge.minus")
+                }
+                .disabled(!canRemoveFromQueue)
+
+                Button(role: .destructive, action: clearQueue) {
+                    Label("Clear Queue", systemImage: "trash")
+                }
+
+                Divider()
+
                 TrackContextMenuItems(song: song)
             }
 #endif
