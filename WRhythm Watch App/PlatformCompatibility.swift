@@ -178,7 +178,11 @@ enum WRhythmVisual {
     static let cardPadding: CGFloat = WRhythmSpacing.md
 #endif
     static let bottomNavigationClearance: CGFloat = WRhythmSpacing.xl + WRhythmSpacing.xxl + WRhythmSpacing.xxl
+#if os(iOS)
+    static let topNavigationClearance: CGFloat = WRhythmSpacing.xxl + WRhythmSpacing.xxl + WRhythmSpacing.sm
+#else
     static let topNavigationClearance: CGFloat = WRhythmSpacing.xxl + WRhythmSpacing.xxl + WRhythmSpacing.xs
+#endif
     static let contentMaxWidth: CGFloat = 760
 }
 

@@ -77,6 +77,18 @@ struct ContentView: View {
                     }
                     .tag(2)
 
+#if os(iOS)
+                    NavigationStack {
+                        PhoneQueueView()
+                    }
+                    .toolbar(.hidden, for: .navigationBar)
+                    .navigationBarHidden(true)
+                    .tabItem {
+                        Label("Queue", systemImage: "text.line.first.and.arrowtriangle.forward")
+                    }
+                    .tag(3)
+#endif
+
                     NavigationStack {
                         DownloadsView()
                     }
@@ -87,7 +99,7 @@ struct ContentView: View {
                     .tabItem {
                         Label("Downloads", systemImage: "arrow.down.circle")
                     }
-                    .tag(3)
+                    .tag(4)
                 }
 #if os(iOS)
                 .toolbarBackground(.visible, for: .tabBar)
