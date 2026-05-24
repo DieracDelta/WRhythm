@@ -482,7 +482,10 @@ struct MacDetailContent: View {
         case .albums:
             AlbumsView()
         case .availableTracks:
-            BufferedTracksListView(songs: player.availablePrebufferedSongs)
+            BufferedTracksListView(
+                songs: player.availablePrebufferedSongs,
+                downloadStatuses: player.prebufferDownloadStatuses
+            )
         case .downloads:
             DownloadsView()
         case .settings:
@@ -564,6 +567,7 @@ struct MacMiniPlayerBar: View {
                     isBuffering: player.isBuffering,
                     bufferStatusText: player.queueBufferStatusSummary,
                     bufferedSongs: player.availablePrebufferedSongs,
+                    downloadStatuses: player.prebufferDownloadStatuses,
                     queuePosition: player.queue.count > 1 ? "\(localLabel): \(player.currentIndex + 1) of \(player.queue.count)" : localLabel,
                     previous: player.previous,
                     toggle: { deviceSyncManager.setPlaying(!isPlaying, targetDeviceID: deviceSyncManager.localPlaybackTargetID) },
@@ -591,6 +595,7 @@ struct MacMiniPlayerBar: View {
                     isBuffering: remote.isBuffering == true,
                     bufferStatusText: nil,
                     bufferedSongs: bufferedSongs(for: remote),
+                    downloadStatuses: [],
                     queuePosition: remote.queue.count > 1 ? "\(remote.deviceName): \(remote.currentIndex + 1) of \(remote.queue.count)" : remote.deviceName,
                     previous: { deviceSyncManager.sendPrevious(targetDeviceID: remote.id) },
                     toggle: { deviceSyncManager.setPlaying(!remote.isPlaying, targetDeviceID: remote.id) },
@@ -613,7 +618,7 @@ struct MacMiniPlayerBar: View {
         }
         .background(.bar)
         .sheet(item: $bufferedTracksSheet) { sheet in
-            BufferedTracksListView(songs: sheet.songs)
+            BufferedTracksListView(songs: sheet.songs, downloadStatuses: sheet.downloadStatuses)
         }
     }
 
@@ -659,6 +664,7 @@ struct MacMiniPlayerBar: View {
         isBuffering: Bool,
         bufferStatusText: String?,
         bufferedSongs: [Song],
+        downloadStatuses: [PrebufferDownloadStatus],
         queuePosition: String,
         previous: @escaping () -> Void,
         toggle: @escaping () -> Void,
@@ -693,11 +699,20 @@ struct MacMiniPlayerBar: View {
                             .foregroundColor(.secondary)
                             .lineLimit(1)
                     }
-                    if !bufferedSongs.isEmpty {
+                    if !bufferedSongs.isEmpty || !downloadStatuses.isEmpty {
                         Button(action: {
-                            bufferedTracksSheet = BufferedTracksSheetPayload(songs: bufferedSongs)
+                            bufferedTracksSheet = BufferedTracksSheetPayload(
+                                songs: bufferedSongs,
+                                downloadStatuses: downloadStatuses
+                            )
                         }) {
-                            Label("\(bufferedSongs.count) buffered", systemImage: "arrow.down.circle")
+                            Label(
+                                availableTracksSummary(
+                                    available: bufferedSongs.count,
+                                    downloading: downloadStatuses.count
+                                ),
+                                systemImage: "arrow.down.circle"
+                            )
                                 .font(.caption2)
                         }
                         .buttonStyle(.plain)
@@ -748,11 +763,22 @@ struct MacMiniPlayerBar: View {
         }
         return parts.joined(separator: " • ")
     }
+
+    private func availableTracksSummary(available: Int, downloading: Int) -> String {
+        if available > 0, downloading > 0 {
+            return "\(available) available, \(downloading) downloading"
+        }
+        if downloading > 0 {
+            return "\(downloading) downloading"
+        }
+        return "\(available) available"
+    }
 }
 
 private struct BufferedTracksSheetPayload: Identifiable {
     let id = UUID()
     let songs: [Song]
+    var downloadStatuses: [PrebufferDownloadStatus] = []
 }
 
 private struct MiniPlayerArtwork: View {

@@ -198,17 +198,20 @@ struct WRhythmScreen<Content: View>: View {
     var coverArtId: String?
     var horizontalPadding: CGFloat = 16
     var verticalPadding: CGFloat = 16
+    var contentMaxWidth: CGFloat = WRhythmVisual.contentMaxWidth
     private let content: Content
 
     init(
         coverArtId: String? = nil,
         horizontalPadding: CGFloat = 16,
         verticalPadding: CGFloat = 16,
+        contentMaxWidth: CGFloat = WRhythmVisual.contentMaxWidth,
         @ViewBuilder content: () -> Content
     ) {
         self.coverArtId = coverArtId
         self.horizontalPadding = horizontalPadding
         self.verticalPadding = verticalPadding
+        self.contentMaxWidth = contentMaxWidth
         self.content = content()
     }
 
@@ -219,7 +222,7 @@ struct WRhythmScreen<Content: View>: View {
                 VStack(spacing: WRhythmVisual.sectionSpacing) {
                     content
                 }
-                .frame(maxWidth: WRhythmVisual.contentMaxWidth)
+                .frame(maxWidth: contentMaxWidth)
                 .frame(maxWidth: .infinity)
                 .frame(minHeight: max(0, proxy.size.height - WRhythmVisual.bottomNavigationClearance), alignment: .top)
                 .padding(.horizontal, horizontalPadding)
@@ -234,7 +237,7 @@ struct WRhythmScreen<Content: View>: View {
             VStack(spacing: WRhythmVisual.sectionSpacing) {
                 content
             }
-            .frame(maxWidth: WRhythmVisual.contentMaxWidth)
+            .frame(maxWidth: contentMaxWidth)
             .frame(maxWidth: .infinity)
             .padding(.horizontal, horizontalPadding)
             .padding(.vertical, verticalPadding)

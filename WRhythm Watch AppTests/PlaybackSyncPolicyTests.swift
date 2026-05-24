@@ -1807,7 +1807,47 @@ struct PlaybackSyncPolicyTests {
             playerBufferPercent: nil
         )
 
-        #expect(summary == "7 buffered • 1 buffering 80%")
+        #expect(summary == "7 available • 1 downloading 80%")
+    }
+
+    @Test func prebufferProgressSummaryUsesBufferingOnlyForCurrentPlayback() {
+        let summary = PrebufferProgressPolicy.statusSummary(
+            readyCount: 0,
+            activeCount: 0,
+            activePercent: nil,
+            playerIsBuffering: true,
+            playerBufferPercent: 42
+        )
+
+        #expect(summary == "buffering 42%")
+    }
+
+    @Test func prebufferProgressSummaryKeepsCurrentBufferingSeparateFromDownloads() {
+        let summary = PrebufferProgressPolicy.statusSummary(
+            readyCount: 2,
+            activeCount: 1,
+            activePercent: 35,
+            playerIsBuffering: true,
+            playerBufferPercent: 12
+        )
+
+        #expect(summary == "2 available • 1 downloading 35% • buffering 12%")
+    }
+
+    @Test func prebufferProgressBuildsDownloadingRowsForActiveQueueItems() {
+        let songs = [makeSong(id: "previous"), makeSong(id: "current"), makeSong(id: "next")]
+        let statuses = PrebufferProgressPolicy.downloadStatuses(
+            for: songs,
+            activeKeys: ["current-key", "next-key"],
+            progressByKey: [
+                "current-key": 0.42,
+                "next-key": 0.003
+            ],
+            keyForSong: { "\($0.id)-key" }
+        )
+
+        #expect(statuses.map { $0.song.id } == ["current", "next"])
+        #expect(statuses.map(\.progressPercent) == [42, 1])
     }
 
     @Test func nowPlayingArtworkPolicyAvoidsDuplicateLoadsForCachedOrInFlightSongs() {

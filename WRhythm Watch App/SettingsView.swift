@@ -288,22 +288,22 @@ struct SettingsView: View {
         }
 
         SettingsSliderRow(
-            title: "Next Tracks Ready",
+            title: "Download Ahead",
             valueText: "\(prebufferAheadCount)",
-            detailText: "Tracks to download ahead of the current song",
+            detailText: "Upcoming tracks kept available",
             detailColor: .secondary,
             value: prebufferAheadSliderValue,
-            range: 1...20,
+            range: 1...100,
             step: 1
         )
 
         SettingsSliderRow(
-            title: "Previous Tracks Kept",
+            title: "Keep Previous",
             valueText: "\(retainPreviousPrebufferCount)",
-            detailText: "Recently played tracks kept ready for back/replay",
+            detailText: "Recent tracks kept available",
             detailColor: .secondary,
             value: previousPrebufferSliderValue,
-            range: 0...20,
+            range: 0...100,
             step: 1
         )
     }

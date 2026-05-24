@@ -39,7 +39,10 @@ struct NowPlayingView: View {
             case .audioRoute:
                 AudioRouteView()
             case .bufferedTracks:
-                BufferedTracksListView(songs: player.availablePrebufferedSongs)
+                BufferedTracksListView(
+                    songs: player.availablePrebufferedSongs,
+                    downloadStatuses: player.prebufferDownloadStatuses
+                )
             }
         }
         .onAppear {
@@ -48,7 +51,7 @@ struct NowPlayingView: View {
             }
         }
 #else
-        WRhythmScreen(coverArtId: primaryArtworkCoverArtId) {
+        WRhythmScreen(coverArtId: primaryArtworkCoverArtId, contentMaxWidth: 980) {
             if let remote = primaryRemotePlayback {
                 VStack(spacing: WRhythmSpacing.sm) {
                     PlaybackTargetPicker()
@@ -94,8 +97,11 @@ struct NowPlayingView: View {
                                     tint: WRhythmTheme.warning
                                 )
                             }
-                            if !player.availablePrebufferedSongs.isEmpty {
-                                BufferedTracksButton(count: player.availablePrebufferedSongs.count) {
+                            if !player.availablePrebufferedSongs.isEmpty || !player.prebufferDownloadStatuses.isEmpty {
+                                BufferedTracksButton(
+                                    count: player.availablePrebufferedSongs.count,
+                                    downloadingCount: player.prebufferDownloadStatuses.count
+                                ) {
                                     presentedSheet = .bufferedTracks
                                 }
                             }
@@ -249,7 +255,7 @@ struct NowPlayingView: View {
                         RemotePlaybackControls(playback: remote, compact: true)
                     }
                 }
-                .frame(maxWidth: 520)
+                .frame(maxWidth: 820)
                 .frame(maxWidth: .infinity)
                 .id(song.id)
             } else if deviceSyncManager.syncModeEnabled,
@@ -280,7 +286,10 @@ struct NowPlayingView: View {
             case .audioRoute:
                 AudioRouteView()
             case .bufferedTracks:
-                BufferedTracksListView(songs: player.availablePrebufferedSongs)
+                BufferedTracksListView(
+                    songs: player.availablePrebufferedSongs,
+                    downloadStatuses: player.prebufferDownloadStatuses
+                )
             }
         }
         .onAppear {
@@ -306,7 +315,7 @@ struct NowPlayingView: View {
 #if os(iOS)
         220
 #else
-        300
+        340
 #endif
     }
 
@@ -384,8 +393,14 @@ struct NowPlayingView: View {
     }
 }
 
-private func bufferedTrackLabel(_ count: Int) -> String {
-    "\(count) ready"
+private func bufferedTrackLabel(_ count: Int, downloadingCount: Int = 0) -> String {
+    if count > 0, downloadingCount > 0 {
+        return "\(count) available, \(downloadingCount) downloading"
+    }
+    if downloadingCount > 0 {
+        return "\(downloadingCount) downloading"
+    }
+    return "\(count) available"
 }
 
 private enum NowPlayingSheet: String, Identifiable {
@@ -480,6 +495,7 @@ private struct PhoneLocalNowPlayingContent: View {
                 isPlaying: localIsPlaying,
                 isBuffering: player.isBuffering,
                 bufferedCount: player.availablePrebufferedSongs.count,
+                downloadingCount: player.prebufferDownloadStatuses.count,
                 showBufferedTracks: { presentedSheet = .bufferedTracks }
             )
 
@@ -619,6 +635,7 @@ private struct PhoneRemoteNowPlayingContent: View {
                     isPlaying: playback.isPlaying,
                     isBuffering: playback.isBuffering == true,
                     bufferedCount: playback.prebufferedTrackCount ?? 0,
+                    downloadingCount: 0,
                     showBufferedTracks: { presentedSheet = .bufferedTracks }
                 )
 
@@ -759,6 +776,7 @@ private struct PhoneTrackSummary: View {
     let isPlaying: Bool
     let isBuffering: Bool
     let bufferedCount: Int
+    let downloadingCount: Int
     let showBufferedTracks: () -> Void
 
     var body: some View {
@@ -794,8 +812,12 @@ private struct PhoneTrackSummary: View {
                     WRhythmStatusPill(text: "Buffering", systemImage: "hourglass", tint: WRhythmTheme.warning)
                 }
 
-                if bufferedCount > 0 {
-                    BufferedTracksButton(count: bufferedCount, action: showBufferedTracks)
+                if bufferedCount > 0 || downloadingCount > 0 {
+                    BufferedTracksButton(
+                        count: bufferedCount,
+                        downloadingCount: downloadingCount,
+                        action: showBufferedTracks
+                    )
                 }
             }
         }
@@ -873,55 +895,93 @@ private func formatPhonePlaybackTime(_ seconds: TimeInterval) -> String {
 
 private struct BufferedTracksButton: View {
     let count: Int
+    var downloadingCount = 0
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             WRhythmStatusPill(
-                text: bufferedTrackLabel(count),
+                text: bufferedTrackLabel(count, downloadingCount: downloadingCount),
                 systemImage: "arrow.down.circle",
                 tint: .secondary
             )
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(count) ready queued \(count == 1 ? "track" : "tracks")")
+        .accessibilityLabel(bufferedTrackLabel(count, downloadingCount: downloadingCount))
     }
 }
 
 struct BufferedTracksListView: View {
     let songs: [Song]
+    var downloadStatuses: [PrebufferDownloadStatus] = []
 
     var body: some View {
         NavigationStack {
-            WRhythmScreen {
-                if songs.isEmpty {
+            WRhythmScreen(contentMaxWidth: 920) {
+                if songs.isEmpty && downloadStatuses.isEmpty {
                     WRhythmEmptyState(
                         systemImage: "arrow.down.circle",
-                        title: "No Ready Tracks",
-                        message: "Tracks appear here after they are fully buffered."
+                        title: "No Available Tracks",
+                        message: "Queue tracks appear here while downloading and after they are ready to play."
                     )
                 } else {
-                    WRhythmCard {
-                        VStack(spacing: 0) {
-                            ForEach(songs) { song in
-                                WRhythmMediaRow(
-                                    title: song.title,
-                                    subtitle: song.artist,
-                                    detail: song.album,
-                                    coverArtId: song.coverArt,
-                                    artworkSize: 42
-                                )
+                    VStack(spacing: WRhythmSpacing.md) {
+                        if !downloadStatuses.isEmpty {
+                            WRhythmCard {
+                                VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
+                                    WRhythmSectionHeader(title: "Downloading")
+                                    ForEach(downloadStatuses) { status in
+                                        WRhythmMediaRow(
+                                            title: status.song.title,
+                                            subtitle: status.song.artist,
+                                            detail: status.song.album,
+                                            coverArtId: status.song.coverArt,
+                                            artworkSize: 42
+                                        ) {
+                                            Text(status.progressPercent.map { "\($0)%" } ?? "Starting")
+                                                .font(WRhythmTypography.metadata.weight(.semibold))
+                                                .monospacedDigit()
+                                                .foregroundStyle(WRhythmTheme.warning)
+                                        }
 
-                                if song.id != songs.last?.id {
-                                    Divider()
-                                        .padding(.leading, 54)
+                                        if status.id != downloadStatuses.last?.id {
+                                            Divider()
+                                                .padding(.leading, 54)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if !songs.isEmpty {
+                            WRhythmCard {
+                                VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
+                                    WRhythmSectionHeader(title: "Available")
+                                    ForEach(songs) { song in
+                                        WRhythmMediaRow(
+                                            title: song.title,
+                                            subtitle: song.artist,
+                                            detail: song.album,
+                                            coverArtId: song.coverArt,
+                                            artworkSize: 42
+                                        ) {
+                                            Text("Ready")
+                                                .font(WRhythmTypography.metadata.weight(.semibold))
+                                                .foregroundStyle(WRhythmTheme.success)
+                                        }
+
+                                        if song.id != songs.last?.id {
+                                            Divider()
+                                                .padding(.leading, 54)
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
-            .navigationTitle("Ready Tracks")
+            .navigationTitle("Available Tracks")
             .platformNavigationBarTitleDisplayModeInline()
         }
     }
@@ -1064,7 +1124,7 @@ struct RemotePlaybackControls: View {
                     if let bufferedCount = playback.prebufferedTrackCount,
                        !playback.queue.isEmpty,
                        playback.currentIndex < playback.queue.count - 1 {
-                        WRhythmStatusPill(text: "\(bufferedCount) buffered", systemImage: "arrow.down.circle")
+                        WRhythmStatusPill(text: "\(bufferedCount) available", systemImage: "arrow.down.circle")
                     }
                 }
 
@@ -1553,7 +1613,10 @@ private struct WatchNowPlayingView: View {
             case .audioRoute:
                 AudioRouteView()
             case .bufferedTracks:
-                BufferedTracksListView(songs: player.availablePrebufferedSongs)
+                BufferedTracksListView(
+                    songs: player.availablePrebufferedSongs,
+                    downloadStatuses: player.prebufferDownloadStatuses
+                )
             }
         }
         .onAppear {

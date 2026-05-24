@@ -155,6 +155,24 @@ struct PrebufferProgressPolicy: Sendable {
         return percent(for: average)
     }
 
+    static func downloadStatuses(
+        for songs: [Song],
+        activeKeys: Set<String>,
+        progressByKey: [String: Double],
+        keyForSong: (Song) -> String
+    ) -> [PrebufferDownloadStatus] {
+        var seen = Set<String>()
+        return songs.compactMap { song in
+            let key = keyForSong(song)
+            guard activeKeys.contains(key), !seen.contains(key) else { return nil }
+            seen.insert(key)
+            return PrebufferDownloadStatus(
+                song: song,
+                progressPercent: percent(for: progressByKey[key])
+            )
+        }
+    }
+
     static func statusSummary(
         readyCount: Int,
         activeCount: Int,
@@ -164,23 +182,34 @@ struct PrebufferProgressPolicy: Sendable {
     ) -> String? {
         var parts: [String] = []
         if readyCount > 0 {
-            parts.append("\(readyCount) buffered")
+            parts.append("\(readyCount) available")
         }
         if activeCount > 0 {
             if let activePercent {
-                parts.append("\(activeCount) buffering \(activePercent)%")
+                parts.append("\(activeCount) downloading \(activePercent)%")
             } else {
-                parts.append("\(activeCount) buffering")
+                parts.append("\(activeCount) downloading")
             }
         }
-        if playerIsBuffering && activeCount == 0 {
+        if playerIsBuffering {
             if let playerBufferPercent, playerBufferPercent > 0 {
-                parts.append("stream buffering \(playerBufferPercent)%")
+                parts.append("buffering \(playerBufferPercent)%")
             } else {
-                parts.append("stream buffering")
+                parts.append("buffering")
             }
         }
         return parts.isEmpty ? nil : parts.joined(separator: " • ")
+    }
+}
+
+struct PrebufferDownloadStatus: Identifiable, Equatable, Sendable {
+    let song: Song
+    let progressPercent: Int?
+
+    var id: String { song.id }
+
+    static func == (lhs: PrebufferDownloadStatus, rhs: PrebufferDownloadStatus) -> Bool {
+        lhs.song.id == rhs.song.id && lhs.progressPercent == rhs.progressPercent
     }
 }
 
@@ -252,6 +281,7 @@ class AudioPlayer: NSObject, ObservableObject {
     @Published private(set) var prebufferedSongs: [Song] = []
     @Published private(set) var retainedPrebufferedSongs: [Song] = []
     @Published private(set) var availablePrebufferedSongs: [Song] = []
+    @Published private(set) var prebufferDownloadStatuses: [PrebufferDownloadStatus] = []
     @Published private(set) var prebufferingTrackCount = 0
     @Published private(set) var prebufferingProgressPercent: Int?
     @Published var queue: [Song] = []
@@ -345,12 +375,12 @@ class AudioPlayer: NSObject, ObservableObject {
     private let maxConcurrentPrebuffers = 3
     private var prebufferAheadCount: Int {
         let saved = UserDefaults.standard.object(forKey: "prebufferAheadCount") as? Int ?? 8
-        return min(max(saved, 1), 20)
+        return min(max(saved, 1), 100)
     }
 
     private var retainPreviousPrebufferCount: Int {
         let saved = UserDefaults.standard.object(forKey: "retainPreviousPrebufferCount") as? Int ?? 3
-        return min(max(saved, 0), 20)
+        return min(max(saved, 0), 100)
     }
     private var prebufferTasks: [String: Task<Void, Never>] = [:]
     private var prebufferTaskTokens: [String: String] = [:]
@@ -418,7 +448,7 @@ class AudioPlayer: NSObject, ObservableObject {
 
     var queueBufferStatusSummary: String? {
         PrebufferProgressPolicy.statusSummary(
-            readyCount: prebufferedTrackCount,
+            readyCount: availablePrebufferedSongs.count,
             activeCount: prebufferingTrackCount,
             activePercent: prebufferingProgressPercent,
             playerIsBuffering: isBuffering,
@@ -1670,6 +1700,7 @@ class AudioPlayer: NSObject, ObservableObject {
             prebufferedSongs = []
             retainedPrebufferedSongs = []
             availablePrebufferedSongs = []
+            prebufferDownloadStatuses = []
             return
         }
 
@@ -1684,6 +1715,7 @@ class AudioPlayer: NSObject, ObservableObject {
         let readySongs = upcomingSlice.filter { song in
             preparedPrebuffers[prebufferKey(for: song)] != nil
         }
+        let currentSlice = queue.indices.contains(currentIndex) ? [queue[currentIndex]] : []
         let previousEnd = min(max(currentIndex, 0), queue.count)
         let previousStart = max(0, previousEnd - retainPreviousPrebufferCount)
         let previousSlice = previousStart < previousEnd ? queue[previousStart..<previousEnd] : queue[previousEnd..<previousEnd]
@@ -1706,6 +1738,15 @@ class AudioPlayer: NSObject, ObservableObject {
         let availableSongs = readyPreviousSongs + readySongs
         if availablePrebufferedSongs.map(\.id) != availableSongs.map(\.id) {
             availablePrebufferedSongs = availableSongs
+        }
+        let downloadStatuses = PrebufferProgressPolicy.downloadStatuses(
+            for: Array(previousSlice) + currentSlice + Array(upcomingSlice),
+            activeKeys: Set(prebufferTasks.keys),
+            progressByKey: prebufferProgressByKey,
+            keyForSong: { prebufferKey(for: $0) }
+        )
+        if prebufferDownloadStatuses != downloadStatuses {
+            prebufferDownloadStatuses = downloadStatuses
         }
     }
 
