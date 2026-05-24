@@ -9,6 +9,8 @@
 /* Begin PBXBuildFile section */
 		26632C3C2EFB21FF003C8ABA /* WRhythm Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 26632C3B2EFB21FF003C8ABA /* WRhythm Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		F10000022F00000000000001 /* AppIconMac.icns in Resources */ = {isa = PBXBuildFile; fileRef = F10000012F00000000000001 /* AppIconMac.icns */; };
+		F20000012F01000000000001 /* PlaybackSyncPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000072F01000000000001 /* PlaybackSyncPolicyTests.swift */; };
+		F20000022F01000000000001 /* PlaybackSyncPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000072F01000000000001 /* PlaybackSyncPolicyTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -33,6 +35,20 @@
 			remoteGlobalIDString = 26632C3A2EFB21FF003C8ABA;
 			remoteInfo = "WRhythm Watch App";
 		};
+		F20000032F01000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 26632C2F2EFB21FF003C8ABA /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 26632C342EFB21FF003C8ABA;
+			remoteInfo = WRhythm;
+		};
+		F20000042F01000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 26632C2F2EFB21FF003C8ABA /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F00000072EFC000000000001;
+			remoteInfo = "WRhythm macOS";
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -56,6 +72,9 @@
 		26632C542EFB2200003C8ABA /* WRhythm Watch AppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "WRhythm Watch AppUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		F00000012EFC000000000001 /* WRhythm.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WRhythm.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F10000012F00000000000001 /* AppIconMac.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = AppIconMac.icns; sourceTree = "<group>"; };
+		F20000052F01000000000001 /* WRhythm iPhoneTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "WRhythm iPhoneTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		F20000062F01000000000001 /* WRhythm macOSTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "WRhythm macOSTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		F20000072F01000000000001 /* PlaybackSyncPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WRhythm Watch AppTests/PlaybackSyncPolicyTests.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -112,6 +131,20 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F20000092F01000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F200000A2F01000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -120,6 +153,7 @@
 			children = (
 				26632C3F2EFB21FF003C8ABA /* WRhythm Watch App */,
 				F10000032F00000000000001 /* MacResources */,
+				F20000082F01000000000001 /* SharedPolicyTests */,
 				26632C4D2EFB2200003C8ABA /* WRhythm Watch AppTests */,
 				26632C572EFB2200003C8ABA /* WRhythm Watch AppUITests */,
 				26632C362EFB21FF003C8ABA /* Products */,
@@ -134,6 +168,8 @@
 				F00000012EFC000000000001 /* WRhythm.app */,
 				26632C4A2EFB2200003C8ABA /* WRhythm Watch AppTests.xctest */,
 				26632C542EFB2200003C8ABA /* WRhythm Watch AppUITests.xctest */,
+				F20000052F01000000000001 /* WRhythm iPhoneTests.xctest */,
+				F20000062F01000000000001 /* WRhythm macOSTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -144,6 +180,14 @@
 				F10000012F00000000000001 /* AppIconMac.icns */,
 			);
 			path = MacResources;
+			sourceTree = "<group>";
+		};
+		F20000082F01000000000001 /* SharedPolicyTests */ = {
+			isa = PBXGroup;
+			children = (
+				F20000072F01000000000001 /* PlaybackSyncPolicyTests.swift */,
+			);
+			name = SharedPolicyTests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -263,6 +307,46 @@
 			productReference = F00000012EFC000000000001 /* WRhythm.app */;
 			productType = "com.apple.product-type.application";
 		};
+		F200000F2F01000000000001 /* WRhythm iPhoneTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F20000172F01000000000001 /* Build configuration list for PBXNativeTarget "WRhythm iPhoneTests" */;
+			buildPhases = (
+				F200000D2F01000000000001 /* Sources */,
+				F20000092F01000000000001 /* Frameworks */,
+				F200000B2F01000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				F20000112F01000000000001 /* PBXTargetDependency */,
+			);
+			name = "WRhythm iPhoneTests";
+			packageProductDependencies = (
+			);
+			productName = "WRhythm iPhoneTests";
+			productReference = F20000052F01000000000001 /* WRhythm iPhoneTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		F20000102F01000000000001 /* WRhythm macOSTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F20000182F01000000000001 /* Build configuration list for PBXNativeTarget "WRhythm macOSTests" */;
+			buildPhases = (
+				F200000E2F01000000000001 /* Sources */,
+				F200000A2F01000000000001 /* Frameworks */,
+				F200000C2F01000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				F20000122F01000000000001 /* PBXTargetDependency */,
+			);
+			name = "WRhythm macOSTests";
+			packageProductDependencies = (
+			);
+			productName = "WRhythm macOSTests";
+			productReference = F20000062F01000000000001 /* WRhythm macOSTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -290,6 +374,14 @@
 					F00000072EFC000000000001 = {
 						CreatedOnToolsVersion = 26.2;
 					};
+					F200000F2F01000000000001 = {
+						CreatedOnToolsVersion = 26.2;
+						TestTargetID = 26632C342EFB21FF003C8ABA;
+					};
+					F20000102F01000000000001 = {
+						CreatedOnToolsVersion = 26.2;
+						TestTargetID = F00000072EFC000000000001;
+					};
 				};
 			};
 			buildConfigurationList = 26632C322EFB21FF003C8ABA /* Build configuration list for PBXProject "WRhythm" */;
@@ -311,6 +403,8 @@
 				F00000072EFC000000000001 /* WRhythm macOS */,
 				26632C492EFB2200003C8ABA /* WRhythm Watch AppTests */,
 				26632C532EFB2200003C8ABA /* WRhythm Watch AppUITests */,
+				F200000F2F01000000000001 /* WRhythm iPhoneTests */,
+				F20000102F01000000000001 /* WRhythm macOSTests */,
 			);
 		};
 /* End PBXProject section */
@@ -352,6 +446,20 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F200000B2F01000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F200000C2F01000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -390,6 +498,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F200000D2F01000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F20000012F01000000000001 /* PlaybackSyncPolicyTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F200000E2F01000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F20000022F01000000000001 /* PlaybackSyncPolicyTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -407,6 +531,16 @@
 			isa = PBXTargetDependency;
 			target = 26632C3A2EFB21FF003C8ABA /* WRhythm Watch App */;
 			targetProxy = 26632C552EFB2200003C8ABA /* PBXContainerItemProxy */;
+		};
+		F20000112F01000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 26632C342EFB21FF003C8ABA /* WRhythm */;
+			targetProxy = F20000032F01000000000001 /* PBXContainerItemProxy */;
+		};
+		F20000122F01000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F00000072EFC000000000001 /* WRhythm macOS */;
+			targetProxy = F20000042F01000000000001 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -808,6 +942,98 @@
 			};
 			name = Release;
 		};
+		F20000132F01000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = 96HMU8KS93;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.restivollc.wrhythm.iphonetests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/WRhythm.app/WRhythm";
+			};
+			name = Debug;
+		};
+		F20000142F01000000000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = 96HMU8KS93;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.restivollc.wrhythm.iphonetests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/WRhythm.app/WRhythm";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		F20000152F01000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = 96HMU8KS93;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.restivollc.wrhythm.macostests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/WRhythm.app/Contents/MacOS/WRhythm";
+			};
+			name = Debug;
+		};
+		F20000162F01000000000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = 96HMU8KS93;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.restivollc.wrhythm.macostests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/WRhythm.app/Contents/MacOS/WRhythm";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -861,6 +1087,24 @@
 			buildConfigurations = (
 				F00000082EFC000000000001 /* Debug */,
 				F00000092EFC000000000001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F20000172F01000000000001 /* Build configuration list for PBXNativeTarget "WRhythm iPhoneTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F20000132F01000000000001 /* Debug */,
+				F20000142F01000000000001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F20000182F01000000000001 /* Build configuration list for PBXNativeTarget "WRhythm macOSTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F20000152F01000000000001 /* Debug */,
+				F20000162F01000000000001 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

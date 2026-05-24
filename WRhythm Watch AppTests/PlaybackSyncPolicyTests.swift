@@ -5,7 +5,12 @@
 
 import Foundation
 import Testing
+
+#if os(watchOS)
 @testable import WRhythm_Watch_App
+#else
+@testable import WRhythm
+#endif
 
 struct PlaybackSyncPolicyTests {
     @Test func newerSessionRevisionWinsOverCurrentSession() {
