@@ -1663,6 +1663,65 @@ struct PlaybackSyncPolicyTests {
         #expect(scheduled == ["b", "c"])
     }
 
+    @Test func prebufferSchedulingUsesConfigurableForwardWindow() {
+        let queueKeys = ["a", "b", "c", "d", "e", "f"]
+
+        #expect(PrebufferSchedulingPolicy.upcomingKeys(
+            queueKeys: queueKeys,
+            currentIndex: 1,
+            aheadCount: 2
+        ) == ["c", "d"])
+        #expect(PrebufferSchedulingPolicy.upcomingKeys(
+            queueKeys: queueKeys,
+            currentIndex: 1,
+            aheadCount: 4
+        ) == ["c", "d", "e", "f"])
+        #expect(PrebufferSchedulingPolicy.upcomingKeys(
+            queueKeys: queueKeys,
+            currentIndex: 1,
+            aheadCount: 0
+        ).isEmpty)
+    }
+
+    @Test func prebufferSchedulingRetainsPreviousKeysWithoutAddingThemToForwardCandidates() {
+        let queueKeys = ["a", "b", "c", "d", "e"]
+        let previousKeys = PrebufferSchedulingPolicy.previousKeys(
+            queueKeys: queueKeys,
+            currentIndex: 3,
+            keepCount: 2
+        )
+        let upcomingKeys = PrebufferSchedulingPolicy.upcomingKeys(
+            queueKeys: queueKeys,
+            currentIndex: 3,
+            aheadCount: 1
+        )
+        let candidates = PrebufferSchedulingPolicy.orderedCandidateKeys(
+            currentKey: queueKeys[3],
+            upcomingKeys: upcomingKeys
+        )
+
+        #expect(previousKeys == ["b", "c"])
+        #expect(upcomingKeys == ["e"])
+        #expect(candidates == ["d", "e"])
+        #expect(candidates.contains("b") == false)
+        #expect(candidates.contains("c") == false)
+    }
+
+    @Test func prebufferCachePruningKeepsActiveTemporaryDownloads() {
+        #expect(PrebufferCachePruningPolicy.shouldRemove(
+            filename: "track.download",
+            keepFilenames: []
+        ) == false)
+        #expect(PrebufferCachePruningPolicy.shouldRemove(
+            filename: "track.mp3",
+            keepFilenames: ["track.mp3"]
+        ) == false)
+        #expect(PrebufferCachePruningPolicy.shouldRemove(
+            filename: "old.mp3",
+            keepFilenames: ["track.mp3"]
+        ))
+    }
+
     @Test func prebufferSchedulingCountsOnlyPreparedTracksAsReady() {
         #expect(PrebufferSchedulingPolicy.readyCount(
             upcomingKeys: ["a", "b", "c"],

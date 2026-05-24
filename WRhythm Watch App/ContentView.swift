@@ -153,6 +153,7 @@ enum MacDestination: String, Hashable, CaseIterable {
     case tracks
     case spontaneous
     case albums
+    case availableTracks
     case downloads
     case settings
 
@@ -166,6 +167,7 @@ enum MacDestination: String, Hashable, CaseIterable {
         case .tracks: return "Tracks"
         case .spontaneous: return "Spontaneous"
         case .albums: return "Albums"
+        case .availableTracks: return "Available Tracks"
         case .downloads: return "Downloads"
         case .settings: return "Settings"
         }
@@ -181,6 +183,7 @@ enum MacDestination: String, Hashable, CaseIterable {
         case .tracks: return "magnifyingglass"
         case .spontaneous: return "shuffle"
         case .albums: return "square.stack"
+        case .availableTracks: return "externaldrive.fill"
         case .downloads: return "arrow.down.circle"
         case .settings: return "gear"
         }
@@ -478,6 +481,8 @@ struct MacDetailContent: View {
             SpontaneousMusicView()
         case .albums:
             AlbumsView()
+        case .availableTracks:
+            BufferedTracksListView(songs: player.availablePrebufferedSongs)
         case .downloads:
             DownloadsView()
         case .settings:
@@ -558,7 +563,7 @@ struct MacMiniPlayerBar: View {
                     isPlaying: isPlaying,
                     isBuffering: player.isBuffering,
                     bufferStatusText: player.queueBufferStatusSummary,
-                    bufferedSongs: player.prebufferedSongs,
+                    bufferedSongs: player.availablePrebufferedSongs,
                     queuePosition: player.queue.count > 1 ? "\(localLabel): \(player.currentIndex + 1) of \(player.queue.count)" : localLabel,
                     previous: player.previous,
                     toggle: { deviceSyncManager.setPlaying(!isPlaying, targetDeviceID: deviceSyncManager.localPlaybackTargetID) },

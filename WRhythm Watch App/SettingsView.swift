@@ -19,6 +19,8 @@ struct SettingsView: View {
     @AppStorage("streamingQuality") private var streamingQualityRaw = StreamingQuality.platformDefault.rawValue
     @AppStorage("darkModeEnabled") private var darkModeEnabled = true
     @AppStorage("scrobblingEnabled") private var scrobblingEnabled = true
+    @AppStorage("prebufferAheadCount") private var prebufferAheadCount = 8
+    @AppStorage("retainPreviousPrebufferCount") private var retainPreviousPrebufferCount = 3
 
     private var streamingQuality: Binding<StreamingQuality> {
         Binding {
@@ -284,6 +286,26 @@ struct SettingsView: View {
                 title: "Scrobbling"
             )
         }
+
+        SettingsSliderRow(
+            title: "Next Tracks Ready",
+            valueText: "\(prebufferAheadCount)",
+            detailText: "Tracks to download ahead of the current song",
+            detailColor: .secondary,
+            value: prebufferAheadSliderValue,
+            range: 1...20,
+            step: 1
+        )
+
+        SettingsSliderRow(
+            title: "Previous Tracks Kept",
+            valueText: "\(retainPreviousPrebufferCount)",
+            detailText: "Recently played tracks kept ready for back/replay",
+            detailColor: .secondary,
+            value: previousPrebufferSliderValue,
+            range: 0...20,
+            step: 1
+        )
     }
 
     @ViewBuilder
@@ -426,6 +448,22 @@ struct SettingsView: View {
             Double(radioDownloadCount)
         } set: { newValue in
             radioDownloadCount = Int(newValue)
+        }
+    }
+
+    private var prebufferAheadSliderValue: Binding<Double> {
+        Binding {
+            Double(prebufferAheadCount)
+        } set: { newValue in
+            prebufferAheadCount = Int(newValue)
+        }
+    }
+
+    private var previousPrebufferSliderValue: Binding<Double> {
+        Binding {
+            Double(retainPreviousPrebufferCount)
+        } set: { newValue in
+            retainPreviousPrebufferCount = Int(newValue)
         }
     }
 }

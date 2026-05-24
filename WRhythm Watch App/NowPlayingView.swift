@@ -39,7 +39,7 @@ struct NowPlayingView: View {
             case .audioRoute:
                 AudioRouteView()
             case .bufferedTracks:
-                BufferedTracksListView(songs: player.prebufferedSongs)
+                BufferedTracksListView(songs: player.availablePrebufferedSongs)
             }
         }
         .onAppear {
@@ -94,8 +94,8 @@ struct NowPlayingView: View {
                                     tint: WRhythmTheme.warning
                                 )
                             }
-                            if !player.prebufferedSongs.isEmpty {
-                                BufferedTracksButton(count: player.prebufferedSongs.count) {
+                            if !player.availablePrebufferedSongs.isEmpty {
+                                BufferedTracksButton(count: player.availablePrebufferedSongs.count) {
                                     presentedSheet = .bufferedTracks
                                 }
                             }
@@ -280,7 +280,7 @@ struct NowPlayingView: View {
             case .audioRoute:
                 AudioRouteView()
             case .bufferedTracks:
-                BufferedTracksListView(songs: player.prebufferedSongs)
+                BufferedTracksListView(songs: player.availablePrebufferedSongs)
             }
         }
         .onAppear {
@@ -385,7 +385,7 @@ struct NowPlayingView: View {
 }
 
 private func bufferedTrackLabel(_ count: Int) -> String {
-    "\(count) next ready"
+    "\(count) ready"
 }
 
 private enum NowPlayingSheet: String, Identifiable {
@@ -479,7 +479,7 @@ private struct PhoneLocalNowPlayingContent: View {
                 album: song.album,
                 isPlaying: localIsPlaying,
                 isBuffering: player.isBuffering,
-                bufferedCount: player.prebufferedSongs.count,
+                bufferedCount: player.availablePrebufferedSongs.count,
                 showBufferedTracks: { presentedSheet = .bufferedTracks }
             )
 
@@ -1553,7 +1553,7 @@ private struct WatchNowPlayingView: View {
             case .audioRoute:
                 AudioRouteView()
             case .bufferedTracks:
-                BufferedTracksListView(songs: player.prebufferedSongs)
+                BufferedTracksListView(songs: player.availablePrebufferedSongs)
             }
         }
         .onAppear {
