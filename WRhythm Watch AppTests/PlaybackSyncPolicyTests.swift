@@ -909,6 +909,27 @@ struct PlaybackSyncPolicyTests {
         #expect(SyncTransportFailurePolicy.shouldRestartMultipeerDiscoveryAfterSendFailure(hasConnectedPeers: false) == false)
     }
 
+    @Test func manualNearbySearchIsAvailableForSyncOrCredentialSync() {
+        #expect(SyncManualSearchPolicy.shouldSearch(syncModeEnabled: true, credentialSyncEnabled: false) == true)
+        #expect(SyncManualSearchPolicy.shouldSearch(syncModeEnabled: false, credentialSyncEnabled: true) == true)
+        #expect(SyncManualSearchPolicy.shouldSearch(syncModeEnabled: false, credentialSyncEnabled: false) == false)
+    }
+
+    @Test func manualResyncRebroadcastsPlaybackOnlyFromCurrentOutputDevice() {
+        #expect(SyncStateRefreshPublicationPolicy.shouldRebroadcastSharedPlayback(
+            sharedOutputDeviceID: "mac",
+            localDeviceID: "mac"
+        ) == true)
+        #expect(SyncStateRefreshPublicationPolicy.shouldRebroadcastSharedPlayback(
+            sharedOutputDeviceID: "mac",
+            localDeviceID: "iphone"
+        ) == false)
+        #expect(SyncStateRefreshPublicationPolicy.shouldRebroadcastSharedPlayback(
+            sharedOutputDeviceID: nil,
+            localDeviceID: "iphone"
+        ) == false)
+    }
+
     @Test func supportedSyncGraphKeepsWatchIndependentWithIPhoneBridgeToMac() {
         #expect(SyncTransportAvailabilityPolicy.canDirectlyDiscover(local: .appleWatch, remote: .iPhone) == true)
         #expect(SyncTransportAvailabilityPolicy.canDirectlyDiscover(local: .iPhone, remote: .appleWatch) == true)

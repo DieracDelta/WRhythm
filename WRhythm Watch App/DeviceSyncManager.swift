@@ -358,6 +358,12 @@ struct SyncTransportFailurePolicy: Sendable {
     }
 }
 
+struct SyncManualSearchPolicy: Sendable {
+    static func shouldSearch(syncModeEnabled: Bool, credentialSyncEnabled: Bool) -> Bool {
+        syncModeEnabled || credentialSyncEnabled
+    }
+}
+
 struct WatchConnectivityActivationPolicy: Sendable {
     nonisolated static func shouldBootstrapSync(activationSucceeded: Bool, hasError: Bool) -> Bool {
         activationSucceeded && !hasError
@@ -898,6 +904,13 @@ struct SyncStateRefreshPublicationPolicy: Sendable {
         guard let sharedOutputDeviceID else { return true }
         return sharedOutputDeviceID == localDeviceID
     }
+
+    static func shouldRebroadcastSharedPlayback(
+        sharedOutputDeviceID: String?,
+        localDeviceID: String
+    ) -> Bool {
+        sharedOutputDeviceID == localDeviceID
+    }
 }
 
 struct ConnectivityLossPlaybackPolicy: Sendable {
@@ -1396,6 +1409,24 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         configureTransports()
         _ = sendEnvelope(.init(kind: .syncRequest, sender: localPeerInfo(), command: nil, credentials: nil, targetDeviceID: nil))
         sendCurrentSyncState(includeHello: true)
+    }
+
+    func searchForNearbyDevices() {
+        guard SyncManualSearchPolicy.shouldSearch(
+            syncModeEnabled: syncModeEnabled,
+            credentialSyncEnabled: credentialSyncEnabled
+        ) else { return }
+
+        configureTransports()
+
+#if os(iOS) || os(macOS)
+        restartMultipeerDiscoveryForManualSearch()
+#endif
+
+        _ = sendEnvelope(.init(kind: .syncRequest, sender: localPeerInfo(), command: nil, credentials: nil, targetDeviceID: nil))
+        sendAuthoritativeSyncState(includeHello: true)
+        requestCredentialsFromPeers()
+        maybeSendCredentialsToInterestedPeers()
     }
 
     func publishLocalPlaybackStateNow() {
@@ -2083,18 +2114,47 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         }
     }
 
-    private func broadcastHello() {
-        _ = sendEnvelope(.init(kind: .hello, sender: localPeerInfo(), command: nil, credentials: nil, targetDeviceID: nil))
-        if let sharedSession {
-            _ = sendEnvelope(.init(
-                kind: .playbackSession,
-                sender: localPeerInfo(),
-                playbackSession: sharedSession,
-                command: nil,
-                credentials: nil,
-                targetDeviceID: nil
-            ))
+    private func sendAuthoritativeSyncState(includeHello: Bool = false) {
+        refreshLocalSharedSessionIfNeeded()
+        if includeHello {
+            broadcastPeerPresence()
         }
+
+        guard SyncStateRefreshPublicationPolicy.shouldRebroadcastSharedPlayback(
+            sharedOutputDeviceID: sharedSession?.outputDeviceID,
+            localDeviceID: localDeviceID
+        ), let sharedSession else {
+            return
+        }
+
+        broadcastSharedSession(sharedSession)
+    }
+
+    private func broadcastPeerPresence() {
+        _ = sendEnvelope(.init(kind: .hello, sender: localPeerInfo(), command: nil, credentials: nil, targetDeviceID: nil))
+    }
+
+    private func broadcastHello() {
+        broadcastPeerPresence()
+        guard SyncStateRefreshPublicationPolicy.shouldRebroadcastSharedPlayback(
+            sharedOutputDeviceID: sharedSession?.outputDeviceID,
+            localDeviceID: localDeviceID
+        ), let sharedSession else {
+            return
+        }
+
+        broadcastSharedSession(sharedSession)
+    }
+
+    private func broadcastSharedSession(_ sharedSession: PlaybackSession) {
+        _ = sendEnvelope(.init(
+            kind: .playbackSession,
+            sender: localPeerInfo(),
+            playbackSession: sharedSession,
+            command: nil,
+            credentials: nil,
+            targetDeviceID: nil
+        ))
     }
 
     private func maybeSendCredentialsToInterestedPeers() {
@@ -2829,6 +2889,26 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             self.multipeerRestartTask = nil
             self.startMultipeerDiscovery()
         }
+    }
+
+    private func restartMultipeerDiscoveryForManualSearch() {
+        guard syncModeEnabled || credentialSyncEnabled else { return }
+
+        multipeerRestartTask?.cancel()
+        multipeerRestartTask = nil
+        multipeerRestartAttempt = 0
+        inviteRetryTasksByPeerDisplayName.values.forEach { $0.cancel() }
+        inviteRetryTasksByPeerDisplayName.removeAll()
+        inviteAttemptsByPeerDisplayName.removeAll()
+        discoveredMultipeerPeers.removeAll()
+
+        advertiser?.stopAdvertisingPeer()
+        browser?.stopBrowsingForPeers()
+        advertiser = nil
+        browser = nil
+
+        startMultipeerDiscovery()
+        print("🔎 Manual nearby device search started")
     }
 
     private func resetMultipeerBackoff(for peerID: MCPeerID? = nil) {

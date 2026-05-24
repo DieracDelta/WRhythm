@@ -169,6 +169,8 @@ struct NowPlayingView: View {
 
                         WRhythmTransportButton(systemImage: "forward.end.fill", size: .body, diameter: 38, action: player.next)
                         .disabled(player.currentIndex >= player.queue.count - 1)
+
+                        NowPlayingResyncButton(diameter: 38)
                     }
 
                     PlaybackTargetPicker()
@@ -268,6 +270,7 @@ struct NowPlayingView: View {
             } else {
                 VStack(spacing: 8) {
                     PlaybackTargetPicker()
+                    NowPlayingResyncButton(diameter: 38)
 
                     Image(systemName: "music.note")
                         .font(.largeTitle)
@@ -411,6 +414,23 @@ private enum NowPlayingSheet: String, Identifiable {
     var id: String { rawValue }
 }
 
+private struct NowPlayingResyncButton: View {
+    @ObservedObject var deviceSyncManager = DeviceSyncManager.shared
+    var diameter: CGFloat = 38
+
+    var body: some View {
+        WRhythmTransportButton(
+            systemImage: "arrow.clockwise",
+            size: .body,
+            diameter: diameter,
+            action: deviceSyncManager.searchForNearbyDevices
+        )
+        .disabled(!deviceSyncManager.syncModeEnabled && !deviceSyncManager.credentialSyncEnabled)
+        .accessibilityLabel("Reconnect and resync nearby devices")
+        .help("Reconnect and resync nearby devices")
+    }
+}
+
 #if os(iOS)
 private struct PhoneNowPlayingView: View {
     @ObservedObject var player = AudioPlayer.shared
@@ -533,6 +553,8 @@ private struct PhoneLocalNowPlayingContent: View {
 
                 WRhythmTransportButton(systemImage: "forward.end.fill", size: .body, diameter: 44, action: player.next)
                     .disabled(player.currentIndex >= player.queue.count - 1)
+
+                NowPlayingResyncButton(diameter: 44)
             }
 
             InlineVolumeSlider(volume: Binding(
@@ -678,6 +700,8 @@ private struct PhoneRemoteNowPlayingContent: View {
                         diameter: 44,
                         action: { deviceSyncManager.sendNext(targetDeviceID: playback.id) }
                     )
+
+                    NowPlayingResyncButton(diameter: 44)
                 }
 
                 InlineVolumeSlider(volume: Binding(
@@ -878,6 +902,7 @@ private struct PhoneNoSongContent: View {
             Text("No song playing")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+            NowPlayingResyncButton(diameter: 44)
             Spacer(minLength: WRhythmSpacing.xl)
         }
         .frame(maxWidth: .infinity)
@@ -1225,6 +1250,8 @@ struct RemotePlaybackControls: View {
                             size: compact ? .title3 : .title2,
                             action: deviceSyncManager.takeOverRemotePlayback
                         )
+
+                        NowPlayingResyncButton(diameter: compact ? 32 : 38)
                     }
 
                     InlineVolumeSlider(volume: Binding(
@@ -1685,6 +1712,8 @@ private struct WatchNowPlayingView: View {
                 next: player.next
             )
 
+            WatchResyncButton()
+
             InlineVolumeSlider(volume: Binding(
                 get: { player.volume },
                 set: { player.volume = $0 }
@@ -1726,6 +1755,8 @@ private struct WatchNowPlayingView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+
+            WatchResyncButton()
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 24)
@@ -1832,6 +1863,8 @@ private struct WatchRemotePlaybackControls: View {
                     seekForward: { seekRemote(playback, by: 15) },
                     next: { deviceSyncManager.sendNext(targetDeviceID: playback.id) }
                 )
+
+                WatchResyncButton()
 
                 InlineVolumeSlider(volume: Binding(
                     get: { displayedVolume },
@@ -2038,6 +2071,25 @@ private struct WatchTransportButton: View {
             .foregroundStyle(prominent ? AnyShapeStyle(Color.white) : AnyShapeStyle(Color.primary))
             .buttonStyle(.plain)
             .shadow(color: Color.black.opacity(prominent ? 0.18 : 0.06), radius: prominent ? 8 : 4, y: prominent ? 4 : 2)
+    }
+}
+
+private struct WatchResyncButton: View {
+    @ObservedObject var deviceSyncManager = DeviceSyncManager.shared
+
+    var body: some View {
+        Button(action: deviceSyncManager.searchForNearbyDevices) {
+            Label("Reconnect", systemImage: "arrow.clockwise")
+                .font(.caption2.weight(.semibold))
+                .lineLimit(1)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 5)
+                .background(.thinMaterial, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(WRhythmTheme.accent)
+        .disabled(!deviceSyncManager.syncModeEnabled && !deviceSyncManager.credentialSyncEnabled)
+        .accessibilityLabel("Reconnect and resync nearby devices")
     }
 }
 
