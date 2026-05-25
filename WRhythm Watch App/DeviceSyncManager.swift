@@ -909,7 +909,7 @@ struct SyncStateRefreshPublicationPolicy: Sendable {
         sharedOutputDeviceID: String?,
         localDeviceID: String
     ) -> Bool {
-        sharedOutputDeviceID == localDeviceID
+        sharedOutputDeviceID != nil
     }
 }
 

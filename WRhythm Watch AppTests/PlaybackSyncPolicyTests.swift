@@ -920,15 +920,15 @@ struct PlaybackSyncPolicyTests {
         #expect(SyncManualSearchPolicy.shouldSearch(syncModeEnabled: false, credentialSyncEnabled: false) == false)
     }
 
-    @Test func manualResyncRebroadcastsPlaybackOnlyFromCurrentOutputDevice() {
+    @Test func manualResyncRebroadcastsPlaybackFromCurrentOutputOrBridge() {
         #expect(SyncStateRefreshPublicationPolicy.shouldRebroadcastSharedPlayback(
             sharedOutputDeviceID: "mac",
             localDeviceID: "mac"
         ) == true)
         #expect(SyncStateRefreshPublicationPolicy.shouldRebroadcastSharedPlayback(
-            sharedOutputDeviceID: "mac",
+            sharedOutputDeviceID: "watch",
             localDeviceID: "iphone"
-        ) == false)
+        ) == true)
         #expect(SyncStateRefreshPublicationPolicy.shouldRebroadcastSharedPlayback(
             sharedOutputDeviceID: nil,
             localDeviceID: "iphone"
@@ -2985,10 +2985,20 @@ struct PlaybackSyncPolicyTests {
 
     @Test(arguments: [0x5157A7E, 0xBADC0FFE, 0xC001D00D, 0x5EED1234])
     func seededThreeDevicePlaybackScenarioFuzzConvergesAcrossRelays(seed: UInt64) {
-        var generator = SeededGenerator(seed: seed)
-        var harness = ThreeDeviceSyncHarness(songs: (0..<7).map { makeSong(id: "seed-\(seed)-song-\($0)") })
+        runThreeDevicePlaybackScenarioFuzz(seed: seed, steps: 220, songCount: 7)
+    }
 
-        for step in 0..<220 {
+    @Test func threeDevicePlaybackScenarioSoakConvergesAcrossRelays() {
+        for seed in Self.threeDeviceScenarioSoakSeeds(count: 64) {
+            runThreeDevicePlaybackScenarioFuzz(seed: seed, steps: 900, songCount: 17)
+        }
+    }
+
+    private func runThreeDevicePlaybackScenarioFuzz(seed: UInt64, steps: Int, songCount: Int) {
+        var generator = SeededGenerator(seed: seed)
+        var harness = ThreeDeviceSyncHarness(songs: (0..<songCount).map { makeSong(id: "seed-\(seed)-song-\($0)") })
+
+        for step in 0..<steps {
             let device = ScenarioDevice.allCases[generator.int(in: 0..<ScenarioDevice.allCases.count)]
 
             switch generator.int(in: 0..<10) {
@@ -3016,6 +3026,7 @@ struct PlaybackSyncPolicyTests {
 
             if step.isMultiple(of: 11) {
                 harness.drainRandomly(generator: &generator)
+                #expect(harness.pendingEnvelopeCount == 0, "seed \(seed) step \(step): pending envelopes did not drain")
                 #expect(harness.convergenceFailures().isEmpty, "seed \(seed) step \(step): \(harness.convergenceFailures().joined(separator: "; "))")
                 #expect(harness.duplicateProcessingFailures().isEmpty, "seed \(seed) step \(step): \(harness.duplicateProcessingFailures().joined(separator: "; "))")
             }
@@ -3028,6 +3039,12 @@ struct PlaybackSyncPolicyTests {
 
         #expect(harness.convergenceFailures().isEmpty, "seed \(seed): \(harness.convergenceFailures().joined(separator: "; "))")
         #expect(harness.duplicateProcessingFailures().isEmpty, "seed \(seed): \(harness.duplicateProcessingFailures().joined(separator: "; "))")
+    }
+
+    private static func threeDeviceScenarioSoakSeeds(count: Int) -> [UInt64] {
+        (0..<count).map { index in
+            0xD15E_A5E0_0000_0001 &+ UInt64(index) &* 0x9E37_79B9_7F4A_7C15
+        }
     }
 
     private struct SeededGenerator {
@@ -3241,6 +3258,10 @@ struct PlaybackSyncPolicyTests {
             self.nodes = Dictionary(uniqueKeysWithValues: ScenarioDevice.allCases.map { ($0, ScenarioNode(id: $0)) })
         }
 
+        var pendingEnvelopeCount: Int {
+            pendingEnvelopes.count
+        }
+
         func session(on device: ScenarioDevice) -> PlaybackSession? {
             nodes[device]?.sharedSession
         }
@@ -3295,15 +3316,9 @@ struct PlaybackSyncPolicyTests {
             advanceTime()
             nodes[device]?.isConnected = true
 
-            if let localSession = nodes[device]?.localSession, localSession.isPlaying {
-                let revision = nextRevision()
-                let session = copySession(
-                    localSession,
-                    revision: revision,
-                    updatedAt: now,
-                    updatedByDeviceID: device.rawValue
-                )
-                publishExistingSession(session, from: device)
+            publishReconnectBootstrap(from: device)
+            for neighbor in neighbors(of: device) {
+                publishReconnectBootstrap(from: neighbor)
             }
         }
 
@@ -3360,6 +3375,39 @@ struct PlaybackSyncPolicyTests {
             )
             nodes[device]?.localSession = session
             publishExistingSession(session, from: device)
+        }
+
+        private mutating func publishReconnectBootstrap(from device: ScenarioDevice) {
+            guard nodes[device]?.isConnected == true else { return }
+
+            if let localSession = nodes[device]?.localSession,
+               SyncStateRefreshPublicationPolicy.shouldPublishLocalPlayback(
+                   sharedOutputDeviceID: nodes[device]?.sharedSession?.outputDeviceID,
+                   localDeviceID: device.rawValue,
+                   hasLocalPlayback: !localSession.queue.isEmpty
+               ) {
+                publishRefreshedSession(localSession, from: device)
+                return
+            }
+
+            if let sharedSession = nodes[device]?.sharedSession,
+               SyncStateRefreshPublicationPolicy.shouldRebroadcastSharedPlayback(
+                   sharedOutputDeviceID: sharedSession.outputDeviceID,
+                   localDeviceID: device.rawValue
+               ) {
+                publishRefreshedSession(sharedSession, from: device)
+            }
+        }
+
+        private mutating func publishRefreshedSession(_ session: PlaybackSession, from device: ScenarioDevice) {
+            let revision = nextRevision()
+            let refreshed = copySession(
+                session,
+                revision: revision,
+                updatedAt: now,
+                updatedByDeviceID: device.rawValue
+            )
+            publishExistingSession(refreshed, from: device)
         }
 
         private mutating func publishExistingSession(_ session: PlaybackSession, from device: ScenarioDevice) {
