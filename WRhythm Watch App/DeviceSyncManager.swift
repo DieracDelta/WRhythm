@@ -1247,6 +1247,20 @@ final class DeviceSyncManager: NSObject, ObservableObject {
 #endif
 
     private override init() {
+        let environment = ProcessInfo.processInfo.environment
+#if DEBUG
+        if let harnessDeviceID = environment["WRHYTHM_SYNC_HARNESS_DEVICE_ID"], !harnessDeviceID.isEmpty {
+            UserDefaults.standard.set(harnessDeviceID, forKey: "deviceSyncDeviceID")
+            let resolvedDeviceID = harnessDeviceID
+            localDeviceID = resolvedDeviceID
+        } else if let savedID = UserDefaults.standard.string(forKey: "deviceSyncDeviceID") {
+            localDeviceID = savedID
+        } else {
+            let newID = UUID().uuidString
+            UserDefaults.standard.set(newID, forKey: "deviceSyncDeviceID")
+            localDeviceID = newID
+        }
+#else
         if let savedID = UserDefaults.standard.string(forKey: "deviceSyncDeviceID") {
             localDeviceID = savedID
         } else {
@@ -1254,6 +1268,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             UserDefaults.standard.set(newID, forKey: "deviceSyncDeviceID")
             localDeviceID = newID
         }
+#endif
         if let savedSessionID = UserDefaults.standard.string(forKey: "deviceSyncSessionID") {
             sharedSessionID = savedSessionID
         } else {
@@ -1263,18 +1278,25 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         }
 
 #if os(watchOS)
-        localDeviceName = WKInterfaceDevice.current().name
-        platformName = "Apple Watch"
+        let defaultLocalDeviceName = WKInterfaceDevice.current().name
+        let defaultPlatformName = "Apple Watch"
 #elseif os(iOS)
-        localDeviceName = UIDevice.current.name
-        platformName = "iPhone"
+        let defaultLocalDeviceName = UIDevice.current.name
+        let defaultPlatformName = "iPhone"
 #elseif os(macOS)
-        localDeviceName = Host.current().localizedName ?? "WRhythm"
-        platformName = "Mac"
+        let defaultLocalDeviceName = Host.current().localizedName ?? "WRhythm"
+        let defaultPlatformName = "Mac"
 #else
-        localDeviceName = ProcessInfo.processInfo.processName
-        platformName = "Apple Device"
+        let defaultLocalDeviceName = ProcessInfo.processInfo.processName
+        let defaultPlatformName = "Apple Device"
 #endif
+#if DEBUG
+        localDeviceName = environment["WRHYTHM_SYNC_HARNESS_DEVICE_NAME"].flatMap { $0.isEmpty ? nil : $0 }
+            ?? defaultLocalDeviceName
+#else
+        localDeviceName = defaultLocalDeviceName
+#endif
+        platformName = defaultPlatformName
 
         if UserDefaults.standard.object(forKey: Self.syncModeKey) == nil {
             syncModeEnabled = true
@@ -1499,6 +1521,64 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             targetDeviceID: nil
         ))
     }
+
+#if DEBUG
+    var harnessLocalDeviceID: String {
+        localDeviceID
+    }
+
+    var harnessLocalDeviceName: String {
+        localDeviceName
+    }
+
+    var harnessPlatformName: String {
+        platformName
+    }
+
+    var harnessPeerIDs: [String] {
+        peerInfos.keys.sorted()
+    }
+
+    var harnessPeerSummaries: [String] {
+        peerInfos.values
+            .sorted { $0.id < $1.id }
+            .map { "\($0.id)|\($0.name)|\($0.platform)|sync=\($0.syncModeEnabled)" }
+    }
+
+    func harnessPublishPlayback(
+        queue: [Song],
+        currentIndex: Int,
+        position: TimeInterval,
+        isPlaying: Bool,
+        outputDeviceID: String?,
+        revision: Int? = nil,
+        volume: Double? = nil
+    ) {
+        guard !queue.isEmpty else { return }
+        let outputDeviceID = outputDeviceID.flatMap { $0.isEmpty ? nil : $0 } ?? localDeviceID
+        publishSharedSession(makeSession(
+            queue: queue,
+            currentIndex: currentIndex,
+            position: position,
+            isPlaying: isPlaying,
+            outputDeviceID: outputDeviceID,
+            revision: revision,
+            volume: volume
+        ), applyLocally: false)
+    }
+
+    var harnessWatchConnectivitySummary: String {
+#if os(iOS)
+        guard let watchSession else { return "none" }
+        return "activation=\(watchSession.activationState.rawValue)|reachable=\(watchSession.isReachable)|paired=\(watchSession.isPaired)|installed=\(watchSession.isWatchAppInstalled)"
+#elseif os(watchOS)
+        guard let watchSession else { return "none" }
+        return "activation=\(watchSession.activationState.rawValue)|reachable=\(watchSession.isReachable)"
+#else
+        return "unsupported"
+#endif
+    }
+#endif
 
     private func applySharedSession(_ session: PlaybackSession, applyLocally: Bool) {
         guard PlaybackSessionSyncPolicy.shouldApply(session, over: sharedSession) else { return }
@@ -2114,6 +2194,11 @@ final class DeviceSyncManager: NSObject, ObservableObject {
 
     private func refreshLocalSharedSessionIfNeeded() {
         guard syncModeEnabled, !isApplyingRemoteCommand else { return }
+#if DEBUG
+        if ProcessInfo.processInfo.environment["WRHYTHM_SYNC_HARNESS"] == "1" {
+            return
+        }
+#endif
 
         let player = AudioPlayer.shared
         let queue = player.queue.isEmpty ? player.currentSong.map { [$0] } ?? [] : player.queue

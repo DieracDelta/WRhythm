@@ -12,6 +12,14 @@ struct WRhythm_Watch_AppApp: App {
     @StateObject private var libraryDataManager = LibraryDataManager()
     @StateObject private var deviceSyncManager = DeviceSyncManager.shared
     @AppStorage("darkModeEnabled") private var darkModeEnabled = true
+
+    init() {
+#if DEBUG
+        Task { @MainActor in
+            SyncLiveHarness.shared.startIfNeeded()
+        }
+#endif
+    }
     
     var body: some Scene {
         WindowGroup {
@@ -21,6 +29,14 @@ struct WRhythm_Watch_AppApp: App {
                 .tint(WRhythmTheme.accent)
                 .accentColor(WRhythmTheme.accent)
                 .preferredColorScheme(darkModeEnabled ? .dark : .light)
+#if DEBUG
+                .task {
+                    SyncLiveHarness.shared.startIfNeeded()
+                }
+                .onOpenURL { url in
+                    SyncLiveHarness.shared.handle(url)
+                }
+#endif
         }
 #if os(macOS)
         .commands {

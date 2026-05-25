@@ -123,7 +123,7 @@ run_sync_tests() {
 
   echo "Running $label sync tests..."
   local exit_code=0
-  run_with_timeout "${TEST_TIMEOUT_SECONDS:-600}" xcodebuild test \
+  run_with_timeout "${TEST_TIMEOUT_SECONDS:-2700}" xcodebuild test \
     -project "$ROOT_DIR/WRhythm.xcodeproj" \
     -scheme "$scheme" \
     -destination "$destination" \
