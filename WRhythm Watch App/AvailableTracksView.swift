@@ -7,6 +7,21 @@
 
 import SwiftUI
 
+struct AvailableTracksPresentationPolicy: Sendable {
+    static func summary(readyCount: Int, downloadingCount: Int) -> String {
+        if readyCount > 0, downloadingCount > 0 {
+            return "\(readyCount) ready, \(downloadingCount) downloading"
+        }
+        if readyCount > 0 {
+            return "\(readyCount) ready"
+        }
+        if downloadingCount > 0 {
+            return "\(downloadingCount) downloading"
+        }
+        return "No tracks ready"
+    }
+}
+
 struct AvailableTracksView: View {
     @ObservedObject private var player = AudioPlayer.shared
 

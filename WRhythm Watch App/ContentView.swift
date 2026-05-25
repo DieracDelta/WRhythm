@@ -343,7 +343,11 @@ struct MacSidebar: View {
     }
 
     private var localQueueSectionTitle: String {
-        deviceSyncManager.sharedSession != nil || remoteQueueMatchesLocal ? "Shared Queue" : "Mac Queue"
+        QueuePresentationPolicy.sectionTitle(
+            hasSharedSession: deviceSyncManager.sharedSession != nil,
+            remoteQueueMatchesLocal: remoteQueueMatchesLocal,
+            localTitle: "Mac Queue"
+        )
     }
 
     private func queueItems(_ songs: [Song]) -> [QueueDisplayItem] {
@@ -353,11 +357,15 @@ struct MacSidebar: View {
     }
 
     private func canRemoveDisplayedQueueItem(at index: Int) -> Bool {
-        displayedQueue.indices.contains(index) && index != displayedCurrentIndex
+        QueuePresentationPolicy.canRemove(
+            index: index,
+            currentIndex: displayedCurrentIndex,
+            queueCount: displayedQueue.count
+        )
     }
 
     private func removeDisplayedQueueItem(at index: Int) {
-        if deviceSyncManager.sharedSession != nil {
+        if QueuePresentationPolicy.mutationTarget(hasSharedSession: deviceSyncManager.sharedSession != nil) == .shared {
             deviceSyncManager.removeSharedQueueItem(at: index)
         } else {
             player.removeQueueItem(at: index)
@@ -365,7 +373,7 @@ struct MacSidebar: View {
     }
 
     private func clearDisplayedQueue() {
-        if deviceSyncManager.sharedSession != nil {
+        if QueuePresentationPolicy.mutationTarget(hasSharedSession: deviceSyncManager.sharedSession != nil) == .shared {
             deviceSyncManager.clearSharedQueueKeepingCurrent()
         } else {
             player.clearQueueKeepingCurrent()

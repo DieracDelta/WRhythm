@@ -47,6 +47,39 @@ struct ScrobbleProgressPolicyTests {
         #expect(tracker.listenedTime == 11)
     }
 
+    @Test func pausedGapDoesNotCountAsListenedTime() {
+        var tracker = ScrobbleProgressTracker()
+        let start = Date()
+        _ = tracker.start(songID: "song-1", currentTime: 0, now: start)
+
+        #expect(tracker.update(songID: "song-1", currentTime: 10, duration: 120, isPlaying: true, now: start.addingTimeInterval(10)) == nil)
+        #expect(tracker.update(songID: "song-1", currentTime: 10, duration: 120, isPlaying: false, now: start.addingTimeInterval(70)) == nil)
+        #expect(tracker.update(songID: "song-1", currentTime: 11, duration: 120, isPlaying: true, now: start.addingTimeInterval(71)) == nil)
+        #expect(tracker.listenedTime == 11)
+    }
+
+    @Test func stalledPlaybackPositionDoesNotCountBufferingWallTime() {
+        var tracker = ScrobbleProgressTracker()
+        let start = Date()
+        _ = tracker.start(songID: "song-1", currentTime: 0, now: start)
+
+        #expect(tracker.update(songID: "song-1", currentTime: 10, duration: 120, isPlaying: true, now: start.addingTimeInterval(10)) == nil)
+        #expect(tracker.update(songID: "song-1", currentTime: 10, duration: 120, isPlaying: true, now: start.addingTimeInterval(70)) == nil)
+        #expect(tracker.listenedTime == 10)
+    }
+
+    @Test func restartingSameSongCreatesNewNowPlayingWindowAndSubmissionState() {
+        var tracker = ScrobbleProgressTracker()
+        let start = Date()
+        _ = tracker.start(songID: "song-1", currentTime: 0, now: start)
+        #expect(tracker.update(songID: "song-1", currentTime: 30, duration: 60, isPlaying: true, now: start.addingTimeInterval(30)) == .submission(songID: "song-1"))
+
+        #expect(tracker.start(songID: "song-1", currentTime: 0, now: start.addingTimeInterval(40)) == .nowPlaying(songID: "song-1"))
+        #expect(tracker.submissionSent == false)
+        #expect(tracker.listenedTime == 0)
+        #expect(tracker.update(songID: "song-1", currentTime: 30, duration: 60, isPlaying: true, now: start.addingTimeInterval(70)) == .submission(songID: "song-1"))
+    }
+
     @Test func changingSongsResetsSubmissionState() {
         var tracker = ScrobbleProgressTracker()
         let start = Date()

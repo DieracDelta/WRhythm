@@ -123,19 +123,10 @@ struct MenuView: View {
 
 #if os(iOS)
     private var availableTracksSummary: String {
-        let readyCount = player.availablePrebufferedSongs.count
-        let downloadingCount = player.prebufferDownloadStatuses.count
-
-        if readyCount > 0, downloadingCount > 0 {
-            return "\(readyCount) ready, \(downloadingCount) downloading"
-        }
-        if readyCount > 0 {
-            return "\(readyCount) ready"
-        }
-        if downloadingCount > 0 {
-            return "\(downloadingCount) downloading"
-        }
-        return "No tracks ready"
+        AvailableTracksPresentationPolicy.summary(
+            readyCount: player.availablePrebufferedSongs.count,
+            downloadingCount: player.prebufferDownloadStatuses.count
+        )
     }
 #endif
 }

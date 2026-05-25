@@ -1794,6 +1794,59 @@ struct PlaybackSyncPolicyTests {
         #expect(scheduled == ["song-2", "song-3"])
     }
 
+    @Test func prebufferSchedulingRecalculatesWindowsAfterJumpingBackward() {
+        let queueKeys = (0..<12).map { "song-\($0)" }
+
+        let previousKeys = PrebufferSchedulingPolicy.previousKeys(
+            queueKeys: queueKeys,
+            currentIndex: 2,
+            keepCount: 4
+        )
+        let upcomingKeys = PrebufferSchedulingPolicy.upcomingKeys(
+            queueKeys: queueKeys,
+            currentIndex: 2,
+            aheadCount: 5
+        )
+        let desiredKeys = PrebufferSchedulingPolicy.desiredKeys(
+            currentKey: queueKeys[2],
+            upcomingKeys: upcomingKeys
+        )
+
+        #expect(previousKeys == ["song-0", "song-1"])
+        #expect(upcomingKeys == ["song-3", "song-4", "song-5", "song-6", "song-7"])
+        #expect(desiredKeys == ["song-2", "song-3", "song-4", "song-5", "song-6", "song-7"])
+        #expect(desiredKeys.contains("song-8") == false)
+    }
+
+    @Test func prebufferSchedulingRecalculatesWindowsAfterJumpingForward() {
+        let queueKeys = (0..<12).map { "song-\($0)" }
+
+        let previousKeys = PrebufferSchedulingPolicy.previousKeys(
+            queueKeys: queueKeys,
+            currentIndex: 8,
+            keepCount: 3
+        )
+        let upcomingKeys = PrebufferSchedulingPolicy.upcomingKeys(
+            queueKeys: queueKeys,
+            currentIndex: 8,
+            aheadCount: 5
+        )
+        let scheduled = PrebufferSchedulingPolicy.keysToSchedule(
+            candidateKeys: PrebufferSchedulingPolicy.orderedCandidateKeys(
+                currentKey: queueKeys[8],
+                upcomingKeys: upcomingKeys
+            ),
+            activeKeys: ["song-9"],
+            preparedKeys: ["song-8"],
+            failedKeys: [],
+            maxConcurrentTasks: 3
+        )
+
+        #expect(previousKeys == ["song-5", "song-6", "song-7"])
+        #expect(upcomingKeys == ["song-9", "song-10", "song-11"])
+        #expect(scheduled == ["song-10", "song-11"])
+    }
+
     @Test func prebufferSchedulingSkipsFailedPreparedAndActiveKeysToFillSlots() {
         let scheduled = PrebufferSchedulingPolicy.keysToSchedule(
             candidateKeys: ["a", "b", "c", "d"],
@@ -2168,6 +2221,74 @@ struct PlaybackSyncPolicyTests {
         #expect(visibility.showsRemote == true)
     }
 
+    @Test(arguments: [
+        ("iphone", "mac"),
+        ("mac", "iphone")
+    ])
+    func pausedOwnerSessionAppliesAndDisplaysPausedSymmetrically(ownerDeviceID: String, observerDeviceID: String) throws {
+        let now = Date()
+        let playingSession = makeSession(
+            id: "\(ownerDeviceID)-session",
+            outputDeviceID: ownerDeviceID,
+            isPlaying: true,
+            position: 30,
+            revision: 8,
+            updatedAt: now.addingTimeInterval(-1),
+            updatedByDeviceID: ownerDeviceID
+        )
+        let pausedSession = makeSession(
+            id: "\(ownerDeviceID)-session",
+            outputDeviceID: ownerDeviceID,
+            isPlaying: false,
+            position: 31,
+            revision: 9,
+            updatedAt: now,
+            updatedByDeviceID: ownerDeviceID
+        )
+
+        #expect(PlaybackSessionSyncPolicy.shouldApply(pausedSession, over: playingSession, now: now) == true)
+
+        let snapshot = try #require(PlaybackSessionSnapshotPolicy.snapshot(
+            from: pausedSession,
+            deviceName: observerDeviceID,
+            platform: observerDeviceID,
+            now: now.addingTimeInterval(5)
+        ))
+
+        #expect(snapshot.id == ownerDeviceID)
+        #expect(snapshot.isPlaying == false)
+        #expect(snapshot.currentTime == 31)
+    }
+
+    @Test(arguments: [
+        ("iphone", "mac"),
+        ("mac", "iphone")
+    ])
+    func stalePlayingTelemetryCannotOverrideNewerPausedOwnerSession(ownerDeviceID: String, observerDeviceID: String) {
+        let now = Date()
+        let pausedSession = makeSession(
+            id: "\(ownerDeviceID)-session",
+            outputDeviceID: ownerDeviceID,
+            isPlaying: false,
+            position: 42,
+            revision: 9,
+            updatedAt: now,
+            updatedByDeviceID: ownerDeviceID
+        )
+        let delayedPlayingSession = makeSession(
+            id: "\(ownerDeviceID)-session",
+            outputDeviceID: ownerDeviceID,
+            isPlaying: true,
+            position: 41,
+            revision: 8,
+            updatedAt: now.addingTimeInterval(0.5),
+            updatedByDeviceID: ownerDeviceID
+        )
+
+        #expect(observerDeviceID != ownerDeviceID)
+        #expect(PlaybackSessionSyncPolicy.shouldApply(delayedPlayingSession, over: pausedSession, now: now.addingTimeInterval(0.5)) == false)
+    }
+
     @Test func credentialImportRejectsPayloadIssuedBeforeLocalLogout() {
         let logoutTime = Date()
         let staleCredentialIssuedAt = logoutTime.addingTimeInterval(-1)
@@ -2318,6 +2439,35 @@ struct PlaybackSyncPolicyTests {
         #expect(throws: DecodingError.self) {
             try JSONDecoder().decode(DownloadedSong.self, from: Data(payload.utf8))
         }
+    }
+
+    @Test func availableTracksSummaryCoversEmptyReadyDownloadingAndMixedStates() {
+        #expect(AvailableTracksPresentationPolicy.summary(readyCount: 0, downloadingCount: 0) == "No tracks ready")
+        #expect(AvailableTracksPresentationPolicy.summary(readyCount: 3, downloadingCount: 0) == "3 ready")
+        #expect(AvailableTracksPresentationPolicy.summary(readyCount: 0, downloadingCount: 2) == "2 downloading")
+        #expect(AvailableTracksPresentationPolicy.summary(readyCount: 7, downloadingCount: 1) == "7 ready, 1 downloading")
+    }
+
+    @Test func queuePresentationProtectsCurrentTrackAndRejectsInvalidIndexes() {
+        #expect(QueuePresentationPolicy.canRemove(index: 0, currentIndex: 1, queueCount: 3) == true)
+        #expect(QueuePresentationPolicy.canRemove(index: 1, currentIndex: 1, queueCount: 3) == false)
+        #expect(QueuePresentationPolicy.canRemove(index: -1, currentIndex: 1, queueCount: 3) == false)
+        #expect(QueuePresentationPolicy.canRemove(index: 3, currentIndex: 1, queueCount: 3) == false)
+    }
+
+    @Test func queuePresentationUsesSharedMutationsOnlyWhenSharedSessionExists() {
+        #expect(QueuePresentationPolicy.mutationTarget(hasSharedSession: true) == .shared)
+        #expect(QueuePresentationPolicy.mutationTarget(hasSharedSession: false) == .local)
+        #expect(QueuePresentationPolicy.sectionTitle(hasSharedSession: true, remoteQueueMatchesLocal: false, localTitle: "This Device Queue") == "Shared Queue")
+        #expect(QueuePresentationPolicy.sectionTitle(hasSharedSession: false, remoteQueueMatchesLocal: true, localTitle: "This Device Queue") == "Shared Queue")
+        #expect(QueuePresentationPolicy.sectionTitle(hasSharedSession: false, remoteQueueMatchesLocal: false, localTitle: "This Device Queue") == "This Device Queue")
+    }
+
+    @Test func queuePresentationSummaryClampsDisplayedIndex() {
+        #expect(QueuePresentationPolicy.summary(queueCount: 0, currentIndex: 10) == "Nothing queued")
+        #expect(QueuePresentationPolicy.summary(queueCount: 5, currentIndex: -2) == "Track 1 of 5")
+        #expect(QueuePresentationPolicy.summary(queueCount: 5, currentIndex: 20) == "Track 5 of 5")
+        #expect(QueuePresentationPolicy.summary(queueCount: 5, currentIndex: 2) == "Track 3 of 5")
     }
 
     private func makeSnapshot(
