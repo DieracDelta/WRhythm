@@ -2989,8 +2989,8 @@ struct PlaybackSyncPolicyTests {
     }
 
     @Test func threeDevicePlaybackScenarioSoakConvergesAcrossRelays() {
-        for seed in Self.threeDeviceScenarioSoakSeeds(count: 64) {
-            runThreeDevicePlaybackScenarioFuzz(seed: seed, steps: 900, songCount: 17)
+        for seed in Self.threeDeviceScenarioSoakSeeds(count: 128) {
+            runThreeDevicePlaybackScenarioFuzz(seed: seed, steps: 1_500, songCount: 31)
         }
     }
 
@@ -3001,7 +3001,7 @@ struct PlaybackSyncPolicyTests {
         for step in 0..<steps {
             let device = ScenarioDevice.allCases[generator.int(in: 0..<ScenarioDevice.allCases.count)]
 
-            switch generator.int(in: 0..<10) {
+            switch generator.int(in: 0..<13) {
             case 0:
                 harness.disconnect(device)
             case 1:
@@ -3012,11 +3012,20 @@ struct PlaybackSyncPolicyTests {
                 harness.seek(on: device, position: TimeInterval(generator.int(in: 0..<150)))
             case 4:
                 harness.next(on: device)
+            case 5:
+                harness.previous(on: device)
+            case 6:
+                harness.disconnect(device)
+                harness.reconnect(device)
             default:
                 harness.play(on: device)
             }
 
-            if generator.bool(probabilityPercent: 22) {
+            if generator.bool(probabilityPercent: 33) {
+                harness.enqueueDuplicateOfRandomPendingEnvelope(generator: &generator)
+            }
+
+            if generator.bool(probabilityPercent: 8) {
                 harness.enqueueDuplicateOfRandomPendingEnvelope(generator: &generator)
             }
 
@@ -3037,6 +3046,7 @@ struct PlaybackSyncPolicyTests {
         harness.reconnect(.watch)
         harness.drainRandomly(generator: &generator)
 
+        #expect(harness.pendingEnvelopeCount == 0, "seed \(seed): pending envelopes did not drain")
         #expect(harness.convergenceFailures().isEmpty, "seed \(seed): \(harness.convergenceFailures().joined(separator: "; "))")
         #expect(harness.duplicateProcessingFailures().isEmpty, "seed \(seed): \(harness.duplicateProcessingFailures().joined(separator: "; "))")
     }
@@ -3290,6 +3300,17 @@ struct PlaybackSyncPolicyTests {
             publishLocalSession(
                 from: device,
                 currentIndex: (currentIndex + 1) % max(songs.count, 1),
+                position: 0,
+                isPlaying: local?.isPlaying ?? true
+            )
+        }
+
+        mutating func previous(on device: ScenarioDevice) {
+            let local = nodes[device]?.localSession ?? nodes[device]?.sharedSession
+            let currentIndex = local?.currentIndex ?? 0
+            publishLocalSession(
+                from: device,
+                currentIndex: (currentIndex - 1 + max(songs.count, 1)) % max(songs.count, 1),
                 position: 0,
                 isPlaying: local?.isPlaying ?? true
             )
