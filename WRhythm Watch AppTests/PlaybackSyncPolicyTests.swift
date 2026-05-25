@@ -2983,6 +2983,178 @@ struct PlaybackSyncPolicyTests {
         #expect(harness.session(on: .iphone)?.isPlaying == false)
     }
 
+    @Test func asyncTransportIntegrationRelaysDelayedWatchPlaybackThroughIPhoneToMac() async {
+        let harness = AsyncThreeDeviceSyncIntegrationHarness(
+            songs: (0..<5).map { makeSong(id: "async-relay-\($0)") },
+            seed: 0xA11CE,
+            dropProbabilityPercent: 0
+        )
+
+        await harness.play(on: .watch)
+        await harness.drain()
+
+        var convergenceFailures = await harness.convergenceFailures()
+        var macSession = await harness.session(on: .mac)
+        var iphoneSession = await harness.session(on: .iphone)
+        #expect(convergenceFailures.isEmpty)
+        #expect(macSession?.outputDeviceID == ScenarioDevice.watch.rawValue)
+        #expect(macSession?.isPlaying == true)
+        #expect(iphoneSession?.outputDeviceID == ScenarioDevice.watch.rawValue)
+
+        await harness.disconnect(.watch)
+        await harness.drain()
+
+        macSession = await harness.session(on: .mac)
+        iphoneSession = await harness.session(on: .iphone)
+        #expect(macSession?.isPlaying == false)
+        #expect(iphoneSession?.isPlaying == false)
+
+        await harness.reconnect(.watch, reliableBootstrap: true)
+        await harness.drain()
+
+        convergenceFailures = await harness.convergenceFailures()
+        macSession = await harness.session(on: .mac)
+        #expect(convergenceFailures.isEmpty)
+        #expect(macSession?.outputDeviceID == ScenarioDevice.watch.rawValue)
+        #expect(macSession?.isPlaying == true)
+    }
+
+    @Test func asyncTransportIntegrationDelayedOlderSessionCannotOverwriteNewerOwner() async {
+        let harness = AsyncThreeDeviceSyncIntegrationHarness(
+            songs: (0..<6).map { makeSong(id: "async-stale-owner-\($0)") },
+            seed: 0x57A1E,
+            dropProbabilityPercent: 0,
+            duplicateProbabilityPercent: 35,
+            maxDelayTicks: 18
+        )
+
+        await harness.play(on: .watch)
+        await harness.drain(limit: 1)
+        await harness.next(on: .mac)
+        await harness.drain()
+
+        let convergenceFailures = await harness.convergenceFailures()
+        let macSession = await harness.session(on: .mac)
+        let iphoneSession = await harness.session(on: .iphone)
+        let watchSession = await harness.session(on: .watch)
+        #expect(convergenceFailures.isEmpty)
+        #expect(macSession?.outputDeviceID == ScenarioDevice.mac.rawValue)
+        #expect(macSession?.currentIndex == 1)
+        #expect(iphoneSession?.outputDeviceID == ScenarioDevice.mac.rawValue)
+        #expect(watchSession?.outputDeviceID == ScenarioDevice.mac.rawValue)
+    }
+
+    @Test func asyncTransportIntegrationSimultaneousOwnerRaceConvergesToLatestRevision() async {
+        let harness = AsyncThreeDeviceSyncIntegrationHarness(
+            songs: (0..<8).map { makeSong(id: "async-owner-race-\($0)") },
+            seed: 0x0B5E55ED,
+            dropProbabilityPercent: 0,
+            duplicateProbabilityPercent: 45,
+            maxDelayTicks: 24
+        )
+
+        await harness.play(on: .watch)
+        await harness.seek(on: .iphone, position: 42)
+        await harness.next(on: .mac)
+        await harness.drain()
+
+        let convergenceFailures = await harness.convergenceFailures()
+        let macSession = await harness.session(on: .mac)
+        let iphoneSession = await harness.session(on: .iphone)
+        let watchSession = await harness.session(on: .watch)
+        #expect(convergenceFailures.isEmpty)
+        #expect(macSession?.outputDeviceID == ScenarioDevice.mac.rawValue)
+        #expect(macSession?.currentIndex == 1)
+        #expect(iphoneSession?.outputDeviceID == ScenarioDevice.mac.rawValue)
+        #expect(watchSession?.outputDeviceID == ScenarioDevice.mac.rawValue)
+    }
+
+    @Test func asyncTransportIntegrationBridgeReconnectResyncsSeparatedComponents() async {
+        let harness = AsyncThreeDeviceSyncIntegrationHarness(
+            songs: (0..<7).map { makeSong(id: "async-bridge-reconnect-\($0)") },
+            seed: 0xB21D6E,
+            dropProbabilityPercent: 0,
+            duplicateProbabilityPercent: 30,
+            maxDelayTicks: 14
+        )
+
+        await harness.play(on: .watch)
+        await harness.drain()
+        await harness.disconnect(.iphone)
+        await harness.play(on: .mac)
+        await harness.next(on: .watch)
+        await harness.drain()
+
+        var macSession = await harness.session(on: .mac)
+        var watchSession = await harness.session(on: .watch)
+        #expect(macSession?.outputDeviceID == ScenarioDevice.mac.rawValue)
+        #expect(watchSession?.outputDeviceID == ScenarioDevice.watch.rawValue)
+
+        await harness.reconnect(.iphone, reliableBootstrap: true)
+        await harness.drain()
+
+        let convergenceFailures = await harness.convergenceFailures()
+        macSession = await harness.session(on: .mac)
+        watchSession = await harness.session(on: .watch)
+        let iphoneSession = await harness.session(on: .iphone)
+        let outputDeviceIDs = Set([
+            macSession?.outputDeviceID,
+            iphoneSession?.outputDeviceID,
+            watchSession?.outputDeviceID
+        ].compactMap { $0 })
+        #expect(convergenceFailures.isEmpty)
+        #expect(outputDeviceIDs.count == 1)
+        #expect(outputDeviceIDs.isSubset(of: [ScenarioDevice.mac.rawValue, ScenarioDevice.watch.rawValue]))
+        #expect(macSession?.isPlaying == true)
+        #expect(iphoneSession?.isPlaying == true)
+        #expect(watchSession?.isPlaying == true)
+    }
+
+    @Test(arguments: [0xA5A5_0001, 0xA5A5_0002, 0xA5A5_0003, 0xA5A5_0004])
+    func seededAsyncTransportIntegrationFuzzConvergesAfterReliableResync(seed: UInt64) async {
+        let harness = AsyncThreeDeviceSyncIntegrationHarness(
+            songs: (0..<11).map { makeSong(id: "async-fuzz-\(seed)-\($0)") },
+            seed: seed
+        )
+
+        await harness.runRandomScenario(steps: 260)
+        await harness.reconnectAllReliably()
+        await harness.drain()
+
+        let pendingEnvelopeCount = await harness.pendingEnvelopeCount
+        let convergenceFailures = await harness.convergenceFailures()
+        let duplicateProcessingFailures = await harness.duplicateProcessingFailures()
+        #expect(pendingEnvelopeCount == 0, "seed \(seed): pending envelopes did not drain")
+        #expect(convergenceFailures.isEmpty, "seed \(seed): \(convergenceFailures.joined(separator: "; "))")
+        #expect(duplicateProcessingFailures.isEmpty, "seed \(seed): \(duplicateProcessingFailures.joined(separator: "; "))")
+    }
+
+    @Test(arguments: [
+        0x7E51_0001, 0x7E51_0002, 0x7E51_0003, 0x7E51_0004,
+        0x7E51_0005, 0x7E51_0006, 0x7E51_0007, 0x7E51_0008,
+        0x7E51_0009, 0x7E51_000A, 0x7E51_000B, 0x7E51_000C
+    ])
+    func seededAsyncTransportIntegrationSoakConvergesAfterLossyRelays(seed: UInt64) async {
+        let harness = AsyncThreeDeviceSyncIntegrationHarness(
+            songs: (0..<19).map { makeSong(id: "async-soak-\(seed)-\($0)") },
+            seed: seed,
+            dropProbabilityPercent: 14,
+            duplicateProbabilityPercent: 32,
+            maxDelayTicks: 32
+        )
+
+        await harness.runRandomScenario(steps: 700)
+        await harness.reconnectAllReliably()
+        await harness.drain()
+
+        let pendingEnvelopeCount = await harness.pendingEnvelopeCount
+        let convergenceFailures = await harness.convergenceFailures()
+        let duplicateProcessingFailures = await harness.duplicateProcessingFailures()
+        #expect(pendingEnvelopeCount == 0, "seed \(seed): pending envelopes did not drain")
+        #expect(convergenceFailures.isEmpty, "seed \(seed): \(convergenceFailures.joined(separator: "; "))")
+        #expect(duplicateProcessingFailures.isEmpty, "seed \(seed): \(duplicateProcessingFailures.joined(separator: "; "))")
+    }
+
     @Test(arguments: [0x5157A7E, 0xBADC0FFE, 0xC001D00D, 0x5EED1234])
     func seededThreeDevicePlaybackScenarioFuzzConvergesAcrossRelays(seed: UInt64) {
         runThreeDevicePlaybackScenarioFuzz(seed: seed, steps: 220, songCount: 7)
@@ -3547,6 +3719,551 @@ struct PlaybackSyncPolicyTests {
                 updatedAt: updatedAt,
                 updatedByDeviceID: updatedByDeviceID
             )
+        }
+    }
+
+    private struct AsyncTransportEnvelope: Sendable {
+        let id: String
+        let session: PlaybackSession
+        let origin: ScenarioDevice
+        let sender: ScenarioDevice
+        let receiver: ScenarioDevice
+    }
+
+    private struct AsyncTransportDelivery: Sendable {
+        let dueTick: Int
+        let envelope: AsyncTransportEnvelope
+        let reliable: Bool
+    }
+
+    private actor AsyncSyncIntegrationNode {
+        let id: ScenarioDevice
+        private var isConnected = true
+        private var sharedSession: PlaybackSession?
+        private var localSession: PlaybackSession?
+        private var processedEnvelopeIDs = Set<String>()
+        private var processedEnvelopeOrder: [String] = []
+
+        init(id: ScenarioDevice) {
+            self.id = id
+        }
+
+        func setConnected(_ connected: Bool) {
+            isConnected = connected
+        }
+
+        func connected() -> Bool {
+            isConnected
+        }
+
+        func session() -> PlaybackSession? {
+            sharedSession
+        }
+
+        func duplicateProcessingFailure() -> String? {
+            processedEnvelopeIDs.count == processedEnvelopeOrder.count
+                ? nil
+                : "\(id.rawValue) processed duplicate envelope"
+        }
+
+        func publishLocalSession(
+            songs: [Song],
+            currentIndex: Int,
+            position: TimeInterval,
+            isPlaying: Bool,
+            revision: Int,
+            now: Date,
+            envelopeID: String,
+            neighbors: [ScenarioDevice]
+        ) -> [AsyncTransportEnvelope] {
+            let session = PlaybackSession(
+                id: "scenario-shared-playback",
+                revision: revision,
+                queue: songs,
+                currentIndex: min(max(currentIndex, 0), max(songs.count - 1, 0)),
+                position: position,
+                isPlaying: isPlaying,
+                volume: 0.8,
+                outputDeviceID: id.rawValue,
+                updatedAt: now,
+                updatedByDeviceID: id.rawValue
+            )
+            localSession = session
+            return publishExistingSession(session, now: now, envelopeID: envelopeID, neighbors: neighbors)
+        }
+
+        func publishReconnectBootstrap(
+            revision: Int,
+            now: Date,
+            envelopeID: String,
+            neighbors: [ScenarioDevice]
+        ) -> [AsyncTransportEnvelope] {
+            guard isConnected else { return [] }
+
+            if let localSession,
+               SyncStateRefreshPublicationPolicy.shouldPublishLocalPlayback(
+                   sharedOutputDeviceID: sharedSession?.outputDeviceID,
+                   localDeviceID: id.rawValue,
+                   hasLocalPlayback: !localSession.queue.isEmpty
+               ) {
+                return publishRefreshedSession(
+                    localSession,
+                    revision: revision,
+                    now: now,
+                    envelopeID: envelopeID,
+                    neighbors: neighbors
+                )
+            }
+
+            if let sharedSession,
+               SyncStateRefreshPublicationPolicy.shouldRebroadcastSharedPlayback(
+                   sharedOutputDeviceID: sharedSession.outputDeviceID,
+                   localDeviceID: id.rawValue
+               ) {
+                return publishRefreshedSession(
+                    sharedSession,
+                    revision: revision,
+                    now: now,
+                    envelopeID: envelopeID,
+                    neighbors: neighbors
+                )
+            }
+
+            return []
+        }
+
+        func publishConnectivityPauseIfNeeded(
+            disconnectedDeviceID: ScenarioDevice,
+            revision: Int,
+            now: Date,
+            envelopeID: String,
+            neighbors: [ScenarioDevice]
+        ) -> [AsyncTransportEnvelope] {
+            guard let pauseSession = ConnectivityLossPlaybackPolicy.sessionAfterDisconnectedOutput(
+                disconnectedDeviceID: disconnectedDeviceID.rawValue,
+                currentSession: sharedSession,
+                localDeviceID: id.rawValue,
+                disconnectedAt: now
+            ) else {
+                return []
+            }
+
+            let refreshedPause = copySession(
+                pauseSession,
+                revision: revision,
+                updatedAt: now,
+                updatedByDeviceID: id.rawValue
+            )
+            return publishExistingSession(refreshedPause, now: now, envelopeID: envelopeID, neighbors: neighbors)
+        }
+
+        func receive(
+            _ envelope: AsyncTransportEnvelope,
+            now: Date,
+            relayTargets: [ScenarioDevice]
+        ) -> [AsyncTransportEnvelope] {
+            guard isConnected else { return [] }
+            guard markProcessed(envelope.id) else { return [] }
+            apply(envelope.session, now: now)
+
+            guard id == .iphone else { return [] }
+            return relayTargets.map {
+                AsyncTransportEnvelope(
+                    id: envelope.id,
+                    session: envelope.session,
+                    origin: envelope.origin,
+                    sender: .iphone,
+                    receiver: $0
+                )
+            }
+        }
+
+        private func publishRefreshedSession(
+            _ session: PlaybackSession,
+            revision: Int,
+            now: Date,
+            envelopeID: String,
+            neighbors: [ScenarioDevice]
+        ) -> [AsyncTransportEnvelope] {
+            let refreshed = copySession(session, revision: revision, updatedAt: now, updatedByDeviceID: id.rawValue)
+            return publishExistingSession(refreshed, now: now, envelopeID: envelopeID, neighbors: neighbors)
+        }
+
+        private func publishExistingSession(
+            _ session: PlaybackSession,
+            now: Date,
+            envelopeID: String,
+            neighbors: [ScenarioDevice]
+        ) -> [AsyncTransportEnvelope] {
+            apply(session, now: now)
+            guard isConnected else { return [] }
+            return neighbors.map {
+                AsyncTransportEnvelope(id: envelopeID, session: session, origin: id, sender: id, receiver: $0)
+            }
+        }
+
+        private func apply(_ session: PlaybackSession, now: Date) {
+            if PlaybackSessionSyncPolicy.shouldApply(session, over: sharedSession, now: now) {
+                sharedSession = session
+            }
+        }
+
+        private func markProcessed(_ envelopeID: String) -> Bool {
+            guard SyncDuplicatePolicy.shouldProcess(envelopeID: envelopeID, processedEnvelopeIDs: processedEnvelopeIDs) else {
+                return false
+            }
+            processedEnvelopeIDs.insert(envelopeID)
+            processedEnvelopeOrder.append(envelopeID)
+            processedEnvelopeOrder = SyncDuplicatePolicy.trimmedEnvelopeIDOrder(processedEnvelopeOrder)
+            processedEnvelopeIDs = Set(processedEnvelopeOrder)
+            return true
+        }
+
+        private func copySession(
+            _ session: PlaybackSession,
+            revision: Int,
+            updatedAt: Date,
+            updatedByDeviceID: String
+        ) -> PlaybackSession {
+            PlaybackSession(
+                id: session.id,
+                revision: revision,
+                queue: session.queue,
+                currentIndex: session.currentIndex,
+                position: session.estimatedPosition(at: updatedAt),
+                isPlaying: session.isPlaying,
+                volume: session.volume,
+                outputDeviceID: session.outputDeviceID,
+                updatedAt: updatedAt,
+                updatedByDeviceID: updatedByDeviceID
+            )
+        }
+    }
+
+    private actor AsyncThreeDeviceSyncIntegrationHarness {
+        private let nodes: [ScenarioDevice: AsyncSyncIntegrationNode]
+        private let songs: [Song]
+        private var pendingDeliveries: [AsyncTransportDelivery] = []
+        private var generator: SeededGenerator
+        private var tick = 0
+        private var now = Date(timeIntervalSince1970: 1_790_000_000)
+        private var revision = 0
+        private var envelopeSequence = 0
+        private let dropProbabilityPercent: Int
+        private let duplicateProbabilityPercent: Int
+        private let maxDelayTicks: Int
+
+        init(
+            songs: [Song],
+            seed: UInt64,
+            dropProbabilityPercent: Int = 8,
+            duplicateProbabilityPercent: Int = 18,
+            maxDelayTicks: Int = 7
+        ) {
+            self.songs = songs
+            self.generator = SeededGenerator(seed: seed)
+            self.dropProbabilityPercent = dropProbabilityPercent
+            self.duplicateProbabilityPercent = duplicateProbabilityPercent
+            self.maxDelayTicks = max(1, maxDelayTicks)
+            self.nodes = Dictionary(uniqueKeysWithValues: ScenarioDevice.allCases.map {
+                ($0, AsyncSyncIntegrationNode(id: $0))
+            })
+        }
+
+        var pendingEnvelopeCount: Int {
+            pendingDeliveries.count
+        }
+
+        func session(on device: ScenarioDevice) async -> PlaybackSession? {
+            await nodes[device]?.session()
+        }
+
+        func play(on device: ScenarioDevice) async {
+            await publishLocalSession(from: device, isPlaying: true)
+        }
+
+        func pause(on device: ScenarioDevice) async {
+            await publishLocalSession(from: device, isPlaying: false)
+        }
+
+        func seek(on device: ScenarioDevice, position: TimeInterval) async {
+            let local = await nodes[device]?.session()
+            await publishLocalSession(
+                from: device,
+                currentIndex: local?.currentIndex ?? 0,
+                position: position,
+                isPlaying: local?.isPlaying ?? true
+            )
+        }
+
+        func next(on device: ScenarioDevice) async {
+            let local = await nodes[device]?.session()
+            let currentIndex = local?.currentIndex ?? 0
+            await publishLocalSession(
+                from: device,
+                currentIndex: (currentIndex + 1) % max(songs.count, 1),
+                position: 0,
+                isPlaying: local?.isPlaying ?? true
+            )
+        }
+
+        func previous(on device: ScenarioDevice) async {
+            let local = await nodes[device]?.session()
+            let currentIndex = local?.currentIndex ?? 0
+            await publishLocalSession(
+                from: device,
+                currentIndex: (currentIndex - 1 + max(songs.count, 1)) % max(songs.count, 1),
+                position: 0,
+                isPlaying: local?.isPlaying ?? true
+            )
+        }
+
+        func disconnect(_ device: ScenarioDevice) async {
+            advanceTime()
+            await nodes[device]?.setConnected(false)
+            for observer in ScenarioDevice.allCases where observer != device {
+                guard await isConnected(observer) else { continue }
+                let envelopes = await nodes[observer]?.publishConnectivityPauseIfNeeded(
+                    disconnectedDeviceID: device,
+                    revision: nextRevision(),
+                    now: now,
+                    envelopeID: nextEnvelopeID(origin: observer),
+                    neighbors: await neighbors(of: observer)
+                ) ?? []
+                schedule(envelopes)
+            }
+        }
+
+        func reconnect(_ device: ScenarioDevice, reliableBootstrap: Bool = false) async {
+            advanceTime()
+            await nodes[device]?.setConnected(true)
+
+            for neighbor in await neighbors(of: device) {
+                await publishReconnectBootstrap(from: neighbor, reliable: reliableBootstrap)
+            }
+            await publishReconnectBootstrap(from: device, reliable: reliableBootstrap)
+        }
+
+        func reconnectAllReliably() async {
+            for device in ScenarioDevice.allCases {
+                await reconnect(device, reliableBootstrap: true)
+            }
+        }
+
+        func runRandomScenario(steps: Int) async {
+            for step in 0..<steps {
+                let device = ScenarioDevice.allCases[generator.int(in: 0..<ScenarioDevice.allCases.count)]
+
+                switch generator.int(in: 0..<13) {
+                case 0:
+                    await disconnect(device)
+                case 1:
+                    await reconnect(device)
+                case 2:
+                    await pause(on: device)
+                case 3:
+                    await seek(on: device, position: TimeInterval(generator.int(in: 0..<150)))
+                case 4:
+                    await next(on: device)
+                case 5:
+                    await previous(on: device)
+                case 6:
+                    await disconnect(device)
+                    await reconnect(device)
+                default:
+                    await play(on: device)
+                }
+
+                if generator.bool(probabilityPercent: 42) {
+                    duplicateRandomPendingDelivery()
+                }
+
+                if step.isMultiple(of: 3) || generator.bool(probabilityPercent: 40) {
+                    await drain(limit: generator.int(in: 1..<16))
+                }
+            }
+        }
+
+        func drain(limit: Int = 10_000) async {
+            var delivered = 0
+            while !pendingDeliveries.isEmpty && delivered < limit {
+                tick += max(1, generator.int(in: 0..<4))
+                if pendingDeliveries.allSatisfy({ $0.dueTick > tick }) {
+                    tick = pendingDeliveries.map(\.dueTick).min() ?? tick
+                }
+
+                let dueIndexes = pendingDeliveries.indices.filter { pendingDeliveries[$0].dueTick <= tick }
+                guard !dueIndexes.isEmpty else { continue }
+
+                let index = dueIndexes[generator.int(in: 0..<dueIndexes.count)]
+                let delivery = pendingDeliveries.remove(at: index)
+                await deliver(delivery.envelope, reliable: delivery.reliable)
+                delivered += 1
+            }
+        }
+
+        func convergenceFailures() async -> [String] {
+            var failures: [String] = []
+            for component in await connectedComponents() {
+                var signatures: [(ScenarioDevice, SessionSignature?)] = []
+                for device in component {
+                    signatures.append((device, SessionSignature(await nodes[device]?.session())))
+                }
+                let uniqueSignatures = Set(signatures.map { String(describing: $0.1) })
+                if uniqueSignatures.count > 1 {
+                    failures.append("component \(component.map(\.rawValue).joined(separator: ",")) diverged: \(signatures.map { "\($0.0.rawValue)=\(String(describing: $0.1))" }.joined(separator: ", "))")
+                }
+            }
+            return failures
+        }
+
+        func duplicateProcessingFailures() async -> [String] {
+            var failures: [String] = []
+            for device in ScenarioDevice.allCases {
+                if let failure = await nodes[device]?.duplicateProcessingFailure() {
+                    failures.append(failure)
+                }
+            }
+            return failures
+        }
+
+        private func publishLocalSession(
+            from device: ScenarioDevice,
+            currentIndex: Int = 0,
+            position: TimeInterval = 0,
+            isPlaying: Bool
+        ) async {
+            advanceTime()
+            let envelopes = await nodes[device]?.publishLocalSession(
+                songs: songs,
+                currentIndex: currentIndex,
+                position: position,
+                isPlaying: isPlaying,
+                revision: nextRevision(),
+                now: now,
+                envelopeID: nextEnvelopeID(origin: device),
+                neighbors: await neighbors(of: device)
+            ) ?? []
+            schedule(envelopes)
+        }
+
+        private func publishReconnectBootstrap(from device: ScenarioDevice, reliable: Bool) async {
+            let envelopes = await nodes[device]?.publishReconnectBootstrap(
+                revision: nextRevision(),
+                now: now,
+                envelopeID: nextEnvelopeID(origin: device),
+                neighbors: await neighbors(of: device)
+            ) ?? []
+            schedule(envelopes, reliable: reliable)
+        }
+
+        private func deliver(_ envelope: AsyncTransportEnvelope, reliable: Bool) async {
+            guard await canDeliver(envelope) else { return }
+            let relayTargets = envelope.receiver == .iphone
+                ? await neighbors(of: .iphone).filter { $0 != envelope.sender }
+                : []
+            let relayEnvelopes = await nodes[envelope.receiver]?.receive(
+                envelope,
+                now: now,
+                relayTargets: relayTargets
+            ) ?? []
+            schedule(relayEnvelopes, reliable: reliable)
+        }
+
+        private func schedule(_ envelopes: [AsyncTransportEnvelope], reliable: Bool = false) {
+            for envelope in envelopes {
+                if !reliable && generator.bool(probabilityPercent: dropProbabilityPercent) {
+                    continue
+                }
+
+                let duplicateCount = !reliable && generator.bool(probabilityPercent: duplicateProbabilityPercent) ? 2 : 1
+                for _ in 0..<duplicateCount {
+                    pendingDeliveries.append(AsyncTransportDelivery(
+                        dueTick: tick + generator.int(in: 0..<maxDelayTicks),
+                        envelope: envelope,
+                        reliable: reliable
+                    ))
+                }
+            }
+        }
+
+        private func duplicateRandomPendingDelivery() {
+            guard !pendingDeliveries.isEmpty else { return }
+            let delivery = pendingDeliveries[generator.int(in: 0..<pendingDeliveries.count)]
+            pendingDeliveries.append(AsyncTransportDelivery(
+                dueTick: tick + generator.int(in: 0..<maxDelayTicks),
+                envelope: delivery.envelope,
+                reliable: delivery.reliable
+            ))
+        }
+
+        private func canDeliver(_ envelope: AsyncTransportEnvelope) async -> Bool {
+            guard await isConnected(envelope.sender), await isConnected(envelope.receiver) else { return false }
+            return await neighbors(of: envelope.sender).contains(envelope.receiver)
+        }
+
+        private func neighbors(of device: ScenarioDevice) async -> [ScenarioDevice] {
+            guard await isConnected(device) else { return [] }
+            switch device {
+            case .mac:
+                return await isConnected(.iphone) ? [.iphone] : []
+            case .iphone:
+                var neighbors: [ScenarioDevice] = []
+                if await isConnected(.mac) {
+                    neighbors.append(.mac)
+                }
+                if await isConnected(.watch) {
+                    neighbors.append(.watch)
+                }
+                return neighbors
+            case .watch:
+                return await isConnected(.iphone) ? [.iphone] : []
+            }
+        }
+
+        private func connectedComponents() async -> [[ScenarioDevice]] {
+            var connectedDevices = Set<ScenarioDevice>()
+            for device in ScenarioDevice.allCases where await isConnected(device) {
+                connectedDevices.insert(device)
+            }
+            var unvisited = connectedDevices
+            var components: [[ScenarioDevice]] = []
+
+            while let start = unvisited.first {
+                var stack = [start]
+                var component: [ScenarioDevice] = []
+                unvisited.remove(start)
+
+                while let device = stack.popLast() {
+                    component.append(device)
+                    for neighbor in await neighbors(of: device) where unvisited.contains(neighbor) {
+                        unvisited.remove(neighbor)
+                        stack.append(neighbor)
+                    }
+                }
+
+                components.append(component)
+            }
+
+            return components
+        }
+
+        private func isConnected(_ device: ScenarioDevice) async -> Bool {
+            await nodes[device]?.connected() == true
+        }
+
+        private func advanceTime() {
+            now = now.addingTimeInterval(0.25)
+        }
+
+        private func nextRevision() -> Int {
+            revision += 1
+            return revision
+        }
+
+        private func nextEnvelopeID(origin: ScenarioDevice) -> String {
+            envelopeSequence += 1
+            return "\(origin.rawValue)-async-\(envelopeSequence)"
         }
     }
 
