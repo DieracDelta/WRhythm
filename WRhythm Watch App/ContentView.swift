@@ -482,10 +482,7 @@ struct MacDetailContent: View {
         case .albums:
             AlbumsView()
         case .availableTracks:
-            BufferedTracksListView(
-                songs: player.availablePrebufferedSongs,
-                downloadStatuses: player.prebufferDownloadStatuses
-            )
+            AvailableTracksView()
         case .downloads:
             DownloadsView()
         case .settings:

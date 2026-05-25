@@ -9,6 +9,9 @@ import SwiftUI
 
 struct MenuView: View {
     private let menuIconTint = WRhythmTheme.accent
+#if os(iOS)
+    @ObservedObject private var player = AudioPlayer.shared
+#endif
 #if os(watchOS)
     private let screenVerticalPadding = WRhythmSpacing.xs
 #else
@@ -31,6 +34,14 @@ struct MenuView: View {
             }
 
             menuGroup("Device") {
+#if os(iOS)
+                menuLink(
+                    "Available Tracks",
+                    systemImage: "externaldrive.fill",
+                    destination: AvailableTracksView(),
+                    detail: availableTracksSummary
+                )
+#endif
                 menuLink("Downloads", systemImage: "arrow.down.circle", destination: DownloadsView())
                 menuLink("Settings", systemImage: "gear", destination: SettingsView())
             }
@@ -58,7 +69,12 @@ struct MenuView: View {
         }
     }
 
-    private func menuLink<Destination: View>(_ title: String, systemImage: String, destination: Destination) -> some View {
+    private func menuLink<Destination: View>(
+        _ title: String,
+        systemImage: String,
+        destination: Destination,
+        detail: String? = nil
+    ) -> some View {
         NavigationLink(destination: destination) {
 #if os(watchOS)
             HStack(spacing: WRhythmSpacing.xs) {
@@ -79,9 +95,18 @@ struct MenuView: View {
             HStack(spacing: WRhythmSpacing.sm) {
                 WRhythmIconBadge(systemImage: systemImage, tint: menuIconTint)
 
-                Text(title)
-                    .font(WRhythmTypography.rowTitle)
-                    .lineLimit(1)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(WRhythmTypography.rowTitle)
+                        .lineLimit(1)
+
+                    if let detail {
+                        Text(detail)
+                            .font(WRhythmTypography.metadata)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
 
                 Spacer(minLength: 6)
 
@@ -95,6 +120,24 @@ struct MenuView: View {
         }
         .buttonStyle(.plain)
     }
+
+#if os(iOS)
+    private var availableTracksSummary: String {
+        let readyCount = player.availablePrebufferedSongs.count
+        let downloadingCount = player.prebufferDownloadStatuses.count
+
+        if readyCount > 0, downloadingCount > 0 {
+            return "\(readyCount) ready, \(downloadingCount) downloading"
+        }
+        if readyCount > 0 {
+            return "\(readyCount) ready"
+        }
+        if downloadingCount > 0 {
+            return "\(downloadingCount) downloading"
+        }
+        return "No tracks ready"
+    }
+#endif
 }
 
 #Preview {
