@@ -437,9 +437,9 @@ struct SettingsView: View {
 
     private var concurrentDownloadSliderValue: Binding<Double> {
         Binding {
-            downloadManager.maxConcurrentDownloads == 999 ? 17 : Double(downloadManager.maxConcurrentDownloads)
+            ConcurrentDownloadSettingsPolicy.sliderValue(for: downloadManager.maxConcurrentDownloads)
         } set: { newValue in
-            downloadManager.maxConcurrentDownloads = newValue >= 17 ? 999 : Int(newValue)
+            downloadManager.maxConcurrentDownloads = ConcurrentDownloadSettingsPolicy.maxConcurrentDownloads(forSliderValue: newValue)
         }
     }
 
@@ -455,7 +455,7 @@ struct SettingsView: View {
         Binding {
             Double(prebufferAheadCount)
         } set: { newValue in
-            prebufferAheadCount = Int(newValue)
+            prebufferAheadCount = PrebufferSettingsPolicy.sanitizeAheadCount(Int(newValue))
         }
     }
 
@@ -463,7 +463,7 @@ struct SettingsView: View {
         Binding {
             Double(retainPreviousPrebufferCount)
         } set: { newValue in
-            retainPreviousPrebufferCount = Int(newValue)
+            retainPreviousPrebufferCount = PrebufferSettingsPolicy.sanitizePreviousCount(Int(newValue))
         }
     }
 }

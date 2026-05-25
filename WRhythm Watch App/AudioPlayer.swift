@@ -375,12 +375,12 @@ class AudioPlayer: NSObject, ObservableObject {
     private let maxConcurrentPrebuffers = 3
     private var prebufferAheadCount: Int {
         let saved = UserDefaults.standard.object(forKey: "prebufferAheadCount") as? Int ?? 8
-        return min(max(saved, 1), 100)
+        return PrebufferSettingsPolicy.sanitizeAheadCount(saved)
     }
 
     private var retainPreviousPrebufferCount: Int {
         let saved = UserDefaults.standard.object(forKey: "retainPreviousPrebufferCount") as? Int ?? 3
-        return min(max(saved, 0), 100)
+        return PrebufferSettingsPolicy.sanitizePreviousCount(saved)
     }
     private var prebufferTasks: [String: Task<Void, Never>] = [:]
     private var prebufferTaskTokens: [String: String] = [:]
@@ -471,9 +471,12 @@ class AudioPlayer: NSObject, ObservableObject {
     }
 
     private var scrobblingAllowedForCurrentContext: Bool {
-        scrobblingEnabled &&
-        !UserDefaults.standard.bool(forKey: "offlineMode") &&
-        NavidromeAPI.shared.hasCredentials
+        ScrobbleDispatchPolicy.shouldTrack(
+            scrobblingEnabled: scrobblingEnabled,
+            offlineMode: UserDefaults.standard.bool(forKey: "offlineMode"),
+            hasCredentials: NavidromeAPI.shared.hasCredentials,
+            isPlaybackOwner: true
+        )
     }
 
     private func beginScrobbleTracking(for song: Song, startTime: TimeInterval) {

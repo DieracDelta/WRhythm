@@ -1504,6 +1504,88 @@ struct PlaybackSyncPolicyTests {
         #expect(PlaybackSessionSyncPolicy.shouldApply(ownerStillPlayingAfterReconnect, over: connectivityPause, now: now.addingTimeInterval(1)) == true)
     }
 
+    @Test(arguments: ["iphone", "mac"])
+    func passiveObserversPauseDisconnectedPlayingOwner(observerDeviceID: String) throws {
+        let now = Date()
+        let ownerPlayingBeforeDisconnect = makeSession(
+            outputDeviceID: "watch",
+            isPlaying: true,
+            position: 50,
+            revision: 12,
+            updatedAt: now.addingTimeInterval(-10),
+            updatedByDeviceID: "watch"
+        )
+
+        let connectivityPause = try #require(ConnectivityLossPlaybackPolicy.sessionAfterDisconnectedOutput(
+            disconnectedDeviceID: "watch",
+            currentSession: ownerPlayingBeforeDisconnect,
+            localDeviceID: observerDeviceID,
+            disconnectedAt: now
+        ))
+
+        #expect(connectivityPause.id == ownerPlayingBeforeDisconnect.id)
+        #expect(connectivityPause.outputDeviceID == "watch")
+        #expect(connectivityPause.updatedByDeviceID == observerDeviceID)
+        #expect(connectivityPause.isPlaying == false)
+        #expect(connectivityPause.position == 60)
+    }
+
+    @Test func simultaneousPassiveConnectivityPausesResolveDeterministically() throws {
+        let now = Date()
+        let ownerPlayingBeforeDisconnect = makeSession(
+            outputDeviceID: "watch",
+            isPlaying: true,
+            position: 50,
+            revision: 12,
+            updatedAt: now.addingTimeInterval(-10),
+            updatedByDeviceID: "watch"
+        )
+        let iphonePause = try #require(ConnectivityLossPlaybackPolicy.sessionAfterDisconnectedOutput(
+            disconnectedDeviceID: "watch",
+            currentSession: ownerPlayingBeforeDisconnect,
+            localDeviceID: "iphone",
+            disconnectedAt: now
+        ))
+        let macPause = try #require(ConnectivityLossPlaybackPolicy.sessionAfterDisconnectedOutput(
+            disconnectedDeviceID: "watch",
+            currentSession: ownerPlayingBeforeDisconnect,
+            localDeviceID: "mac",
+            disconnectedAt: now
+        ))
+
+        #expect(PlaybackSessionSyncPolicy.shouldApply(macPause, over: iphonePause, now: now) == true)
+        #expect(PlaybackSessionSyncPolicy.shouldApply(iphonePause, over: macPause, now: now) == false)
+    }
+
+    @Test(arguments: ["iphone", "mac"])
+    func reconnectedOwnerStillPlayingOverwritesPassivePauseOnEachObserver(observerDeviceID: String) throws {
+        let now = Date()
+        let ownerPlayingBeforeDisconnect = makeSession(
+            outputDeviceID: "watch",
+            isPlaying: true,
+            position: 20,
+            revision: 7,
+            updatedAt: now.addingTimeInterval(-5),
+            updatedByDeviceID: "watch"
+        )
+        let connectivityPause = try #require(ConnectivityLossPlaybackPolicy.sessionAfterDisconnectedOutput(
+            disconnectedDeviceID: "watch",
+            currentSession: ownerPlayingBeforeDisconnect,
+            localDeviceID: observerDeviceID,
+            disconnectedAt: now
+        ))
+        let ownerStillPlayingAfterReconnect = makeSession(
+            outputDeviceID: "watch",
+            isPlaying: true,
+            position: 40,
+            revision: 7,
+            updatedAt: now.addingTimeInterval(1),
+            updatedByDeviceID: "watch"
+        )
+
+        #expect(PlaybackSessionSyncPolicy.shouldApply(ownerStillPlayingAfterReconnect, over: connectivityPause, now: now.addingTimeInterval(1)) == true)
+    }
+
     @Test func connectivityPauseRejectsOlderInFlightPlayingSessionAfterDisconnect() throws {
         let now = Date()
         let ownerPlayingBeforeDisconnect = makeSession(
@@ -1559,6 +1641,31 @@ struct PlaybackSyncPolicyTests {
         )
 
         #expect(PlaybackSessionSyncPolicy.shouldApply(localPlayingSession, over: connectivityPause, now: now.addingTimeInterval(1)) == true)
+    }
+
+    @Test func activeLocalPlaybackCanWinOverReconnectedOwnerWhenNewer() {
+        let now = Date()
+        let reconnectedOwnerStillPlaying = makeSession(
+            id: "watch-session",
+            outputDeviceID: "watch",
+            isPlaying: true,
+            position: 40,
+            revision: 7,
+            updatedAt: now,
+            updatedByDeviceID: "watch"
+        )
+        let localPlaybackStartedWhileDisconnected = makeSession(
+            id: "mac-session",
+            outputDeviceID: "mac",
+            isPlaying: true,
+            position: 3,
+            revision: 1,
+            updatedAt: now.addingTimeInterval(1),
+            updatedByDeviceID: "mac"
+        )
+
+        #expect(PlaybackSessionSyncPolicy.shouldApply(localPlaybackStartedWhileDisconnected, over: reconnectedOwnerStillPlaying, now: now.addingTimeInterval(1)) == true)
+        #expect(PlaybackSessionSyncPolicy.shouldApply(reconnectedOwnerStillPlaying, over: localPlaybackStartedWhileDisconnected, now: now.addingTimeInterval(1)) == false)
     }
 
     @Test func remotePauseCommandFinalTruthComesFromOwnerSessionAcknowledgment() throws {
@@ -1733,6 +1840,28 @@ struct PlaybackSyncPolicyTests {
         #expect(candidates.contains("c") == false)
     }
 
+    @Test func prebufferSchedulingRetainsPreviousPreparedTracksButDoesNotScheduleThem() {
+        let queueKeys = (0..<8).map { "song-\($0)" }
+        let currentKey = queueKeys[4]
+        let previousKeys = PrebufferSchedulingPolicy.previousKeys(
+            queueKeys: queueKeys,
+            currentIndex: 4,
+            keepCount: 3
+        )
+        let upcomingKeys = PrebufferSchedulingPolicy.upcomingKeys(
+            queueKeys: queueKeys,
+            currentIndex: 4,
+            aheadCount: 2
+        )
+        let desiredKeys = PrebufferSchedulingPolicy.desiredKeys(currentKey: currentKey, upcomingKeys: upcomingKeys)
+        let retainedKeys = desiredKeys.union(previousKeys)
+        let candidates = PrebufferSchedulingPolicy.orderedCandidateKeys(currentKey: currentKey, upcomingKeys: upcomingKeys)
+
+        #expect(previousKeys == ["song-1", "song-2", "song-3"])
+        #expect(retainedKeys == Set(["song-1", "song-2", "song-3", "song-4", "song-5", "song-6"]))
+        #expect(candidates == ["song-4", "song-5", "song-6"])
+    }
+
     @Test func prebufferCachePruningKeepsActiveTemporaryDownloads() {
         #expect(PrebufferCachePruningPolicy.shouldRemove(
             filename: "track.download",
@@ -1746,6 +1875,21 @@ struct PlaybackSyncPolicyTests {
             filename: "old.mp3",
             keepFilenames: ["track.mp3"]
         ))
+    }
+
+    @Test func prebufferCachePruningKeepsPreviousCurrentAndUpcomingFilenamesOnly() {
+        let keepFilenames: Set<String> = [
+            "previous.mp3",
+            "current.mp3",
+            "next-1.mp3",
+            "next-2.mp3"
+        ]
+
+        #expect(PrebufferCachePruningPolicy.shouldRemove(filename: "previous.mp3", keepFilenames: keepFilenames) == false)
+        #expect(PrebufferCachePruningPolicy.shouldRemove(filename: "current.mp3", keepFilenames: keepFilenames) == false)
+        #expect(PrebufferCachePruningPolicy.shouldRemove(filename: "next-1.mp3", keepFilenames: keepFilenames) == false)
+        #expect(PrebufferCachePruningPolicy.shouldRemove(filename: "outside-window.mp3", keepFilenames: keepFilenames) == true)
+        #expect(PrebufferCachePruningPolicy.shouldRemove(filename: "outside-window.download", keepFilenames: keepFilenames) == false)
     }
 
     @Test func prebufferSchedulingCountsOnlyPreparedTracksAsReady() {
@@ -1771,6 +1915,30 @@ struct PlaybackSyncPolicyTests {
         #expect(desiredKeys.contains(currentQueueKey))
         #expect(desiredKeys.contains(previousNowPlayingKey) == false)
         #expect(desiredKeys == ["song-2", "song-3", "song-4"])
+    }
+
+    @Test func jumpingToCachedPreviousTrackStillSchedulesNewUpcomingWindow() {
+        let queueKeys = (0..<10).map { "song-\($0)" }
+        let currentIndex = 2
+        let currentKey = queueKeys[currentIndex]
+        let upcomingKeys = PrebufferSchedulingPolicy.upcomingKeys(
+            queueKeys: queueKeys,
+            currentIndex: currentIndex,
+            aheadCount: 4
+        )
+        let scheduled = PrebufferSchedulingPolicy.keysToSchedule(
+            candidateKeys: PrebufferSchedulingPolicy.orderedCandidateKeys(
+                currentKey: currentKey,
+                upcomingKeys: upcomingKeys
+            ),
+            activeKeys: [],
+            preparedKeys: ["song-1", "song-2"],
+            failedKeys: [],
+            maxConcurrentTasks: 3
+        )
+
+        #expect(upcomingKeys == ["song-3", "song-4", "song-5", "song-6"])
+        #expect(scheduled == ["song-3", "song-4", "song-5"])
     }
 
     @Test func prebufferSchedulingPrioritizesCurrentItemBeforeUpcomingItems() {
@@ -1859,6 +2027,27 @@ struct PlaybackSyncPolicyTests {
         #expect(scheduled == ["d"])
     }
 
+    @Test func clearingQueuePreventsStalePrebufferPublicationAndNewScheduling() {
+        let desiredKeys = PrebufferSchedulingPolicy.desiredKeys(currentKey: nil, upcomingKeys: [])
+        let scheduled = PrebufferSchedulingPolicy.keysToSchedule(
+            candidateKeys: [],
+            activeKeys: ["old-current", "old-next"],
+            preparedKeys: [],
+            failedKeys: [],
+            maxConcurrentTasks: 3
+        )
+
+        #expect(desiredKeys.isEmpty)
+        #expect(scheduled.isEmpty)
+        #expect(PrebufferPublicationPolicy.shouldPublishPreparedBuffer(
+            key: "old-next",
+            desiredKeys: desiredKeys,
+            activeTaskKeys: [],
+            capturedToken: "token-1",
+            activeToken: "token-1"
+        ) == false)
+    }
+
     @Test func prebufferProgressPercentUsesActualReceivedBytes() {
         let progress = PrebufferProgressPolicy.normalizedProgress(receivedBytes: 800, expectedBytes: 1_000)
 
@@ -1927,6 +2116,28 @@ struct PlaybackSyncPolicyTests {
 
         #expect(statuses.map { $0.song.id } == ["current", "next"])
         #expect(statuses.map(\.progressPercent) == [42, 1])
+    }
+
+    @Test func prebufferProgressRowsIncludePreviousCurrentAndUpcomingDownloadsOnce() {
+        let songs = [
+            makeSong(id: "previous"),
+            makeSong(id: "current"),
+            makeSong(id: "next"),
+            makeSong(id: "next")
+        ]
+        let statuses = PrebufferProgressPolicy.downloadStatuses(
+            for: songs,
+            activeKeys: ["previous-key", "current-key", "next-key"],
+            progressByKey: [
+                "previous-key": 0.2,
+                "current-key": 0.5,
+                "next-key": 0.8
+            ],
+            keyForSong: { "\($0.id)-key" }
+        )
+
+        #expect(statuses.map { $0.song.id } == ["previous", "current", "next"])
+        #expect(statuses.map(\.progressPercent) == [20, 50, 80])
     }
 
     @Test func nowPlayingArtworkPolicyAvoidsDuplicateLoadsForCachedOrInFlightSongs() {
@@ -2468,6 +2679,45 @@ struct PlaybackSyncPolicyTests {
         #expect(QueuePresentationPolicy.summary(queueCount: 5, currentIndex: -2) == "Track 1 of 5")
         #expect(QueuePresentationPolicy.summary(queueCount: 5, currentIndex: 20) == "Track 5 of 5")
         #expect(QueuePresentationPolicy.summary(queueCount: 5, currentIndex: 2) == "Track 3 of 5")
+    }
+
+    @Test func prebufferAheadSettingAllowsLargeValuesAndClampsOnlyAtBounds() {
+        #expect(PrebufferSettingsPolicy.sanitizeAheadCount(-10) == 1)
+        #expect(PrebufferSettingsPolicy.sanitizeAheadCount(1) == 1)
+        #expect(PrebufferSettingsPolicy.sanitizeAheadCount(20) == 20)
+        #expect(PrebufferSettingsPolicy.sanitizeAheadCount(75) == 75)
+        #expect(PrebufferSettingsPolicy.sanitizeAheadCount(100) == 100)
+        #expect(PrebufferSettingsPolicy.sanitizeAheadCount(101) == 100)
+    }
+
+    @Test func previousPrebufferSettingAllowsLargeValuesAndZero() {
+        #expect(PrebufferSettingsPolicy.sanitizePreviousCount(-1) == 0)
+        #expect(PrebufferSettingsPolicy.sanitizePreviousCount(0) == 0)
+        #expect(PrebufferSettingsPolicy.sanitizePreviousCount(20) == 20)
+        #expect(PrebufferSettingsPolicy.sanitizePreviousCount(80) == 80)
+        #expect(PrebufferSettingsPolicy.sanitizePreviousCount(100) == 100)
+        #expect(PrebufferSettingsPolicy.sanitizePreviousCount(120) == 100)
+    }
+
+    @Test func concurrentDownloadSliderRoundTripsUnlimitedSentinel() {
+        #expect(ConcurrentDownloadSettingsPolicy.sliderValue(for: 1) == 1)
+        #expect(ConcurrentDownloadSettingsPolicy.sliderValue(for: 8) == 8)
+        #expect(ConcurrentDownloadSettingsPolicy.sliderValue(for: 999) == 17)
+        #expect(ConcurrentDownloadSettingsPolicy.maxConcurrentDownloads(forSliderValue: 1) == 1)
+        #expect(ConcurrentDownloadSettingsPolicy.maxConcurrentDownloads(forSliderValue: 16) == 16)
+        #expect(ConcurrentDownloadSettingsPolicy.maxConcurrentDownloads(forSliderValue: 17) == 999)
+        #expect(ConcurrentDownloadSettingsPolicy.maxConcurrentDownloads(forSliderValue: 18) == 999)
+    }
+
+    @Test func downloadQualitySettingsRoundTripOriginalAndLossyValues() {
+        for quality in AudioQuality.allCases {
+            #expect(AudioQuality.savedQuality(from: quality.rawValue) == quality)
+        }
+
+        #expect(AudioQuality.allCases.contains(.original))
+        #expect(AudioQuality.savedQuality(from: 0) == .original)
+        #expect(AudioQuality.savedQuality(from: 320) == .max)
+        #expect(AudioQuality.savedQuality(from: 999) == .medium)
     }
 
     private func makeSnapshot(

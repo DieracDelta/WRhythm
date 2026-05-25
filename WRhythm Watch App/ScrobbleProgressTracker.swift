@@ -73,3 +73,14 @@ struct ScrobbleProgressTracker: Sendable {
         return min(duration * 0.5, 240)
     }
 }
+
+struct ScrobbleDispatchPolicy: Sendable {
+    static func shouldTrack(
+        scrobblingEnabled: Bool,
+        offlineMode: Bool,
+        hasCredentials: Bool,
+        isPlaybackOwner: Bool
+    ) -> Bool {
+        scrobblingEnabled && !offlineMode && hasCredentials && isPlaybackOwner
+    }
+}

@@ -24,6 +24,23 @@ struct PlaylistLargeDataTests {
         #expect(Set(items.map(\.id)).count == items.count)
     }
 
+    @Test func tenThousandTrackPlaylistDisplayItemsRemainStable() {
+        // Given
+        let songs = makeSongs(count: 10_000)
+
+        // When
+        let items = PlaylistTrackPresentationPolicy.displayItems(songs: songs, queue: songs)
+
+        // Then
+        #expect(items.count == 10_000)
+        #expect(items[0].queueIndex == 0)
+        #expect(items[4_999].song.id == "song-4999")
+        #expect(items[4_999].queueIndex == 4_999)
+        #expect(items[9_999].song.id == "song-9999")
+        #expect(items[9_999].queueIndex == 9_999)
+        #expect(Set(items.map(\.id)).count == items.count)
+    }
+
     @Test func largeFilteredPlaylistMapsVisibleRowsBackToOriginalQueueIndexes() {
         // Given
         let queue = makeSongs(count: 2_400)
@@ -40,6 +57,23 @@ struct PlaylistLargeDataTests {
         #expect(items.last?.queueIndex == 2_397)
     }
 
+    @Test func veryLargeFilteredPlaylistMapsVisibleRowsBackToOriginalQueueIndexes() {
+        // Given
+        let queue = makeSongs(count: 10_000)
+        let visibleSongs = queue.enumerated()
+            .filter { index, _ in index % 7 == 3 }
+            .map(\.element)
+
+        // When
+        let items = PlaylistTrackPresentationPolicy.displayItems(songs: visibleSongs, queue: queue)
+
+        // Then
+        #expect(items.count == 1_429)
+        #expect(items.prefix(5).map(\.queueIndex) == [3, 10, 17, 24, 31])
+        #expect(items.last?.queueIndex == 9_999)
+        #expect(Set(items.map(\.id)).count == items.count)
+    }
+
     @Test func duplicateSongIDsInLargePlaylistStillHaveStableRowIDsAndQueueIndexes() {
         // Given
         let queue = makeSongs(count: 1_200, duplicateEvery: 10)
@@ -51,6 +85,25 @@ struct PlaylistLargeDataTests {
         #expect(items.count == queue.count)
         #expect(Set(items.map(\.id)).count == queue.count)
         #expect(items.map(\.queueIndex) == Array(0..<queue.count))
+    }
+
+    @Test func veryLargeFilteredPlaylistWithDuplicateSongIDsStillMapsOccurrencesInOrder() {
+        // Given
+        let queue = makeSongs(count: 6_000, duplicateEvery: 4)
+        let visibleSongs = queue.enumerated()
+            .filter { index, _ in index.isMultiple(of: 5) }
+            .map(\.element)
+
+        // When
+        let items = PlaylistTrackPresentationPolicy.displayItems(songs: visibleSongs, queue: queue)
+
+        // Then
+        #expect(items.count == 1_200)
+        #expect(Set(items.map(\.id)).count == items.count)
+        #expect(items.first?.queueIndex == 0)
+        #expect(items[1].queueIndex == 4)
+        #expect(items[2].queueIndex == 8)
+        #expect(items.last?.queueIndex == 5_992)
     }
 
     @MainActor
