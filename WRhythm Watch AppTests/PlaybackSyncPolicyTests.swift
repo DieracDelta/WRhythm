@@ -2720,6 +2720,394 @@ struct PlaybackSyncPolicyTests {
         #expect(AudioQuality.savedQuality(from: 999) == .medium)
     }
 
+    @Test(arguments: [0x1A2B3C4D, 0xBEEFF00D, 0xC0FFEE])
+    func seededPlaybackSessionSyncFuzzMaintainsOrderingInvariants(seed: UInt64) {
+        var generator = SeededGenerator(seed: seed)
+        let now = Date(timeIntervalSince1970: 1_770_000_000)
+
+        for step in 0..<160 {
+            let existing = randomSession(seed: seed, step: step, generator: &generator, now: now, allowStale: false)
+            let incoming = randomSession(seed: seed, step: step + 10_000, generator: &generator, now: now, allowStale: true)
+            let shouldApply = PlaybackSessionSyncPolicy.shouldApply(incoming, over: existing, now: now)
+
+            if PlaybackSessionSyncPolicy.isStale(incoming, current: existing, now: now) {
+                #expect(shouldApply == false)
+            }
+
+            if incoming.id == existing.id, incoming.revision < existing.revision {
+                #expect(shouldApply == false)
+            }
+
+            if incoming.id == existing.id,
+               incoming.revision == existing.revision,
+               incoming.updatedAt < existing.updatedAt {
+                #expect(shouldApply == false)
+            }
+
+            if incoming.id != existing.id, incoming.updatedAt <= existing.updatedAt {
+                #expect(shouldApply == false)
+            }
+
+            if shouldApply {
+                #expect(PlaybackSessionSyncPolicy.isStale(incoming, current: existing, now: now) == false)
+                if incoming.id == existing.id {
+                    #expect(incoming.revision > existing.revision || incoming.updatedAt > existing.updatedAt || incoming.updatedByDeviceID > existing.updatedByDeviceID)
+                } else {
+                    #expect(incoming.updatedAt > existing.updatedAt)
+                }
+            }
+        }
+    }
+
+    @Test(arguments: [0xA11CE, 0x12345678, 0xFEEDFACE])
+    func seededCommandAcknowledgmentFuzzRejectsNonAcknowledgingUpdates(seed: UInt64) {
+        var generator = SeededGenerator(seed: seed)
+        let now = Date(timeIntervalSince1970: 1_770_100_000)
+        let songs = (0..<5).map { makeSong(id: "song-\($0)") }
+
+        for iteration in 0..<140 {
+            let action = randomPlaybackAction(generator: &generator)
+            let expectedIndex = generator.int(in: 0..<songs.count)
+            let expectedTime = TimeInterval(generator.int(in: 0..<150))
+            let expectedVolume = Double(generator.int(in: 0..<100)) / 100
+            let acknowledgingSession = sessionAcknowledging(
+                action: action,
+                songs: songs,
+                expectedIndex: expectedIndex,
+                expectedTime: expectedTime,
+                expectedVolume: expectedVolume,
+                now: now
+            )
+            let nonAcknowledgingSession = sessionNotAcknowledging(
+                action: action,
+                songs: songs,
+                expectedIndex: expectedIndex,
+                expectedTime: expectedTime,
+                expectedVolume: expectedVolume,
+                now: now
+            )
+
+            let acknowledging = PendingPlaybackSessionAcknowledgmentPolicy.shouldAcceptAcknowledgingSession(
+                acknowledgingSession,
+                action: action,
+                expectedSongs: songs,
+                expectedIndex: expectedIndex,
+                expectedTime: expectedTime,
+                expectedVolume: expectedVolume,
+                now: now
+            )
+            let notAcknowledging = PendingPlaybackSessionAcknowledgmentPolicy.shouldAcceptAcknowledgingSession(
+                nonAcknowledgingSession,
+                action: action,
+                expectedSongs: songs,
+                expectedIndex: expectedIndex,
+                expectedTime: expectedTime,
+                expectedVolume: expectedVolume,
+                now: now
+            )
+
+            #expect(acknowledging == true, "seed \(seed) iteration \(iteration) action \(action) should acknowledge the expected session")
+            #expect(notAcknowledging == false, "seed \(seed) iteration \(iteration) action \(action) unexpectedly acknowledged generated negative session")
+            #expect(PendingPlaybackUpdatePolicy.shouldApplyUpdate(
+                hasPendingCommandForDevice: true,
+                isAcknowledgingPendingCommand: acknowledging
+            ) == acknowledging)
+            #expect(PendingPlaybackUpdatePolicy.shouldApplyUpdate(
+                hasPendingCommandForDevice: true,
+                isAcknowledgingPendingCommand: notAcknowledging
+            ) == false)
+            #expect(PendingPlaybackUpdatePolicy.shouldApplyUpdate(
+                hasPendingCommandForDevice: false,
+                isAcknowledgingPendingCommand: false
+            ) == true)
+        }
+    }
+
+    @Test(arguments: [0x515151, 0xDEADBEEF, 0xABCD1234])
+    func seededPrebufferSchedulingFuzzMaintainsWindowAndSlotInvariants(seed: UInt64) {
+        var generator = SeededGenerator(seed: seed)
+
+        for _ in 0..<180 {
+            let queueCount = generator.int(in: 0..<80)
+            let queueKeys = (0..<queueCount).map { "song-\($0)" }
+            let currentIndex = queueCount == 0 ? generator.int(in: -5..<5) : generator.int(in: -3..<(queueCount + 3))
+            let aheadCount = generator.int(in: 0..<30)
+            let keepPreviousCount = generator.int(in: 0..<30)
+            let activeKeys = randomSubset(of: queueKeys + ["external-active"], maxCount: 8, generator: &generator)
+            let preparedKeys = randomSubset(of: queueKeys + ["external-prepared"], maxCount: 12, generator: &generator)
+            let failedKeys = randomSubset(of: queueKeys + ["external-failed"], maxCount: 6, generator: &generator)
+            let maxConcurrentTasks = generator.int(in: 0..<8)
+            let currentKey = queueKeys.indices.contains(currentIndex) ? queueKeys[currentIndex] : nil
+            let upcomingKeys = PrebufferSchedulingPolicy.upcomingKeys(
+                queueKeys: queueKeys,
+                currentIndex: currentIndex,
+                aheadCount: aheadCount
+            )
+            let previousKeys = PrebufferSchedulingPolicy.previousKeys(
+                queueKeys: queueKeys,
+                currentIndex: currentIndex,
+                keepCount: keepPreviousCount
+            )
+            let candidates = PrebufferSchedulingPolicy.orderedCandidateKeys(
+                currentKey: currentKey,
+                upcomingKeys: upcomingKeys
+            )
+            let scheduled = PrebufferSchedulingPolicy.keysToSchedule(
+                candidateKeys: candidates,
+                activeKeys: activeKeys,
+                preparedKeys: preparedKeys,
+                failedKeys: failedKeys,
+                maxConcurrentTasks: maxConcurrentTasks
+            )
+            let availableSlots = max(0, maxConcurrentTasks - activeKeys.count)
+
+            #expect(Set(scheduled).isSubset(of: Set(candidates)))
+            #expect(Set(scheduled).isDisjoint(with: activeKeys))
+            #expect(Set(scheduled).isDisjoint(with: preparedKeys))
+            #expect(Set(scheduled).isDisjoint(with: failedKeys))
+            #expect(scheduled.count <= availableSlots)
+            #expect(previousKeys.allSatisfy { candidates.contains($0) == false })
+            #expect(upcomingKeys.count <= aheadCount)
+            #expect(previousKeys.count <= keepPreviousCount)
+            #expect(PrebufferSchedulingPolicy.desiredKeys(currentKey: currentKey, upcomingKeys: upcomingKeys).isSuperset(of: Set(upcomingKeys)))
+        }
+    }
+
+    @MainActor
+    @Test(arguments: [0x2468ACE0, 0x13579BDF])
+    func seededSyncDelegateSubmitterFuzzEventuallyDrainsWithoutDroppingEvents(seed: UInt64) async {
+        var generator = SeededGenerator(seed: seed)
+        let submitter = SyncDelegateEventSubmitter(label: "WRhythm.Tests.SeededSubmitter.\(seed)")
+        var values: [Int] = []
+        var expectedValues: [Int] = []
+        var expectedReentrantValues: [Int] = []
+
+        for value in 0..<220 {
+            expectedValues.append(value)
+            let shouldEnqueueReentrant = generator.bool(probabilityPercent: 18)
+            if shouldEnqueueReentrant {
+                let reentrantValue = 1_000 + value
+                expectedReentrantValues.append(reentrantValue)
+                submitter.enqueue {
+                    values.append(value)
+                    submitter.enqueue {
+                        values.append(reentrantValue)
+                    }
+                }
+            } else {
+                submitter.enqueue {
+                    values.append(value)
+                }
+            }
+        }
+
+        await submitter.waitForIdle()
+
+        expectedValues.append(contentsOf: expectedReentrantValues)
+        #expect(values == expectedValues)
+        #expect(Set(values).count == values.count)
+    }
+
+    @Test(arguments: [0x5C0BB1E, 0xCAFEF00D, 0xFACE])
+    func seededScrobbleProgressFuzzCountsOnlyAudibleProgressAndSubmitsAtMostOnce(seed: UInt64) {
+        var generator = SeededGenerator(seed: seed)
+        var tracker = ScrobbleProgressTracker()
+        let start = Date(timeIntervalSince1970: 1_770_200_000)
+        let duration = TimeInterval(generator.int(in: 60..<720))
+        var now = start
+        var position: TimeInterval = 0
+        var expectedListened: TimeInterval = 0
+        var submissionCount = 0
+
+        _ = tracker.start(songID: "song-\(seed)", currentTime: position, now: now)
+
+        for _ in 0..<180 {
+            let previousPosition = position
+            let previousNow = now
+            now = now.addingTimeInterval(TimeInterval(generator.int(in: 0..<6)))
+            let isPlaying = generator.bool(probabilityPercent: 62)
+
+            switch generator.int(in: 0..<7) {
+            case 0:
+                position = max(0, position - TimeInterval(generator.int(in: 0..<20)))
+            case 1:
+                position = min(duration, position + TimeInterval(generator.int(in: 15..<80)))
+            case 2:
+                break
+            default:
+                position = min(duration, position + (isPlaying ? TimeInterval(generator.int(in: 0..<6)) : 0))
+            }
+
+            if isPlaying {
+                expectedListened += min(
+                    max(0, now.timeIntervalSince(previousNow)),
+                    max(0, position - previousPosition)
+                )
+            }
+
+            let event = tracker.update(
+                songID: "song-\(seed)",
+                currentTime: position,
+                duration: duration,
+                isPlaying: isPlaying,
+                now: now
+            )
+            if event == .submission(songID: "song-\(seed)") {
+                submissionCount += 1
+                #expect(expectedListened >= ScrobbleProgressTracker.submissionThreshold(for: duration))
+            }
+
+            #expect(tracker.listenedTime <= expectedListened)
+            #expect(submissionCount <= 1)
+        }
+    }
+
+    private struct SeededGenerator {
+        private var state: UInt64
+
+        init(seed: UInt64) {
+            self.state = seed == 0 ? 0x9E37_79B9_7F4A_7C15 : seed
+        }
+
+        mutating func next() -> UInt64 {
+            state &+= 0x9E37_79B9_7F4A_7C15
+            var value = state
+            value = (value ^ (value >> 30)) &* 0xBF58_476D_1CE4_E5B9
+            value = (value ^ (value >> 27)) &* 0x94D0_49BB_1331_11EB
+            return value ^ (value >> 31)
+        }
+
+        mutating func int(in range: Range<Int>) -> Int {
+            guard range.lowerBound < range.upperBound else { return range.lowerBound }
+            let width = UInt64(range.upperBound - range.lowerBound)
+            return range.lowerBound + Int(next() % width)
+        }
+
+        mutating func bool(probabilityPercent: Int = 50) -> Bool {
+            int(in: 0..<100) < probabilityPercent
+        }
+    }
+
+    private func randomSession(
+        seed: UInt64,
+        step: Int,
+        generator: inout SeededGenerator,
+        now: Date,
+        allowStale: Bool
+    ) -> PlaybackSession {
+        let deviceIDs = ["iphone", "mac", "watch"]
+        let sessionID = generator.bool(probabilityPercent: 55)
+            ? "shared-session-\(generator.int(in: 0..<3))"
+            : "\(deviceIDs[generator.int(in: 0..<deviceIDs.count)])-session"
+        let queueCount = generator.int(in: 1..<5)
+        let songs = (0..<queueCount).map { makeSong(id: "seed-\(seed)-step-\(step)-song-\($0)") }
+        let currentIndex = generator.int(in: 0..<queueCount)
+        let timestampOffset = allowStale ? generator.int(in: -50..<16) : generator.int(in: -20..<6)
+
+        return makeSession(
+            id: sessionID,
+            songs: songs,
+            currentIndex: currentIndex,
+            outputDeviceID: deviceIDs[generator.int(in: 0..<deviceIDs.count)],
+            isPlaying: generator.bool(),
+            position: TimeInterval(generator.int(in: 0..<240)),
+            volume: Double(generator.int(in: 0..<101)) / 100,
+            revision: generator.int(in: 0..<20),
+            updatedAt: now.addingTimeInterval(TimeInterval(timestampOffset)),
+            updatedByDeviceID: deviceIDs[generator.int(in: 0..<deviceIDs.count)]
+        )
+    }
+
+    private func randomPlaybackAction(generator: inout SeededGenerator) -> PlaybackSyncCommandAction {
+        let actions: [PlaybackSyncCommandAction] = [
+            .play,
+            .pause,
+            .next,
+            .previous,
+            .seek,
+            .setVolume,
+            .playQueue,
+            .enqueue,
+            .syncQueue,
+            .stop
+        ]
+        return actions[generator.int(in: 0..<actions.count)]
+    }
+
+    private func sessionAcknowledging(
+        action: PlaybackSyncCommandAction,
+        songs: [Song],
+        expectedIndex: Int,
+        expectedTime: TimeInterval,
+        expectedVolume: Double,
+        now: Date
+    ) -> PlaybackSession {
+        switch action {
+        case .play:
+            return makeSession(songs: songs, currentIndex: expectedIndex, isPlaying: true, updatedAt: now)
+        case .pause:
+            return makeSession(songs: songs, currentIndex: expectedIndex, isPlaying: false, updatedAt: now)
+        case .seek:
+            return makeSession(songs: songs, currentIndex: expectedIndex, isPlaying: false, position: expectedTime, updatedAt: now)
+        case .setVolume:
+            return makeSession(songs: songs, currentIndex: expectedIndex, volume: expectedVolume, updatedAt: now)
+        case .next, .previous:
+            return makeSession(songs: songs, currentIndex: expectedIndex, updatedAt: now)
+        case .playQueue, .syncQueue:
+            return makeSession(songs: songs, currentIndex: expectedIndex, updatedAt: now)
+        case .enqueue:
+            return makeSession(songs: [makeSong(id: "prefix")] + songs + [makeSong(id: "suffix")], currentIndex: 0, updatedAt: now)
+        case .stop:
+            return makeSession(songs: [], currentIndex: 0, isPlaying: false, updatedAt: now)
+        case .toggle:
+            return makeSession(songs: songs, currentIndex: expectedIndex, updatedAt: now)
+        }
+    }
+
+    private func sessionNotAcknowledging(
+        action: PlaybackSyncCommandAction,
+        songs: [Song],
+        expectedIndex: Int,
+        expectedTime: TimeInterval,
+        expectedVolume: Double,
+        now: Date
+    ) -> PlaybackSession {
+        let wrongIndex = (expectedIndex + 1) % max(songs.count, 1)
+        switch action {
+        case .play:
+            return makeSession(songs: songs, currentIndex: expectedIndex, isPlaying: false, updatedAt: now)
+        case .pause:
+            return makeSession(songs: songs, currentIndex: expectedIndex, isPlaying: true, updatedAt: now)
+        case .seek:
+            return makeSession(songs: songs, currentIndex: expectedIndex, isPlaying: false, position: expectedTime + PlaybackCommandSyncPolicy.seekAcknowledgmentTolerance + 1, updatedAt: now)
+        case .setVolume:
+            let wrongVolume = expectedVolume > 0.5 ? expectedVolume - 0.25 : expectedVolume + 0.25
+            return makeSession(songs: songs, currentIndex: expectedIndex, volume: wrongVolume, updatedAt: now)
+        case .next, .previous:
+            return makeSession(songs: songs, currentIndex: wrongIndex, updatedAt: now)
+        case .playQueue, .syncQueue:
+            return makeSession(songs: songs.reversed(), currentIndex: wrongIndex, updatedAt: now)
+        case .enqueue:
+            return makeSession(songs: [makeSong(id: "not-enqueued")], currentIndex: 0, updatedAt: now)
+        case .stop:
+            return makeSession(songs: songs, currentIndex: expectedIndex, isPlaying: true, updatedAt: now)
+        case .toggle:
+            return makeSession(songs: songs, currentIndex: expectedIndex, updatedAt: now)
+        }
+    }
+
+    private func randomSubset(
+        of keys: [String],
+        maxCount: Int,
+        generator: inout SeededGenerator
+    ) -> Set<String> {
+        var selected = Set<String>()
+        for key in keys where selected.count < maxCount && generator.bool(probabilityPercent: 22) {
+            selected.insert(key)
+        }
+        return selected
+    }
+
     private func makeSnapshot(
         id: String = "device-1",
         song: Song? = nil,
