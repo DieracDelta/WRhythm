@@ -75,6 +75,8 @@ actor SyncDelegateEventQueue {
 final class SyncDelegateEventSubmitter: @unchecked Sendable {
     private let submissionQueue: DispatchQueue
     private let eventQueue: SyncDelegateEventQueue
+    private let operationCountLock = NSLock()
+    private var enqueuedOperationCount = 0
 
     nonisolated init(label: String, eventQueue: SyncDelegateEventQueue = SyncDelegateEventQueue()) {
         self.submissionQueue = DispatchQueue(label: label)
@@ -82,6 +84,7 @@ final class SyncDelegateEventSubmitter: @unchecked Sendable {
     }
 
     nonisolated func enqueue(_ operation: @escaping @MainActor @Sendable () -> Void) {
+        incrementEnqueuedOperationCount()
         submissionQueue.async { [eventQueue] in
             let semaphore = DispatchSemaphore(value: 0)
             Task {
@@ -93,12 +96,36 @@ final class SyncDelegateEventSubmitter: @unchecked Sendable {
     }
 
     nonisolated func waitForIdle() async {
+        while true {
+            let observedOperationCount = currentEnqueuedOperationCount()
+            await waitForSubmissionQueueBarrier()
+            await eventQueue.waitForIdle()
+            await waitForSubmissionQueueBarrier()
+            if currentEnqueuedOperationCount() == observedOperationCount {
+                return
+            }
+        }
+    }
+
+    private nonisolated func incrementEnqueuedOperationCount() {
+        operationCountLock.lock()
+        enqueuedOperationCount += 1
+        operationCountLock.unlock()
+    }
+
+    private nonisolated func currentEnqueuedOperationCount() -> Int {
+        operationCountLock.lock()
+        let count = enqueuedOperationCount
+        operationCountLock.unlock()
+        return count
+    }
+
+    private nonisolated func waitForSubmissionQueueBarrier() async {
         await withCheckedContinuation { continuation in
             submissionQueue.async {
                 continuation.resume()
             }
         }
-        await eventQueue.waitForIdle()
     }
 }
 

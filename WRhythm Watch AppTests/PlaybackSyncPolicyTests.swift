@@ -2283,6 +2283,27 @@ struct PlaybackSyncPolicyTests {
         #expect(Set(values).count == 500)
     }
 
+    @Test @MainActor func syncDelegateEventSubmitterWaitsForLateReentrantSubmissions() async {
+        let submitter = SyncDelegateEventSubmitter(label: "WRhythm.Tests.SyncDelegateSubmitterLateReentrant")
+        var values: [Int] = []
+        let reentrantValue = 1_000
+
+        for value in 0..<220 {
+            submitter.enqueue {
+                values.append(value)
+                if value == 219 {
+                    submitter.enqueue {
+                        values.append(reentrantValue)
+                    }
+                }
+            }
+        }
+
+        await submitter.waitForIdle()
+
+        #expect(values == Array(0..<220) + [reentrantValue])
+    }
+
     @Test func serialFileWriteQueuePreservesLatestEnqueuedWrite() throws {
         let queue = SerialFileWriteQueue(label: "WRhythm.Tests.SerialFileWriteQueue")
         let url = FileManager.default.temporaryDirectory
