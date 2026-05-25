@@ -2962,6 +2962,74 @@ struct PlaybackSyncPolicyTests {
         }
     }
 
+    @Test func threeDeviceHarnessRelaysWatchPlaybackThroughIPhoneToMac() {
+        var harness = ThreeDeviceSyncHarness(songs: (0..<4).map { makeSong(id: "scenario-\($0)") })
+        var generator = SeededGenerator(seed: 0xA77E57)
+
+        harness.play(on: .watch)
+        harness.drainRandomly(generator: &generator)
+
+        #expect(harness.convergenceFailures().isEmpty)
+        #expect(harness.session(on: .mac)?.outputDeviceID == ScenarioDevice.watch.rawValue)
+        #expect(harness.session(on: .mac)?.isPlaying == true)
+        #expect(harness.session(on: .iphone)?.outputDeviceID == ScenarioDevice.watch.rawValue)
+
+        harness.pause(on: .watch)
+        harness.drainRandomly(generator: &generator)
+
+        #expect(harness.convergenceFailures().isEmpty)
+        #expect(harness.session(on: .mac)?.outputDeviceID == ScenarioDevice.watch.rawValue)
+        #expect(harness.session(on: .mac)?.isPlaying == false)
+        #expect(harness.session(on: .iphone)?.isPlaying == false)
+    }
+
+    @Test(arguments: [0x5157A7E, 0xBADC0FFE, 0xC001D00D, 0x5EED1234])
+    func seededThreeDevicePlaybackScenarioFuzzConvergesAcrossRelays(seed: UInt64) {
+        var generator = SeededGenerator(seed: seed)
+        var harness = ThreeDeviceSyncHarness(songs: (0..<7).map { makeSong(id: "seed-\(seed)-song-\($0)") })
+
+        for step in 0..<220 {
+            let device = ScenarioDevice.allCases[generator.int(in: 0..<ScenarioDevice.allCases.count)]
+
+            switch generator.int(in: 0..<10) {
+            case 0:
+                harness.disconnect(device)
+            case 1:
+                harness.reconnect(device)
+            case 2:
+                harness.pause(on: device)
+            case 3:
+                harness.seek(on: device, position: TimeInterval(generator.int(in: 0..<150)))
+            case 4:
+                harness.next(on: device)
+            default:
+                harness.play(on: device)
+            }
+
+            if generator.bool(probabilityPercent: 22) {
+                harness.enqueueDuplicateOfRandomPendingEnvelope(generator: &generator)
+            }
+
+            if step.isMultiple(of: 4) || generator.bool(probabilityPercent: 35) {
+                harness.drainRandomly(generator: &generator, limit: generator.int(in: 1..<12))
+            }
+
+            if step.isMultiple(of: 11) {
+                harness.drainRandomly(generator: &generator)
+                #expect(harness.convergenceFailures().isEmpty, "seed \(seed) step \(step): \(harness.convergenceFailures().joined(separator: "; "))")
+                #expect(harness.duplicateProcessingFailures().isEmpty, "seed \(seed) step \(step): \(harness.duplicateProcessingFailures().joined(separator: "; "))")
+            }
+        }
+
+        harness.reconnect(.iphone)
+        harness.reconnect(.mac)
+        harness.reconnect(.watch)
+        harness.drainRandomly(generator: &generator)
+
+        #expect(harness.convergenceFailures().isEmpty, "seed \(seed): \(harness.convergenceFailures().joined(separator: "; "))")
+        #expect(harness.duplicateProcessingFailures().isEmpty, "seed \(seed): \(harness.duplicateProcessingFailures().joined(separator: "; "))")
+    }
+
     private struct SeededGenerator {
         private var state: UInt64
 
@@ -3106,6 +3174,311 @@ struct PlaybackSyncPolicyTests {
             selected.insert(key)
         }
         return selected
+    }
+
+    private enum ScenarioDevice: String, CaseIterable {
+        case mac
+        case iphone
+        case watch
+    }
+
+    private struct ScenarioEnvelope {
+        let id: String
+        let session: PlaybackSession
+        let origin: ScenarioDevice
+        let sender: ScenarioDevice
+        let receiver: ScenarioDevice
+    }
+
+    private struct ScenarioNode {
+        let id: ScenarioDevice
+        var isConnected = true
+        var sharedSession: PlaybackSession?
+        var localSession: PlaybackSession?
+        var processedEnvelopeIDs = Set<String>()
+        var processedEnvelopeOrder: [String] = []
+    }
+
+    private struct SessionSignature: Equatable, CustomStringConvertible {
+        let id: String
+        let revision: Int
+        let queueIDs: [String]
+        let currentIndex: Int
+        let position: Int
+        let isPlaying: Bool
+        let outputDeviceID: String
+        let updatedAt: TimeInterval
+        let updatedByDeviceID: String
+
+        init?(_ session: PlaybackSession?) {
+            guard let session else { return nil }
+            self.id = session.id
+            self.revision = session.revision
+            self.queueIDs = session.queue.map(\.id)
+            self.currentIndex = session.currentIndex
+            self.position = Int(session.position.rounded())
+            self.isPlaying = session.isPlaying
+            self.outputDeviceID = session.outputDeviceID
+            self.updatedAt = session.updatedAt.timeIntervalSince1970
+            self.updatedByDeviceID = session.updatedByDeviceID
+        }
+
+        var description: String {
+            "\(outputDeviceID) rev=\(revision) idx=\(currentIndex) pos=\(position) playing=\(isPlaying) by=\(updatedByDeviceID)"
+        }
+    }
+
+    private struct ThreeDeviceSyncHarness {
+        private(set) var nodes: [ScenarioDevice: ScenarioNode]
+        private var pendingEnvelopes: [ScenarioEnvelope] = []
+        private var now = Date(timeIntervalSince1970: 1_780_000_000)
+        private var revision = 0
+        private var envelopeSequence = 0
+        private let songs: [Song]
+
+        init(songs: [Song]) {
+            self.songs = songs
+            self.nodes = Dictionary(uniqueKeysWithValues: ScenarioDevice.allCases.map { ($0, ScenarioNode(id: $0)) })
+        }
+
+        func session(on device: ScenarioDevice) -> PlaybackSession? {
+            nodes[device]?.sharedSession
+        }
+
+        mutating func play(on device: ScenarioDevice) {
+            publishLocalSession(from: device, isPlaying: true)
+        }
+
+        mutating func pause(on device: ScenarioDevice) {
+            publishLocalSession(from: device, isPlaying: false)
+        }
+
+        mutating func seek(on device: ScenarioDevice, position: TimeInterval) {
+            let local = nodes[device]?.localSession ?? nodes[device]?.sharedSession
+            publishLocalSession(
+                from: device,
+                currentIndex: local?.currentIndex ?? 0,
+                position: position,
+                isPlaying: local?.isPlaying ?? true
+            )
+        }
+
+        mutating func next(on device: ScenarioDevice) {
+            let local = nodes[device]?.localSession ?? nodes[device]?.sharedSession
+            let currentIndex = local?.currentIndex ?? 0
+            publishLocalSession(
+                from: device,
+                currentIndex: (currentIndex + 1) % max(songs.count, 1),
+                position: 0,
+                isPlaying: local?.isPlaying ?? true
+            )
+        }
+
+        mutating func disconnect(_ device: ScenarioDevice) {
+            advanceTime()
+            nodes[device]?.isConnected = false
+
+            for observer in ScenarioDevice.allCases where observer != device && (nodes[observer]?.isConnected == true) {
+                guard let pauseSession = ConnectivityLossPlaybackPolicy.sessionAfterDisconnectedOutput(
+                    disconnectedDeviceID: device.rawValue,
+                    currentSession: nodes[observer]?.sharedSession,
+                    localDeviceID: observer.rawValue,
+                    disconnectedAt: now
+                ) else {
+                    continue
+                }
+                publishExistingSession(pauseSession, from: observer)
+            }
+        }
+
+        mutating func reconnect(_ device: ScenarioDevice) {
+            advanceTime()
+            nodes[device]?.isConnected = true
+
+            if let localSession = nodes[device]?.localSession, localSession.isPlaying {
+                let revision = nextRevision()
+                let session = copySession(
+                    localSession,
+                    revision: revision,
+                    updatedAt: now,
+                    updatedByDeviceID: device.rawValue
+                )
+                publishExistingSession(session, from: device)
+            }
+        }
+
+        mutating func enqueueDuplicateOfRandomPendingEnvelope(generator: inout SeededGenerator) {
+            guard !pendingEnvelopes.isEmpty else { return }
+            pendingEnvelopes.append(pendingEnvelopes[generator.int(in: 0..<pendingEnvelopes.count)])
+        }
+
+        mutating func drainRandomly(generator: inout SeededGenerator, limit: Int = 1_000) {
+            var delivered = 0
+            while !pendingEnvelopes.isEmpty && delivered < limit {
+                let index = generator.int(in: 0..<pendingEnvelopes.count)
+                let envelope = pendingEnvelopes.remove(at: index)
+                deliver(envelope)
+                delivered += 1
+            }
+        }
+
+        func convergenceFailures() -> [String] {
+            connectedComponents().flatMap { component -> [String] in
+                let signatures = component.map { ($0, SessionSignature(nodes[$0]?.sharedSession)) }
+                let uniqueSignatures = Set(signatures.map { String(describing: $0.1) })
+                guard uniqueSignatures.count > 1 else { return [] }
+                return ["component \(component.map(\.rawValue).joined(separator: ",")) diverged: \(signatures.map { "\($0.0.rawValue)=\(String(describing: $0.1))" }.joined(separator: ", "))"]
+            }
+        }
+
+        func duplicateProcessingFailures() -> [String] {
+            nodes.values.compactMap { node in
+                node.processedEnvelopeIDs.count == node.processedEnvelopeOrder.count
+                    ? nil
+                    : "\(node.id.rawValue) processed duplicate envelope"
+            }
+        }
+
+        private mutating func publishLocalSession(
+            from device: ScenarioDevice,
+            currentIndex: Int = 0,
+            position: TimeInterval = 0,
+            isPlaying: Bool
+        ) {
+            advanceTime()
+            let session = PlaybackSession(
+                id: "scenario-shared-playback",
+                revision: nextRevision(),
+                queue: songs,
+                currentIndex: min(max(currentIndex, 0), max(songs.count - 1, 0)),
+                position: position,
+                isPlaying: isPlaying,
+                volume: 0.8,
+                outputDeviceID: device.rawValue,
+                updatedAt: now,
+                updatedByDeviceID: device.rawValue
+            )
+            nodes[device]?.localSession = session
+            publishExistingSession(session, from: device)
+        }
+
+        private mutating func publishExistingSession(_ session: PlaybackSession, from device: ScenarioDevice) {
+            let envelopeID = nextEnvelopeID(origin: device)
+            apply(session, to: device, envelopeID: envelopeID)
+
+            guard nodes[device]?.isConnected == true else { return }
+            for neighbor in neighbors(of: device) {
+                pendingEnvelopes.append(ScenarioEnvelope(id: envelopeID, session: session, origin: device, sender: device, receiver: neighbor))
+            }
+        }
+
+        private mutating func deliver(_ envelope: ScenarioEnvelope) {
+            guard neighbors(of: envelope.sender).contains(envelope.receiver) else { return }
+            guard markProcessed(envelope.id, on: envelope.receiver) else { return }
+            apply(envelope.session, to: envelope.receiver, envelopeID: envelope.id)
+
+            if envelope.receiver == .iphone {
+                for relayTarget in neighbors(of: .iphone) where relayTarget != envelope.sender {
+                    pendingEnvelopes.append(ScenarioEnvelope(
+                        id: envelope.id,
+                        session: envelope.session,
+                        origin: envelope.origin,
+                        sender: .iphone,
+                        receiver: relayTarget
+                    ))
+                }
+            }
+        }
+
+        private mutating func apply(_ session: PlaybackSession, to device: ScenarioDevice, envelopeID: String) {
+            _ = markProcessed(envelopeID, on: device)
+            let existing = nodes[device]?.sharedSession
+            if PlaybackSessionSyncPolicy.shouldApply(session, over: existing, now: now) {
+                nodes[device]?.sharedSession = session
+            }
+        }
+
+        private mutating func markProcessed(_ envelopeID: String, on device: ScenarioDevice) -> Bool {
+            guard var node = nodes[device] else { return false }
+            guard SyncDuplicatePolicy.shouldProcess(envelopeID: envelopeID, processedEnvelopeIDs: node.processedEnvelopeIDs) else {
+                return false
+            }
+            node.processedEnvelopeIDs.insert(envelopeID)
+            node.processedEnvelopeOrder.append(envelopeID)
+            node.processedEnvelopeOrder = SyncDuplicatePolicy.trimmedEnvelopeIDOrder(node.processedEnvelopeOrder)
+            node.processedEnvelopeIDs = Set(node.processedEnvelopeOrder)
+            nodes[device] = node
+            return true
+        }
+
+        private func neighbors(of device: ScenarioDevice) -> [ScenarioDevice] {
+            guard nodes[device]?.isConnected == true else { return [] }
+            switch device {
+            case .mac:
+                return nodes[.iphone]?.isConnected == true ? [.iphone] : []
+            case .iphone:
+                return [.mac, .watch].filter { nodes[$0]?.isConnected == true }
+            case .watch:
+                return nodes[.iphone]?.isConnected == true ? [.iphone] : []
+            }
+        }
+
+        private func connectedComponents() -> [[ScenarioDevice]] {
+            var unvisited = Set(ScenarioDevice.allCases.filter { nodes[$0]?.isConnected == true })
+            var components: [[ScenarioDevice]] = []
+
+            while let start = unvisited.first {
+                var stack = [start]
+                var component: [ScenarioDevice] = []
+                unvisited.remove(start)
+
+                while let device = stack.popLast() {
+                    component.append(device)
+                    for neighbor in neighbors(of: device) where unvisited.contains(neighbor) {
+                        unvisited.remove(neighbor)
+                        stack.append(neighbor)
+                    }
+                }
+
+                components.append(component)
+            }
+
+            return components
+        }
+
+        private mutating func advanceTime() {
+            now = now.addingTimeInterval(0.25)
+        }
+
+        private mutating func nextRevision() -> Int {
+            revision += 1
+            return revision
+        }
+
+        private mutating func nextEnvelopeID(origin: ScenarioDevice) -> String {
+            envelopeSequence += 1
+            return "\(origin.rawValue)-\(envelopeSequence)"
+        }
+
+        private func copySession(
+            _ session: PlaybackSession,
+            revision: Int,
+            updatedAt: Date,
+            updatedByDeviceID: String
+        ) -> PlaybackSession {
+            PlaybackSession(
+                id: session.id,
+                revision: revision,
+                queue: session.queue,
+                currentIndex: session.currentIndex,
+                position: session.estimatedPosition(at: updatedAt),
+                isPlaying: session.isPlaying,
+                volume: session.volume,
+                outputDeviceID: session.outputDeviceID,
+                updatedAt: updatedAt,
+                updatedByDeviceID: updatedByDeviceID
+            )
+        }
     }
 
     private func makeSnapshot(
