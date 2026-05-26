@@ -95,6 +95,8 @@ final class SyncLiveHarness {
             stepCurrentSession(delta: 1)
         case "previous":
             stepCurrentSession(delta: -1)
+        case "applySession":
+            applySession(parameters)
         case "status":
             break
         default:
@@ -176,6 +178,21 @@ final class SyncLiveHarness {
         )
     }
 
+    private func applySession(_ parameters: [String: String]) {
+        guard let encodedSession = parameters["session"],
+              let data = Data(base64Encoded: encodedSession) else {
+            lastError = "Missing or invalid encoded playback session"
+            return
+        }
+
+        do {
+            let session = try JSONDecoder.syncHarness.decode(PlaybackSession.self, from: data)
+            DeviceSyncManager.shared.harnessApplyPlaybackSession(session)
+        } catch {
+            lastError = "Failed to decode playback session: \(error.localizedDescription)"
+        }
+    }
+
     private func outputDeviceID(from value: String?) -> String? {
         guard let value, !value.isEmpty else { return nil }
         if value == "local" {
@@ -249,6 +266,14 @@ final class SyncLiveHarness {
     }
 }
 
+private extension JSONDecoder {
+    static let syncHarness: JSONDecoder = {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
+    }()
+}
+
 private struct HarnessCommand: Codable {
     let id: String
     let command: String
@@ -298,6 +323,7 @@ private struct HarnessStatus: Codable {
     let validSelectedPlaybackTargetID: String
     let targets: [Target]
     let sharedSession: Session?
+    let sharedSessionPayload: PlaybackSession?
     let player: Player
     let lastProcessedCommandID: String?
     let lastProcessedCommand: String?
@@ -337,6 +363,7 @@ private struct HarnessStatus: Codable {
                     queueIDs: session.queue.map(\.id)
                 )
             },
+            sharedSessionPayload: manager.sharedSession,
             player: Player(
                 currentSongID: player.currentSong?.id,
                 currentIndex: player.currentIndex,

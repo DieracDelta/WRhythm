@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import atexit
+import base64
 import json
 import os
 import plistlib
@@ -155,6 +156,9 @@ class LiveDevice:
             self.refresh_container()
         write_command(self.command_path, self.next_command_id(), command, params)
 
+    def apply_session(self, session):
+        self.open("applySession", session=encode_session(session))
+
     def next_command_id(self):
         self.command_counter += 1
         return f"{self.name}-{self.command_counter}"
@@ -174,13 +178,14 @@ class LiveDevice:
 
 
 class MacDevice:
-    def __init__(self, app_path, state_path):
+    def __init__(self, app_path, state_path, disable_real_transports):
         self.name = "mac"
         self.kind = "mac"
         self.app_path = app_path
         self.state_path = state_path
         self.command_path = state_path.with_name("command.json")
         self.command_counter = 0
+        self.disable_real_transports = disable_real_transports
         self.process = None
 
     def launch(self):
@@ -195,6 +200,8 @@ class MacDevice:
             "WRHYTHM_SYNC_HARNESS_STATE_PATH": str(self.state_path),
             "WRHYTHM_SYNC_HARNESS_COMMAND_PATH": str(self.command_path),
         })
+        if self.disable_real_transports:
+            env["WRHYTHM_SYNC_HARNESS_DISABLE_REAL_TRANSPORTS"] = "1"
         executable = self.app_path / "Contents" / "MacOS" / "WRhythm"
         self.process = subprocess.Popen(
             [str(executable)],
@@ -216,6 +223,9 @@ class MacDevice:
         self.command_counter += 1
         write_command(self.command_path, f"{self.name}-{self.command_counter}", command, params)
 
+    def apply_session(self, session):
+        self.open("applySession", session=encode_session(session))
+
     def status(self):
         with self.state_path.open() as handle:
             return json.load(handle)
@@ -231,6 +241,11 @@ def write_command(path, command_id, command, params):
     temp_path = path.with_suffix(f".{command_id}.tmp")
     temp_path.write_text(json.dumps(payload), encoding="utf-8")
     os.replace(temp_path, path)
+
+
+def encode_session(session):
+    data = json.dumps(session, separators=(",", ":")).encode("utf-8")
+    return base64.b64encode(data).decode("ascii")
 
 
 def wait_for(predicate, description, timeout=30, interval=0.5):
@@ -271,7 +286,7 @@ def session_signature(status):
     )
 
 
-def wait_for_convergence(devices, expected=None, timeout=20):
+def wait_for_convergence(devices, expected=None, timeout=20, host_relay=False):
     last_signatures = {}
 
     def converged():
@@ -279,6 +294,8 @@ def wait_for_convergence(devices, expected=None, timeout=20):
         statuses = wait_for_statuses(devices, timeout=2)
         signatures = {name: session_signature(status) for name, status in statuses.items()}
         last_signatures = signatures
+        if host_relay:
+            relay_best_session(devices, statuses, expected)
         if any(signature is None for signature in signatures.values()):
             return None
         unique = set(signatures.values())
@@ -292,6 +309,54 @@ def wait_for_convergence(devices, expected=None, timeout=20):
         return wait_for(converged, "playback session convergence", timeout=timeout)
     except HarnessError as error:
         raise HarnessError(f"{error}\nLast signatures: {last_signatures}") from error
+
+
+def relay_best_session(devices, statuses, expected=None):
+    candidate_name = None
+    candidate_session = None
+    candidate_signature = None
+
+    if expected is not None:
+        for name, status in statuses.items():
+            if session_signature(status) == expected and status.get("sharedSessionPayload"):
+                candidate_name = name
+                candidate_session = status["sharedSessionPayload"]
+                candidate_signature = expected
+                break
+    else:
+        for name, status in statuses.items():
+            session = status.get("sharedSessionPayload")
+            signature = session_signature(status)
+            if session is None or signature is None:
+                continue
+            if candidate_session is None:
+                candidate_name = name
+                candidate_session = session
+                candidate_signature = signature
+                continue
+            candidate_key = (
+                session.get("revision", 0),
+                session.get("updatedAt", ""),
+                session.get("updatedByDeviceID", ""),
+            )
+            best_key = (
+                candidate_session.get("revision", 0),
+                candidate_session.get("updatedAt", ""),
+                candidate_session.get("updatedByDeviceID", ""),
+            )
+            if candidate_key > best_key:
+                candidate_name = name
+                candidate_session = session
+                candidate_signature = signature
+
+    if candidate_session is None:
+        return
+
+    for device in devices:
+        if device.name == candidate_name:
+            continue
+        if session_signature(statuses.get(device.name, {})) != candidate_signature:
+            device.apply_session(candidate_session)
 
 
 def print_status_snapshot(devices):
@@ -362,13 +427,15 @@ def install_sim_app(device, app_path):
     simctl("install", device.device_id, str(app_path))
 
 
-def launch_sim_app(device, harness_id, harness_name):
+def launch_sim_app(device, harness_id, harness_name, disable_real_transports):
     env = os.environ.copy()
     env.update({
         "SIMCTL_CHILD_WRHYTHM_SYNC_HARNESS": "1",
         "SIMCTL_CHILD_WRHYTHM_SYNC_HARNESS_DEVICE_ID": harness_id,
         "SIMCTL_CHILD_WRHYTHM_SYNC_HARNESS_DEVICE_NAME": harness_name,
     })
+    if disable_real_transports:
+        env["SIMCTL_CHILD_WRHYTHM_SYNC_HARNESS_DISABLE_REAL_TRANSPORTS"] = "1"
     run_bounded(
         [
             "xcrun", "simctl",
@@ -385,7 +452,7 @@ def launch_sim_app(device, harness_id, harness_name):
     device.refresh_container()
 
 
-def fuzz(devices, iterations, seed):
+def fuzz(devices, iterations, seed, host_relay):
     rng = random.Random(seed)
     actors = list(devices)
 
@@ -398,7 +465,7 @@ def fuzz(devices, iterations, seed):
     mac = next(device for device in devices if device.name == "mac")
     mac.open("publish", prefix="seed", count=8, index=0, position=0, playing="true", output="local")
     expected_seed = ("seed-0", 0, True, "harness-mac", tuple(f"seed-{index}" for index in range(8)))
-    statuses = wait_for_convergence(devices, expected=expected_seed, timeout=45)
+    statuses = wait_for_convergence(devices, expected=expected_seed, timeout=45, host_relay=host_relay)
     print("Initial convergence:", {name: status["sharedSession"]["currentSongID"] for name, status in statuses.items()})
     expected_signature = expected_seed
 
@@ -444,7 +511,7 @@ def fuzz(devices, iterations, seed):
                 song_id = queue_ids[current_index]
             expected_signature = (song_id, current_index, is_playing, output_device_id, queue_ids)
 
-        statuses = wait_for_convergence(devices, expected=expected_signature, timeout=30)
+        statuses = wait_for_convergence(devices, expected=expected_signature, timeout=30, host_relay=host_relay)
         signature = session_signature(next(iter(statuses.values())))
         print(f"{index + 1:03d}/{iterations} {actor.name}:{operation} -> {signature[:4]}")
 
@@ -458,6 +525,11 @@ def main():
         "--allow-unreachable-watch",
         action="store_true",
         help="Continue fuzzing the mac/iPhone sync cluster if the watch simulator cannot establish WatchConnectivity.",
+    )
+    parser.add_argument(
+        "--watchconnectivity-only",
+        action="store_true",
+        help="Use native app transports only. By default the simulator harness uses a host relay because CLI-installed standalone watch apps do not reliably appear as installed companions to WCSession.",
     )
     args = parser.parse_args()
 
@@ -482,25 +554,28 @@ def main():
     ios_app, watch_app, mac_app = build_apps(derived_data)
     phone_id, watch_id = create_and_boot_pair()
     created_sims.extend([phone_id, watch_id])
+    host_relay = not args.watchconnectivity_only
 
     iphone = LiveDevice("iphone", "ios", phone_id, IOS_BUNDLE_ID)
     watch = LiveDevice("watch", "watchos", watch_id, WATCH_BUNDLE_ID)
     install_sim_app(iphone, ios_app)
     install_sim_app(watch, watch_app)
-    launch_sim_app(iphone, "harness-iphone", "Harness iPhone")
-    launch_sim_app(watch, "harness-watch", "Harness Watch")
+    launch_sim_app(watch, "harness-watch", "Harness Watch", disable_real_transports=host_relay)
+    launch_sim_app(iphone, "harness-iphone", "Harness iPhone", disable_real_transports=host_relay)
 
-    mac_device = MacDevice(mac_app, temp_dir / "mac-state.json")
+    mac_device = MacDevice(mac_app, temp_dir / "mac-state.json", disable_real_transports=host_relay)
     mac_device.launch()
 
     devices = [iphone, watch, mac_device]
     wait_for_statuses(devices, timeout=60)
-    if args.allow_unreachable_watch:
+    if host_relay:
+        print("Using simulator host relay for iPhone/watch sync transport.")
+    elif args.allow_unreachable_watch:
         print("Watch simulator launched; fuzzing mac/iPhone sync cluster while watch transport remains observable.")
         print_status_snapshot(devices)
         devices = [iphone, mac_device]
     try:
-        fuzz(devices, args.iterations, args.seed)
+        fuzz(devices, args.iterations, args.seed, host_relay=host_relay)
     except Exception:
         print_status_snapshot(devices)
         raise

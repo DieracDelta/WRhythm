@@ -1567,6 +1567,11 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         ), applyLocally: false)
     }
 
+    func harnessApplyPlaybackSession(_ session: PlaybackSession) {
+        sharedSession = session
+        selectedPlaybackTargetID = session.outputDeviceID
+    }
+
     var harnessWatchConnectivitySummary: String {
 #if os(iOS)
         guard let watchSession else { return "none" }
@@ -2114,6 +2119,27 @@ final class DeviceSyncManager: NSObject, ObservableObject {
     }
 
     private func configureTransports() {
+#if DEBUG
+        if ProcessInfo.processInfo.environment["WRHYTHM_SYNC_HARNESS_DISABLE_REAL_TRANSPORTS"] == "1" {
+#if os(iOS) || os(watchOS)
+            watchConnectivityActivationRetryTask?.cancel()
+            watchConnectivityActivationRetryTask = nil
+            hasBootstrappedWatchConnectivitySession = false
+            watchSession = nil
+#endif
+#if os(iOS) || os(macOS)
+            stopMultipeerDiscovery()
+            session?.disconnect()
+            session = nil
+            peerDisplayNames.removeAll()
+            multipeerDeviceIDs.removeAll()
+            deviceIDsByPeerDisplayName.removeAll()
+#endif
+            peerInfos.removeAll()
+            connectedDeviceNames = []
+            return
+        }
+#endif
         let shouldConnect = syncModeEnabled || credentialSyncEnabled
 
 #if os(iOS)
