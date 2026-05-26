@@ -113,6 +113,8 @@ final class SyncLiveHarness {
             DeviceSyncManager.shared.sendPrevious(targetDeviceID: parameters["target"])
         case "remoteSeek":
             DeviceSyncManager.shared.sendSeek(to: parameters.double("position") ?? 0, targetDeviceID: parameters["target"])
+        case "playLocalFixture":
+            playLocalFixture(parameters)
         case "status":
             break
         default:
@@ -244,6 +246,14 @@ final class SyncLiveHarness {
         }
     }
 
+    private func playLocalFixture(_ parameters: [String: String]) {
+        do {
+            try AudioPlayer.shared.playHarnessLocalAudioFixture(duration: parameters.double("duration") ?? 90)
+        } catch {
+            lastError = "Failed to play local audio fixture: \(error.localizedDescription)"
+        }
+    }
+
     private func outputDeviceID(from value: String?) -> String? {
         guard let value, !value.isEmpty else { return nil }
         if value == "local" {
@@ -359,6 +369,8 @@ private struct HarnessStatus: Codable {
         let currentIndex: Int
         let currentTime: TimeInterval
         let isPlaying: Bool
+        let isBuffering: Bool
+        let lastPauseReason: String?
         let queueIDs: [String]
     }
 
@@ -430,6 +442,8 @@ private struct HarnessStatus: Codable {
                 currentIndex: player.currentIndex,
                 currentTime: player.liveCurrentTime,
                 isPlaying: player.isPlaying,
+                isBuffering: player.isBuffering,
+                lastPauseReason: player.lastPauseReason,
                 queueIDs: player.queue.map(\.id)
             ),
             pendingCommandSummaries: manager.harnessPendingCommandSummaries,

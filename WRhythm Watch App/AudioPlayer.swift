@@ -275,6 +275,7 @@ class AudioPlayer: NSObject, ObservableObject {
     @Published var currentTime: TimeInterval = 0
     @Published var duration: TimeInterval = 0
     @Published var isBuffering = false
+    @Published private(set) var lastPauseReason: String?
     @Published private(set) var currentBufferPercent: Int?
     @Published private(set) var playbackError: PlaybackErrorInfo?
     @Published private(set) var prebufferedTrackCount = 0
@@ -1789,6 +1790,7 @@ class AudioPlayer: NSObject, ObservableObject {
         print("🎵 Content type: \(song.contentType ?? "unknown")")
         print("🎵 Suffix: \(song.suffix ?? "unknown")")
         playbackError = nil
+        lastPauseReason = nil
         currentBufferPercent = nil
 
         if currentSong?.id != song.id {
@@ -1920,6 +1922,7 @@ class AudioPlayer: NSObject, ObservableObject {
 
     func play() {
         recordPlaybackIntentChange()
+        lastPauseReason = nil
         prepareAudioSessionForPlayback()
         if queueFinished, queue.indices.contains(currentIndex) {
             startPlayback(queue[currentIndex])
@@ -1937,8 +1940,10 @@ class AudioPlayer: NSObject, ObservableObject {
         updateNowPlayingInfo()
     }
 
-    func pause() {
+    func pause(reason: String = "unspecified") {
         recordPlaybackIntentChange()
+        lastPauseReason = reason
+        print("⏸️ AudioPlayer.pause reason: \(reason)")
         player.pause()
         isBuffering = false
         isPlaying = false
@@ -2443,6 +2448,92 @@ class AudioPlayer: NSObject, ObservableObject {
             self.startPlayback(song, startTime: retryStartTime, autoplay: shouldAutoplay)
         }
     }
+
+#if DEBUG
+    func playHarnessLocalAudioFixture(duration: TimeInterval = 90) throws {
+        let safeDuration = max(10, min(duration, 300))
+        let song = Song(
+            id: "harness-local-audio-fixture",
+            title: "Harness Background Audio",
+            album: "Harness",
+            albumId: "harness-background-audio",
+            artist: "WRhythm Harness",
+            artistId: "wrhythm-harness",
+            track: 1,
+            year: nil,
+            genre: nil,
+            coverArt: nil,
+            size: nil,
+            contentType: "audio/wav",
+            suffix: "wav",
+            duration: Int(safeDuration),
+            bitRate: 128,
+            path: nil
+        )
+
+        let url = prebufferURL(for: song)
+        if !FileManager.default.fileExists(atPath: url.path) {
+            try Self.writeHarnessToneWAV(to: url, duration: safeDuration)
+        }
+        prebufferURLs[prebufferKey(for: song)] = url
+        lastPauseReason = nil
+        playQueue([song], startingAt: 0, startTime: 0)
+    }
+
+    private static func writeHarnessToneWAV(to url: URL, duration: TimeInterval) throws {
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+
+        let sampleRate = 8_000
+        let channelCount = 1
+        let bitsPerSample = 16
+        let sampleCount = max(sampleRate, Int(duration * Double(sampleRate)))
+        let byteRate = sampleRate * channelCount * bitsPerSample / 8
+        let blockAlign = channelCount * bitsPerSample / 8
+        let dataByteCount = sampleCount * blockAlign
+
+        var data = Data()
+        data.reserveCapacity(44 + dataByteCount)
+
+        func appendASCII(_ value: String) {
+            data.append(contentsOf: value.utf8)
+        }
+
+        func appendUInt16LE(_ value: UInt16) {
+            var littleEndian = value.littleEndian
+            withUnsafeBytes(of: &littleEndian) { data.append(contentsOf: $0) }
+        }
+
+        func appendUInt32LE(_ value: UInt32) {
+            var littleEndian = value.littleEndian
+            withUnsafeBytes(of: &littleEndian) { data.append(contentsOf: $0) }
+        }
+
+        appendASCII("RIFF")
+        appendUInt32LE(UInt32(36 + dataByteCount))
+        appendASCII("WAVE")
+        appendASCII("fmt ")
+        appendUInt32LE(16)
+        appendUInt16LE(1)
+        appendUInt16LE(UInt16(channelCount))
+        appendUInt32LE(UInt32(sampleRate))
+        appendUInt32LE(UInt32(byteRate))
+        appendUInt16LE(UInt16(blockAlign))
+        appendUInt16LE(UInt16(bitsPerSample))
+        appendASCII("data")
+        appendUInt32LE(UInt32(dataByteCount))
+
+        for index in 0..<sampleCount {
+            let phase = 2 * Double.pi * 440 * Double(index) / Double(sampleRate)
+            let sample = Int16((sin(phase) * 1_800).rounded())
+            appendUInt16LE(UInt16(bitPattern: sample))
+        }
+
+        try data.write(to: url, options: [.atomic])
+    }
+#endif
 
     private func updateNowPlayingInfo() {
 #if os(iOS) || os(watchOS) || os(macOS)
