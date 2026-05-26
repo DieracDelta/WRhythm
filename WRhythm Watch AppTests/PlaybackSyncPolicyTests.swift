@@ -3133,6 +3133,28 @@ struct PlaybackSyncPolicyTests {
         #expect(warning.details.contains("Added 119 fallback songs"))
     }
 
+    @Test func playlistGenerationWarningNamesTheSimilaritySource() throws {
+        let sonicWarning = try #require(PlaylistGenerationPolicy.shortResultWarning(
+            similarCount: 11,
+            requestedCount: 130,
+            finalCount: 130,
+            fallbackCount: 119,
+            similarDescription: "sonic-similar tracks"
+        ))
+        let artistWarning = try #require(PlaylistGenerationPolicy.shortResultWarning(
+            similarCount: 11,
+            requestedCount: 130,
+            finalCount: 130,
+            fallbackCount: 119,
+            similarDescription: "artist-similar songs"
+        ))
+
+        #expect(sonicWarning.message == "Only 11 sonic-similar tracks found")
+        #expect(sonicWarning.details.contains("returned 11 sonic-similar tracks"))
+        #expect(artistWarning.message == "Only 11 artist-similar songs found")
+        #expect(artistWarning.details.contains("returned 11 artist-similar songs"))
+    }
+
     @Test func playlistGenerationCapsOverfullSimilarityResultsToRequestedCount() {
         let source = makeSong(id: "source")
         let similarSongs = (0..<160).map { makeSong(id: "similar-\($0)") }

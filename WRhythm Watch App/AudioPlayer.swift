@@ -91,12 +91,13 @@ struct PlaylistGenerationPolicy: Sendable {
         similarCount: Int,
         requestedCount: Int,
         finalCount: Int,
-        fallbackCount: Int
+        fallbackCount: Int,
+        similarDescription: String = "similar songs"
     ) -> Warning? {
         let targetCount = max(requestedCount, 1)
         guard similarCount < targetCount else { return nil }
 
-        var details = "Requested \(targetCount). The server returned \(similarCount) similar songs."
+        var details = "Requested \(targetCount). The server returned \(similarCount) \(similarDescription)."
         if fallbackCount > 0 {
             details += " Added \(fallbackCount) fallback songs."
         }
@@ -105,7 +106,7 @@ struct PlaylistGenerationPolicy: Sendable {
         }
 
         return Warning(
-            message: "Only \(similarCount) similar songs found",
+            message: "Only \(similarCount) \(similarDescription) found",
             details: details
         )
     }
@@ -1183,7 +1184,56 @@ class AudioPlayer: NSObject, ObservableObject {
     func startPlaylistGeneration(for sourceSong: Song, count: Int, fallbackToRandom: Bool = true) {
         startPlaylistGeneration(title: sourceSong.title, artist: sourceSong.artist) {
             let requestedCount = max(count, 1)
-            let similarSongs = try await NavidromeAPI.shared.getSimilarSongsForSong(sourceSong, count: requestedCount)
+            let api = await NavidromeAPI.shared
+            let cachedSonicSupport = await api.sonicSimilaritySupported
+            let sonicSupported: Bool
+            if let cachedSonicSupport {
+                sonicSupported = cachedSonicSupport
+            } else {
+                sonicSupported = await api.checkSonicSimilaritySupport()
+            }
+            var sonicFailure: Error?
+
+            if sonicSupported {
+                do {
+                    let sonicSongs = try await api.getSonicSimilarTracks(songId: sourceSong.id, count: requestedCount)
+                    let primaryQueue = PlaylistGenerationPolicy.queue(
+                        sourceSong: sourceSong,
+                        primarySongs: sonicSongs,
+                        fallbackSongs: [],
+                        requestedCount: requestedCount
+                    )
+
+                    var fallbackSongs: [Song] = []
+                    if fallbackToRandom, PlaylistGenerationPolicy.needsFallback(currentCount: primaryQueue.count, requestedCount: requestedCount) {
+                        fallbackSongs = try await api.getRandomSongs(size: requestedCount)
+                    }
+
+                    let queue = PlaylistGenerationPolicy.queue(
+                        sourceSong: sourceSong,
+                        primarySongs: sonicSongs,
+                        fallbackSongs: fallbackSongs,
+                        requestedCount: requestedCount
+                    )
+                    guard queue.count > 1 else {
+                        throw PlaylistGenerationError.noSongs
+                    }
+
+                    let warning = PlaylistGenerationPolicy.shortResultWarning(
+                        similarCount: primaryQueue.count,
+                        requestedCount: requestedCount,
+                        finalCount: queue.count,
+                        fallbackCount: max(queue.count - primaryQueue.count, 0),
+                        similarDescription: "sonic-similar tracks"
+                    )
+                    return .songs(queue, warning: warning)
+                } catch {
+                    sonicFailure = error
+                    print("⚠️ Sonic similarity playlist gen failed, falling back to artist similarity: \(error.localizedDescription)")
+                }
+            }
+
+            let similarSongs = try await api.getSimilarSongsForSong(sourceSong, count: requestedCount)
             var fallbackSongs: [Song] = []
             let primaryQueue = PlaylistGenerationPolicy.queue(
                 sourceSong: sourceSong,
@@ -1209,9 +1259,31 @@ class AudioPlayer: NSObject, ObservableObject {
                 similarCount: primaryQueue.count,
                 requestedCount: requestedCount,
                 finalCount: queue.count,
-                fallbackCount: max(queue.count - primaryQueue.count, 0)
+                fallbackCount: max(queue.count - primaryQueue.count, 0),
+                similarDescription: "artist-similar songs"
             )
-            return .songs(queue, warning: warning)
+            if let warning {
+                if let sonicFailure {
+                    return .songs(
+                        queue,
+                        warning: PlaylistGenerationPolicy.Warning(
+                            message: warning.message,
+                            details: "Sonic similarity failed: \(sonicFailure.localizedDescription). \(warning.details)"
+                        )
+                    )
+                }
+                return .songs(queue, warning: warning)
+            }
+            if let sonicFailure {
+                return .songs(
+                    queue,
+                    warning: PlaylistGenerationPolicy.Warning(
+                        message: "Used artist similarity fallback",
+                        details: "Sonic similarity failed: \(sonicFailure.localizedDescription)"
+                    )
+                )
+            }
+            return .songs(queue)
         }
     }
 
