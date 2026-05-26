@@ -50,6 +50,39 @@ struct PlaybackRetryPolicy: Sendable {
     }
 }
 
+struct PlaylistGenerationPolicy: Sendable {
+    static func queue(
+        sourceSong: Song,
+        primarySongs: [Song],
+        fallbackSongs: [Song],
+        requestedCount: Int
+    ) -> [Song] {
+        let targetCount = max(requestedCount, 1)
+        var seen = Set<String>()
+        var queue: [Song] = []
+
+        func append(_ song: Song) {
+            guard queue.count < targetCount, !seen.contains(song.id) else { return }
+            seen.insert(song.id)
+            queue.append(song)
+        }
+
+        append(sourceSong)
+        for song in primarySongs where song.id != sourceSong.id {
+            append(song)
+        }
+        for song in fallbackSongs where song.id != sourceSong.id {
+            append(song)
+        }
+
+        return queue
+    }
+
+    static func needsFallback(currentCount: Int, requestedCount: Int) -> Bool {
+        currentCount < max(requestedCount, 1)
+    }
+}
+
 struct PrebufferSchedulingPolicy: Sendable {
     static func upcomingRange(queueCount: Int, currentIndex: Int, aheadCount: Int) -> Range<Int> {
         guard aheadCount > 0, queueCount > 0 else { return 0..<0 }
@@ -1098,28 +1131,46 @@ class AudioPlayer: NSObject, ObservableObject {
     func startPlaylistGeneration(for sourceSong: Song, count: Int, fallbackToRandom: Bool = true) {
         startPlaylistGeneration(title: sourceSong.title, artist: sourceSong.artist) {
             let requestedCount = max(count, 1)
-            var similarSongs = try await NavidromeAPI.shared.getSimilarSongsForSong(sourceSong, count: requestedCount)
-            if similarSongs.isEmpty && fallbackToRandom {
-                similarSongs = try await NavidromeAPI.shared.getRandomSongs(size: requestedCount)
+            let similarSongs = try await NavidromeAPI.shared.getSimilarSongsForSong(sourceSong, count: requestedCount)
+            var fallbackSongs: [Song] = []
+            let primaryQueue = PlaylistGenerationPolicy.queue(
+                sourceSong: sourceSong,
+                primarySongs: similarSongs,
+                fallbackSongs: [],
+                requestedCount: requestedCount
+            )
+            if fallbackToRandom, PlaylistGenerationPolicy.needsFallback(currentCount: primaryQueue.count, requestedCount: requestedCount) {
+                fallbackSongs = try await NavidromeAPI.shared.getRandomSongs(size: requestedCount)
             }
 
-            let filteredSongs = similarSongs.filter { $0.id != sourceSong.id }
-            guard !filteredSongs.isEmpty else {
+            let queue = PlaylistGenerationPolicy.queue(
+                sourceSong: sourceSong,
+                primarySongs: similarSongs,
+                fallbackSongs: fallbackSongs,
+                requestedCount: requestedCount
+            )
+            guard queue.count > 1 else {
                 throw PlaylistGenerationError.noSongs
             }
 
-            return [sourceSong] + filteredSongs
+            return queue
         }
     }
 
     func startSonicSimilarityPlaylistGeneration(for sourceSong: Song, count: Int = 100) {
         startPlaylistGeneration(title: sourceSong.title, artist: sourceSong.artist) {
-            let songs = try await NavidromeAPI.shared.getSonicSimilarTracks(songId: sourceSong.id, count: max(count, 1))
-            let filteredSongs = songs.filter { $0.id != sourceSong.id }
-            guard !filteredSongs.isEmpty else {
+            let requestedCount = max(count, 1)
+            let songs = try await NavidromeAPI.shared.getSonicSimilarTracks(songId: sourceSong.id, count: requestedCount)
+            let queue = PlaylistGenerationPolicy.queue(
+                sourceSong: sourceSong,
+                primarySongs: songs,
+                fallbackSongs: [],
+                requestedCount: requestedCount
+            )
+            guard queue.count > 1 else {
                 throw PlaylistGenerationError.noSongs
             }
-            return [sourceSong] + filteredSongs
+            return queue
         }
     }
 
@@ -1141,15 +1192,21 @@ class AudioPlayer: NSObject, ObservableObject {
 
     func startAudioMuseAlchemyPlaylistGeneration(for sourceSong: Song, count: Int = 100) {
         startPlaylistGeneration(title: "AudioMuse Alchemy", artist: sourceSong.title) {
+            let requestedCount = max(count, 1)
             let songs = try await NavidromeAPI.shared.getAudioMuseAlchemySongs(
                 seedSong: sourceSong,
-                count: max(count, 1)
+                count: requestedCount
             )
-            let filteredSongs = songs.filter { $0.id != sourceSong.id }
-            guard !filteredSongs.isEmpty else {
+            let queue = PlaylistGenerationPolicy.queue(
+                sourceSong: sourceSong,
+                primarySongs: songs,
+                fallbackSongs: [],
+                requestedCount: requestedCount
+            )
+            guard queue.count > 1 else {
                 throw PlaylistGenerationError.noSongs
             }
-            return [sourceSong] + filteredSongs
+            return queue
         }
     }
 

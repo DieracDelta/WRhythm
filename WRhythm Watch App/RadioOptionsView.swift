@@ -123,27 +123,35 @@ struct RadioOptionsView: View {
         Task {
             do {
                 print("📻 Downloading radio for: \(sourceTitle) (count: \(selectedCount))")
-                var similarSongs = try await NavidromeAPI.shared.getSimilarSongsForSong(sourceSong, count: selectedCount)
+                let similarSongs = try await NavidromeAPI.shared.getSimilarSongsForSong(sourceSong, count: selectedCount)
                 print("📻 ID3 similar songs returned \(similarSongs.count) songs")
 
-                if similarSongs.isEmpty {
-                    print("📻 Falling back to random songs")
-                    similarSongs = try await NavidromeAPI.shared.getRandomSongs(size: selectedCount)
-                    print("📻 getRandomSongs returned \(similarSongs.count) songs")
+                let primaryQueue = PlaylistGenerationPolicy.queue(
+                    sourceSong: sourceSong,
+                    primarySongs: similarSongs,
+                    fallbackSongs: [],
+                    requestedCount: selectedCount
+                )
+                let fallbackSongs: [Song]
+                if PlaylistGenerationPolicy.needsFallback(currentCount: primaryQueue.count, requestedCount: selectedCount) {
+                    print("📻 Topping up radio with random songs")
+                    fallbackSongs = try await NavidromeAPI.shared.getRandomSongs(size: selectedCount)
+                    print("📻 getRandomSongs returned \(fallbackSongs.count) songs")
+                } else {
+                    fallbackSongs = []
                 }
+                let queue = PlaylistGenerationPolicy.queue(
+                    sourceSong: sourceSong,
+                    primarySongs: similarSongs,
+                    fallbackSongs: fallbackSongs,
+                    requestedCount: selectedCount
+                )
 
                 await MainActor.run {
                     isProcessing = false
-                    if similarSongs.isEmpty {
+                    if queue.count <= 1 {
                         print("⚠️ No songs found to download for radio")
                     } else {
-                        // Filter out the source song if it appears in results
-                        let filteredSongs = similarSongs.filter { $0.id != sourceSong.id }
-
-                        // Build queue with source song first, then similar songs
-                        var queue = [sourceSong]
-                        queue.append(contentsOf: filteredSongs)
-
                         print("✅ Downloading radio: \(queue.count) songs")
 
                         // Download all songs in the radio queue

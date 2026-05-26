@@ -825,6 +825,10 @@ struct PlaybackSessionSyncPolicy: Sendable {
             return false
         }
 
+        if let shouldApplyCrossAuthorUpdate = shouldApplyCrossAuthorUpdate(session, over: current) {
+            return !shouldApplyCrossAuthorUpdate
+        }
+
         if session.revision < current.revision {
             return true
         }
@@ -842,8 +846,21 @@ struct PlaybackSessionSyncPolicy: Sendable {
         if incoming.id != existing.id {
             return incoming.updatedAt > existing.updatedAt
         }
+        if let shouldApplyCrossAuthorUpdate = shouldApplyCrossAuthorUpdate(incoming, over: existing) {
+            return shouldApplyCrossAuthorUpdate
+        }
         if incoming.revision != existing.revision {
             return incoming.revision > existing.revision
+        }
+        if incoming.updatedAt != existing.updatedAt {
+            return incoming.updatedAt > existing.updatedAt
+        }
+        return incoming.updatedByDeviceID > existing.updatedByDeviceID
+    }
+
+    private static func shouldApplyCrossAuthorUpdate(_ incoming: PlaybackSession, over existing: PlaybackSession) -> Bool? {
+        guard incoming.id == existing.id, incoming.updatedByDeviceID != existing.updatedByDeviceID else {
+            return nil
         }
         if incoming.updatedAt != existing.updatedAt {
             return incoming.updatedAt > existing.updatedAt
@@ -949,9 +966,18 @@ struct SyncStateRefreshPublicationPolicy: Sendable {
     static func shouldPublishLocalPlayback(
         sharedOutputDeviceID: String?,
         localDeviceID: String,
-        hasLocalPlayback: Bool
+        hasLocalPlayback: Bool,
+        isLocalPlaying: Bool = false,
+        localUpdatedAt: Date? = nil,
+        sharedUpdatedAt: Date? = nil
     ) -> Bool {
         guard hasLocalPlayback else { return false }
+        if isLocalPlaying,
+           let localUpdatedAt,
+           let sharedUpdatedAt,
+           localUpdatedAt > sharedUpdatedAt {
+            return true
+        }
         guard let sharedOutputDeviceID else { return true }
         return sharedOutputDeviceID == localDeviceID
     }
@@ -2352,7 +2378,10 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         guard SyncStateRefreshPublicationPolicy.shouldPublishLocalPlayback(
             sharedOutputDeviceID: sharedSession?.outputDeviceID,
             localDeviceID: localDeviceID,
-            hasLocalPlayback: !queue.isEmpty
+            hasLocalPlayback: !queue.isEmpty,
+            isLocalPlaying: player.isPlaying,
+            localUpdatedAt: nil,
+            sharedUpdatedAt: sharedSession?.updatedAt
         ) else { return }
 
         publishSharedSession(makeSession(
