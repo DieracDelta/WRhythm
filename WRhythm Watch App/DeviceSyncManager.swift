@@ -76,7 +76,7 @@ final class SyncDelegateEventSubmitter: @unchecked Sendable {
     private let submissionQueue: DispatchQueue
     private let eventQueue: SyncDelegateEventQueue
     private let operationCountLock = NSLock()
-    private var enqueuedOperationCount = 0
+    private nonisolated(unsafe) var enqueuedOperationCount = 0
 
     nonisolated init(label: String, eventQueue: SyncDelegateEventQueue = SyncDelegateEventQueue()) {
         self.submissionQueue = DispatchQueue(label: label)
@@ -109,14 +109,14 @@ final class SyncDelegateEventSubmitter: @unchecked Sendable {
 
     private nonisolated func incrementEnqueuedOperationCount() {
         operationCountLock.lock()
+        defer { operationCountLock.unlock() }
         enqueuedOperationCount += 1
-        operationCountLock.unlock()
     }
 
     private nonisolated func currentEnqueuedOperationCount() -> Int {
         operationCountLock.lock()
+        defer { operationCountLock.unlock() }
         let count = enqueuedOperationCount
-        operationCountLock.unlock()
         return count
     }
 

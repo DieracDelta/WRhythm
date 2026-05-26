@@ -12,6 +12,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 from datetime import datetime, timezone
@@ -171,6 +172,7 @@ class LiveDevice:
         self.state_path = None
         self.command_path = None
         self.command_counter = 0
+        self.process_pid = None
 
     def open(self, command, **params):
         if self.command_path is None:
@@ -225,6 +227,10 @@ class MacDevice:
         self.command_counter = 0
         self.disable_real_transports = disable_real_transports
         self.process = None
+
+    @property
+    def process_pid(self):
+        return self.process.pid if self.process is not None else None
 
     def launch(self):
         lsregister = Path("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister")
@@ -288,6 +294,95 @@ def write_command(path, command_id, command, params):
     temp_path = path.with_suffix(f".{command_id}.tmp")
     temp_path.write_text(json.dumps(payload), encoding="utf-8")
     os.replace(temp_path, path)
+
+
+class PerformanceSampler:
+    def __init__(self, devices, output_path, interval):
+        self.devices = devices
+        self.output_path = Path(output_path)
+        self.interval = interval
+        self.samples = []
+        self._stop = threading.Event()
+        self._thread = None
+
+    def start(self):
+        self.output_path.parent.mkdir(parents=True, exist_ok=True)
+        self._thread = threading.Thread(target=self._run, name="wrhythm-performance-sampler", daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=max(2, self.interval * 2))
+        self.write_report()
+
+    def _run(self):
+        while not self._stop.is_set():
+            self.sample_once()
+            self._stop.wait(self.interval)
+
+    def sample_once(self):
+        timestamp = time.time()
+        for device in self.devices:
+            pid = device.process_pid
+            if pid is None:
+                continue
+            output = run(["ps", "-o", "pid=,rss=,%cpu=,state=,comm=", "-p", str(pid)], check=False).strip()
+            if not output:
+                continue
+            parts = output.split(None, 4)
+            if len(parts) < 5:
+                continue
+            try:
+                self.samples.append({
+                    "timestamp": timestamp,
+                    "device": device.name,
+                    "pid": int(parts[0]),
+                    "rssKB": int(parts[1]),
+                    "cpuPercent": float(parts[2]),
+                    "state": parts[3],
+                    "command": parts[4],
+                })
+            except ValueError:
+                continue
+
+    def write_report(self):
+        summary = {}
+        for sample in self.samples:
+            bucket = summary.setdefault(sample["device"], {
+                "samples": 0,
+                "minRSSKB": sample["rssKB"],
+                "maxRSSKB": sample["rssKB"],
+                "lastRSSKB": sample["rssKB"],
+                "avgCPUPercent": 0,
+                "maxCPUPercent": sample["cpuPercent"],
+            })
+            bucket["samples"] += 1
+            bucket["minRSSKB"] = min(bucket["minRSSKB"], sample["rssKB"])
+            bucket["maxRSSKB"] = max(bucket["maxRSSKB"], sample["rssKB"])
+            bucket["lastRSSKB"] = sample["rssKB"]
+            bucket["avgCPUPercent"] += sample["cpuPercent"]
+            bucket["maxCPUPercent"] = max(bucket["maxCPUPercent"], sample["cpuPercent"])
+
+        for bucket in summary.values():
+            if bucket["samples"] > 0:
+                bucket["avgCPUPercent"] = bucket["avgCPUPercent"] / bucket["samples"]
+
+        self.output_path.write_text(
+            json.dumps({"summary": summary, "samples": self.samples}, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        if summary:
+            print("Performance summary:")
+            for device, bucket in sorted(summary.items()):
+                print(
+                    "  "
+                    f"{device}: samples={bucket['samples']} "
+                    f"rssKB={bucket['minRSSKB']}..{bucket['maxRSSKB']} "
+                    f"last={bucket['lastRSSKB']} "
+                    f"avgCPU={bucket['avgCPUPercent']:.2f}% "
+                    f"maxCPU={bucket['maxCPUPercent']:.2f}%"
+                )
 
 
 def encode_session(session):
@@ -1129,7 +1224,7 @@ def launch_sim_app(device, harness_id, harness_name, disable_real_transports):
         env["SIMCTL_CHILD_WRHYTHM_SYNC_HARNESS_DISABLE_REAL_TRANSPORTS"] = "1"
     last_error = None
     for attempt in range(1, 5):
-        run_bounded(
+        output = run_bounded(
             [
                 "xcrun", "simctl",
                 "launch",
@@ -1142,6 +1237,9 @@ def launch_sim_app(device, harness_id, harness_name, disable_real_transports):
             env=env,
             timeout=90,
         )
+        match = re.search(r":\s*(\d+)\s*$", output.strip())
+        if match:
+            device.process_pid = int(match.group(1))
         time.sleep(2)
         try:
             device.refresh_container()
@@ -1384,14 +1482,27 @@ def main():
         action="store_true",
         help="Do not print a compact repro trace when a fuzz operation fails.",
     )
+    parser.add_argument(
+        "--performance-report",
+        help="Write active-process RSS/CPU samples and a summary to this JSON file while scenarios/fuzz run.",
+    )
+    parser.add_argument(
+        "--performance-sample-interval",
+        type=float,
+        default=1.0,
+        help="Seconds between active-process performance samples when --performance-report is set.",
+    )
     args = parser.parse_args()
 
     temp_dir = Path(tempfile.mkdtemp(prefix="wrhythm-live-sync."))
     derived_data = temp_dir / "DerivedData"
     created_sims = []
     mac_device = None
+    performance_sampler = None
 
     def cleanup():
+        if performance_sampler is not None:
+            performance_sampler.stop()
         if mac_device is not None:
             mac_device.terminate()
         if not args.keep_simulators:
@@ -1422,6 +1533,9 @@ def main():
 
     devices = [iphone, watch, mac_device]
     wait_for_statuses(devices, timeout=60)
+    if args.performance_report:
+        performance_sampler = PerformanceSampler(devices, args.performance_report, args.performance_sample_interval)
+        performance_sampler.start()
     relay_model = None
     if host_relay:
         print("Using simulator host relay for iPhone/watch sync transport.")
@@ -1466,6 +1580,9 @@ def main():
         trace.dump()
         print_status_snapshot(devices)
         raise
+    if performance_sampler is not None:
+        performance_sampler.stop()
+        performance_sampler = None
     print("Live sync fuzz passed.")
 
 
