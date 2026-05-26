@@ -2752,6 +2752,70 @@ struct PlaybackSyncPolicyTests {
     }
 
     @MainActor
+    @Test func openSubsonicExtensionsDetectsSonicSimilarity() throws {
+        let payload = """
+        {
+          "subsonic-response": {
+            "status": "ok",
+            "version": "1.16.1",
+            "openSubsonicExtensions": [
+              { "name": "template", "versions": [1] },
+              { "name": "sonicSimilarity", "versions": [1] }
+            ]
+          }
+        }
+        """
+
+        let response = try JSONDecoder().decode(
+            SubsonicResponse<OpenSubsonicExtensionsResponse>.self,
+            from: Data(payload.utf8)
+        )
+
+        let extensions = try #require(response.subsonicResponse.openSubsonicExtensions)
+        #expect(OpenSubsonicExtensionPolicy.supportsSonicSimilarity(extensions))
+    }
+
+    @MainActor
+    @Test func sonicMatchesResponseDecodesTopLevelSonicMatchEntries() throws {
+        let payload = """
+        {
+          "status": "ok",
+          "version": "1.16.1",
+          "sonicMatch": [
+            {
+              "entry": {
+                "id": "song-1",
+                "title": "First Track",
+                "album": "Album",
+                "albumId": "album-1",
+                "artist": "Artist",
+                "artistId": "artist-1",
+                "duration": 180
+              },
+              "similarity": 0.95
+            },
+            {
+              "entry": {
+                "id": "song-2",
+                "title": "Second Track",
+                "album": "Album",
+                "albumId": "album-1",
+                "artist": "Artist",
+                "artistId": "artist-1",
+                "duration": 181
+              },
+              "similarity": 0.82
+            }
+          ]
+        }
+        """
+
+        let response = try JSONDecoder().decode(SonicMatchesResponse.self, from: Data(payload.utf8))
+
+        #expect(response.songs.map(\.id) == ["song-1", "song-2"])
+    }
+
+    @MainActor
     @Test func downloadedSongRequiresExplicitBitrate() {
         let payload = """
         {

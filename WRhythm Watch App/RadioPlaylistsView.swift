@@ -10,36 +10,29 @@ import SwiftUI
 struct RadioPlaylistsView: View {
     @ObservedObject var downloadManager = DownloadManager.shared
     @ObservedObject var player = AudioPlayer.shared
+    @ObservedObject private var api = NavidromeAPI.shared
+    @State private var showingSonicTools = false
 
     var body: some View {
         Group {
             if player.playlistGenIsGenerating {
                 playlistGenerationLoadingView
+            } else if showingSonicTools {
+                sonicToolsView
             } else if player.playlistGenQueue.isEmpty && downloadManager.radioPlaylists.isEmpty {
-#if os(iOS)
-                WRhythmScreen {
-                    PhoneDetailHeader(title: "Playlist Gen")
-
-                    PhonePlaylistGenEmptyView()
-                        .padding(.top, WRhythmSpacing.lg)
-                }
-                .navigationTitle("")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar(.hidden, for: .navigationBar)
-#else
-                List {
-                    WRhythmEmptyState(
-                        systemImage: "music.note.list",
-                        title: "No Playlist Gen",
-                        message: "Start Playlist Gen from a song, album, artist, or playlist"
-                    )
-                    .listRowBackground(Color.clear)
-                }
-                .navigationTitle("Playlist Gen")
-                .wrhythmListSurface()
-#endif
+                emptyPlaylistGenView
             } else {
                 List {
+                    Section {
+                        PlaylistGenModeToggle(
+                            title: "Clear",
+                            systemImage: "eraser",
+                            action: {
+                                showingSonicTools = true
+                            }
+                        )
+                    }
+
                     if !player.playlistGenQueue.isEmpty {
                         Section("Current Playlist Gen") {
                             CurrentPlaylistGenSummary()
@@ -64,6 +57,16 @@ struct RadioPlaylistsView: View {
                 .wrhythmListSurface()
             }
         }
+        .task {
+            if api.sonicSimilaritySupported == nil {
+                _ = await api.checkSonicSimilaritySupport()
+            }
+        }
+        .task(id: showingSonicTools) {
+            if showingSonicTools {
+                _ = await api.checkSonicSimilaritySupport()
+            }
+        }
         .safeAreaInset(edge: .bottom) {
             if let message = player.playlistGenErrorMessage {
                 playlistGenerationErrorView(message: message, details: player.playlistGenErrorDetails)
@@ -71,6 +74,93 @@ struct RadioPlaylistsView: View {
                     .padding(.bottom, WRhythmSpacing.sm)
             }
         }
+    }
+
+    @ViewBuilder
+    private var emptyPlaylistGenView: some View {
+#if os(iOS)
+        WRhythmScreen {
+            PhoneDetailHeader(title: "Playlist Gen")
+
+            PhonePlaylistGenEmptyView()
+                .padding(.top, WRhythmSpacing.lg)
+
+            PlaylistGenModeToggle(
+                title: "Open Sonic Tools",
+                systemImage: "waveform.path.ecg",
+                action: {
+                    showingSonicTools = true
+                }
+            )
+            .padding(.top, WRhythmSpacing.md)
+        }
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .navigationBar)
+#else
+        List {
+            WRhythmEmptyState(
+                systemImage: "music.note.list",
+                title: "No Playlist Gen",
+                message: "Start Playlist Gen from a song, album, artist, or playlist"
+            )
+            .listRowBackground(Color.clear)
+
+            Section {
+                PlaylistGenModeToggle(
+                    title: "Open Sonic Tools",
+                    systemImage: "waveform.path.ecg",
+                    action: {
+                        showingSonicTools = true
+                    }
+                )
+            }
+        }
+        .navigationTitle("Playlist Gen")
+        .wrhythmListSurface()
+#endif
+    }
+
+    private var sonicToolsView: some View {
+        List {
+            Section {
+                PlaylistGenModeToggle(
+                    title: "Restore",
+                    systemImage: "arrow.uturn.backward",
+                    action: {
+                        showingSonicTools = false
+                    }
+                )
+            }
+
+            Section("Sonic Similarity") {
+                if api.sonicSimilaritySupported == nil {
+                    WRhythmCard(padding: WRhythmSpacing.md) {
+                        HStack(spacing: WRhythmSpacing.sm) {
+                            ProgressView()
+                            Text("Checking server support")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .listRowBackground(Color.clear)
+                } else if api.sonicSimilaritySupported == true {
+                    SonicPlaylistGeneratorView {
+                        showingSonicTools = false
+                    }
+                    .listRowBackground(Color.clear)
+                } else {
+                    WRhythmEmptyState(
+                        systemImage: "waveform.path.ecg",
+                        title: "Sonic Similarity Unavailable",
+                        message: "This server does not advertise the OpenSubsonic sonicSimilarity extension"
+                    )
+                    .listRowBackground(Color.clear)
+                }
+            }
+        }
+        .navigationTitle("Playlist Gen")
+        .wrhythmListSurface()
     }
 
     private var playlistGenerationLoadingView: some View {
@@ -174,6 +264,231 @@ struct CurrentPlaylistGenSummary: View {
         }
 
         downloadManager.saveRadioPlaylist(sourceSong: sourceSong, songs: player.playlistGenQueue)
+    }
+}
+
+private struct PlaylistGenModeToggle: View {
+    let title: String
+    let systemImage: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .buttonStyle(.bordered)
+        .tint(WRhythmTheme.playlistGen)
+    }
+}
+
+private enum SonicPlaylistMode: String, CaseIterable, Identifiable {
+    case similarTracks = "Sonic Similarity"
+    case sonicPath = "Find Sonic Path"
+
+    var id: String { rawValue }
+}
+
+private struct SonicPlaylistGeneratorView: View {
+    @ObservedObject private var player = AudioPlayer.shared
+    @State private var mode: SonicPlaylistMode = .similarTracks
+    @State private var sourceQuery = ""
+    @State private var startQuery = ""
+    @State private var endQuery = ""
+    @State private var sourceSong: Song?
+    @State private var startSong: Song?
+    @State private var endSong: Song?
+
+    let didStartGeneration: () -> Void
+
+    var body: some View {
+        WRhythmCard(padding: WRhythmSpacing.md) {
+            VStack(alignment: .leading, spacing: WRhythmSpacing.md) {
+                Picker("Generator", selection: $mode) {
+                    ForEach(SonicPlaylistMode.allCases) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
+                }
+#if !os(watchOS)
+                .pickerStyle(.menu)
+#endif
+
+                switch mode {
+                case .similarTracks:
+                    SonicTrackSearchPicker(
+                        title: "Source track",
+                        query: $sourceQuery,
+                        selectedSong: $sourceSong
+                    )
+
+                    Button(action: generateSimilarTracks) {
+                        Label("Generate", systemImage: "sparkles")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(sourceSong == nil)
+
+                case .sonicPath:
+                    SonicTrackSearchPicker(
+                        title: "Start track",
+                        query: $startQuery,
+                        selectedSong: $startSong
+                    )
+
+                    SonicTrackSearchPicker(
+                        title: "End track",
+                        query: $endQuery,
+                        selectedSong: $endSong
+                    )
+
+                    Button(action: generateSonicPath) {
+                        Label("Generate Path", systemImage: "point.topleft.down.curvedto.point.bottomright.up")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(startSong == nil || endSong == nil)
+                }
+            }
+        }
+    }
+
+    private func generateSimilarTracks() {
+        guard let sourceSong else { return }
+        didStartGeneration()
+        player.startSonicSimilarityPlaylistGeneration(for: sourceSong)
+    }
+
+    private func generateSonicPath() {
+        guard let startSong, let endSong else { return }
+        didStartGeneration()
+        player.startSonicPathPlaylistGeneration(from: startSong, to: endSong)
+    }
+}
+
+private struct SonicTrackSearchPicker: View {
+    let title: String
+    @Binding var query: String
+    @Binding var selectedSong: Song?
+    @State private var results: [Song] = []
+    @State private var isSearching = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: WRhythmSpacing.sm) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            searchField
+                .onChange(of: query) { _, newValue in
+                    guard let selectedSong else { return }
+                    if newValue != selectedSong.title {
+                        self.selectedSong = nil
+                    }
+                }
+
+            if let selectedSong {
+                SonicTrackSelectionRow(song: selectedSong, isSelected: true) {
+                    self.selectedSong = nil
+                    query = ""
+                }
+            } else if isSearching {
+                HStack(spacing: WRhythmSpacing.sm) {
+                    ProgressView()
+                    Text("Searching")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, WRhythmSpacing.xs)
+            } else if let errorMessage {
+                Text(errorMessage)
+                    .font(.caption)
+                    .foregroundStyle(WRhythmTheme.danger)
+            } else if !results.isEmpty {
+                VStack(spacing: WRhythmSpacing.xs) {
+                    ForEach(results.prefix(5)) { song in
+                        SonicTrackSelectionRow(song: song, isSelected: false) {
+                            selectedSong = song
+                            query = song.title
+                            results = []
+                        }
+                    }
+                }
+            }
+        }
+        .task(id: query) {
+            await search()
+        }
+    }
+
+    @ViewBuilder
+    private var searchField: some View {
+#if os(watchOS)
+        TextField("Search tracks", text: $query)
+#else
+        TextField("Search tracks", text: $query)
+            .textFieldStyle(.roundedBorder)
+#endif
+    }
+
+    private func search() async {
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard selectedSong == nil, trimmedQuery.count >= 2 else {
+            results = []
+            errorMessage = nil
+            isSearching = false
+            return
+        }
+
+        do {
+            try await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+            isSearching = true
+            errorMessage = nil
+            let searchResult = try await NavidromeAPI.shared.search(query: trimmedQuery)
+            guard !Task.isCancelled else { return }
+            results = searchResult.song ?? []
+        } catch is CancellationError {
+            return
+        } catch {
+            results = []
+            errorMessage = "Search failed"
+        }
+
+        isSearching = false
+    }
+}
+
+private struct SonicTrackSelectionRow: View {
+    let song: Song
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: WRhythmSpacing.sm) {
+                WRhythmArtworkThumbnail(coverArtId: song.coverArt, fallbackSystemImage: "music.note", tint: WRhythmTheme.playlistGen, size: 36)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(song.title)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                    Text(song.artist ?? "Unknown Artist")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: WRhythmSpacing.sm)
+
+                Image(systemName: isSelected ? "xmark.circle.fill" : "plus.circle")
+                    .foregroundStyle(WRhythmTheme.playlistGen)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(isSelected ? "Clear selected track" : "Select \(song.title)")
     }
 }
 

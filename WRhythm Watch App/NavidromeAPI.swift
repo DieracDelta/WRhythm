@@ -103,6 +103,7 @@ final class NavidromeAPI: ObservableObject {
     @Published var isAuthenticated = false
     @Published var transcodingSupported: Bool? = nil  // nil = not yet checked
     @Published var isCheckingTranscoding: Bool = false
+    @Published var sonicSimilaritySupported: Bool? = nil
 
     private var baseURL: String
     private var username: String
@@ -143,6 +144,9 @@ final class NavidromeAPI: ObservableObject {
         // Load cached transcoding support status
         if UserDefaults.standard.object(forKey: "server_supports_transcoding") != nil {
             self.transcodingSupported = UserDefaults.standard.bool(forKey: "server_supports_transcoding")
+        }
+        if UserDefaults.standard.object(forKey: "server_supports_sonic_similarity") != nil {
+            self.sonicSimilaritySupported = UserDefaults.standard.bool(forKey: "server_supports_sonic_similarity")
         }
     }
 
@@ -633,6 +637,100 @@ final class NavidromeAPI: ObservableObject {
         return result.subsonicResponse.songs
     }
 
+    func checkSonicSimilaritySupport() async -> Bool {
+        do {
+            let extensions = try await getOpenSubsonicExtensions()
+            let supported = OpenSubsonicExtensionPolicy.supportsSonicSimilarity(extensions)
+            sonicSimilaritySupported = supported
+            UserDefaults.standard.set(supported, forKey: "server_supports_sonic_similarity")
+            return supported
+        } catch {
+            print("⚠️ Sonic similarity support check failed: \(error.localizedDescription)")
+            sonicSimilaritySupported = false
+            UserDefaults.standard.set(false, forKey: "server_supports_sonic_similarity")
+            return false
+        }
+    }
+
+    func getOpenSubsonicExtensions() async throws -> [OpenSubsonicExtension] {
+        guard let url = buildURL(endpoint: "getOpenSubsonicExtensions") else {
+            throw NavidromeError.invalidURL
+        }
+
+        let (data, response) = try await URLSession.shared.data(from: url)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode == 200 else {
+            throw NavidromeError.apiError("Unable to check OpenSubsonic extensions")
+        }
+
+        let result = try JSONDecoder().decode(SubsonicResponse<OpenSubsonicExtensionsResponse>.self, from: data)
+
+        guard result.subsonicResponse.status == "ok" else {
+            if let error = result.subsonicResponse.error {
+                throw NavidromeError.apiError(error.message)
+            }
+            throw NavidromeError.unknown
+        }
+
+        return result.subsonicResponse.openSubsonicExtensions ?? []
+    }
+
+    func getSonicSimilarTracks(songId: String, count: Int = 100) async throws -> [Song] {
+        guard let url = buildURL(endpoint: "getSonicSimilarTracks", additionalParams: [
+            "id": songId,
+            "count": String(count)
+        ]) else {
+            throw NavidromeError.invalidURL
+        }
+
+        let (data, response) = try await URLSession.shared.data(from: url)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode == 200 else {
+            throw NavidromeError.apiError("Unable to fetch sonic similar tracks")
+        }
+
+        let result = try JSONDecoder().decode(SubsonicResponse<SonicMatchesResponse>.self, from: data)
+
+        guard result.subsonicResponse.status == "ok" else {
+            if let error = result.subsonicResponse.error {
+                throw NavidromeError.apiError(error.message)
+            }
+            throw NavidromeError.unknown
+        }
+
+        return result.subsonicResponse.songs
+    }
+
+    func findSonicPath(startSongId: String, endSongId: String, count: Int = 100) async throws -> [Song] {
+        guard let url = buildURL(endpoint: "findSonicPath", additionalParams: [
+            "startSongId": startSongId,
+            "endSongId": endSongId,
+            "count": String(count)
+        ]) else {
+            throw NavidromeError.invalidURL
+        }
+
+        let (data, response) = try await URLSession.shared.data(from: url)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode == 200 else {
+            throw NavidromeError.apiError("Unable to find sonic path")
+        }
+
+        let result = try JSONDecoder().decode(SubsonicResponse<SonicMatchesResponse>.self, from: data)
+
+        guard result.subsonicResponse.status == "ok" else {
+            if let error = result.subsonicResponse.error {
+                throw NavidromeError.apiError(error.message)
+            }
+            throw NavidromeError.unknown
+        }
+
+        return result.subsonicResponse.songs
+    }
+
     func getCoverArtURL(id: String, size: Int = 300) -> URL? {
         return buildURL(endpoint: "getCoverArt", additionalParams: ["id": id, "size": String(size)])
     }
@@ -1042,6 +1140,42 @@ struct SimilarSongsResponse: Decodable {
 
 struct SimilarSongs: Decodable {
     let song: [Song]?
+}
+
+struct OpenSubsonicExtensionsResponse: Decodable {
+    let status: String
+    let version: String
+    let error: SubsonicError?
+    let openSubsonicExtensions: [OpenSubsonicExtension]?
+}
+
+struct OpenSubsonicExtension: Decodable, Sendable {
+    let name: String
+    let versions: [Int]?
+}
+
+enum OpenSubsonicExtensionPolicy {
+    static func supportsSonicSimilarity(_ extensions: [OpenSubsonicExtension]) -> Bool {
+        extensions.contains { extensionInfo in
+            extensionInfo.name == "sonicSimilarity"
+        }
+    }
+}
+
+struct SonicMatchesResponse: Decodable {
+    let status: String
+    let version: String
+    let error: SubsonicError?
+    let sonicMatch: [SonicMatch]?
+
+    var songs: [Song] {
+        sonicMatch?.map(\.entry) ?? []
+    }
+}
+
+struct SonicMatch: Decodable {
+    let entry: Song
+    let similarity: Double?
 }
 
 struct Album: Decodable, Identifiable {

@@ -951,6 +951,15 @@ class AudioPlayer: NSObject, ObservableObject {
     }
 
     func playGeneratedPlaylist(sourceSong: Song, songs: [Song], startingAt index: Int = 0) {
+        playGeneratedPlaylist(
+            sourceTitle: sourceSong.title,
+            sourceArtist: sourceSong.artist,
+            songs: songs,
+            startingAt: index
+        )
+    }
+
+    func playGeneratedPlaylist(sourceTitle: String, sourceArtist: String?, songs: [Song], startingAt index: Int = 0) {
         guard !songs.isEmpty else { return }
         playlistGenTask?.cancel()
         playlistGenTask = nil
@@ -959,8 +968,8 @@ class AudioPlayer: NSObject, ObservableObject {
         playlistGenGeneratingTitle = nil
         playlistGenErrorMessage = nil
         playlistGenErrorDetails = nil
-        playlistGenSourceTitle = sourceSong.title
-        playlistGenSourceArtist = sourceSong.artist
+        playlistGenSourceTitle = sourceTitle
+        playlistGenSourceArtist = sourceArtist
         playlistGenQueue = songs
         playQueue(songs, startingAt: index, clearGeneratedPlaylist: false)
     }
@@ -994,6 +1003,54 @@ class AudioPlayer: NSObject, ObservableObject {
     }
 
     func startPlaylistGeneration(for sourceSong: Song, count: Int, fallbackToRandom: Bool = true) {
+        startPlaylistGeneration(title: sourceSong.title, artist: sourceSong.artist) {
+            let requestedCount = max(count, 1)
+            var similarSongs = try await NavidromeAPI.shared.getSimilarSongsForSong(sourceSong, count: requestedCount)
+            if similarSongs.isEmpty && fallbackToRandom {
+                similarSongs = try await NavidromeAPI.shared.getRandomSongs(size: requestedCount)
+            }
+
+            let filteredSongs = similarSongs.filter { $0.id != sourceSong.id }
+            guard !filteredSongs.isEmpty else {
+                throw PlaylistGenerationError.noSongs
+            }
+
+            return [sourceSong] + filteredSongs
+        }
+    }
+
+    func startSonicSimilarityPlaylistGeneration(for sourceSong: Song, count: Int = 100) {
+        startPlaylistGeneration(title: sourceSong.title, artist: sourceSong.artist) {
+            let songs = try await NavidromeAPI.shared.getSonicSimilarTracks(songId: sourceSong.id, count: max(count, 1))
+            let filteredSongs = songs.filter { $0.id != sourceSong.id }
+            guard !filteredSongs.isEmpty else {
+                throw PlaylistGenerationError.noSongs
+            }
+            return [sourceSong] + filteredSongs
+        }
+    }
+
+    func startSonicPathPlaylistGeneration(from startSong: Song, to endSong: Song, count: Int = 100) {
+        let title = "Sonic Path"
+        let artist = "\(startSong.title) -> \(endSong.title)"
+        startPlaylistGeneration(title: title, artist: artist) {
+            let songs = try await NavidromeAPI.shared.findSonicPath(
+                startSongId: startSong.id,
+                endSongId: endSong.id,
+                count: max(count, 2)
+            )
+            guard !songs.isEmpty else {
+                throw PlaylistGenerationError.noSongs
+            }
+            return songs
+        }
+    }
+
+    private func startPlaylistGeneration(
+        title: String,
+        artist: String?,
+        generateSongs: @escaping @Sendable () async throws -> [Song]
+    ) {
         playlistGenTask?.cancel()
         playlistGenTask = nil
 
@@ -1010,12 +1067,12 @@ class AudioPlayer: NSObject, ObservableObject {
         )
 
         playlistGenIsGenerating = true
-        playlistGenGeneratingTitle = sourceSong.title
+        playlistGenGeneratingTitle = title
         playlistGenErrorMessage = nil
         playlistGenErrorDetails = nil
         playlistGenQueue = []
-        playlistGenSourceTitle = sourceSong.title
-        playlistGenSourceArtist = sourceSong.artist
+        playlistGenSourceTitle = title
+        playlistGenSourceArtist = artist
 
         pause()
         DeviceSyncManager.shared.broadcastLocalQueueAsShared(intendedIsPlaying: false)
@@ -1023,25 +1080,15 @@ class AudioPlayer: NSObject, ObservableObject {
         NotificationCenter.default.post(name: .wrhythmShowPlaylistGen, object: nil)
 #endif
 
-        let requestedCount = max(count, 1)
         playlistGenTask = Task { [weak self] in
             do {
-                var similarSongs = try await NavidromeAPI.shared.getSimilarSongsForSong(sourceSong, count: requestedCount)
-                if similarSongs.isEmpty && fallbackToRandom {
-                    similarSongs = try await NavidromeAPI.shared.getRandomSongs(size: requestedCount)
-                }
+                let generatedQueue = try await generateSongs()
                 try Task.checkCancellation()
-
-                let filteredSongs = similarSongs.filter { $0.id != sourceSong.id }
-                guard !filteredSongs.isEmpty else {
-                    throw PlaylistGenerationError.noSongs
-                }
-                let generatedQueue = [sourceSong] + filteredSongs
 
                 await MainActor.run {
                     guard let self, self.playlistGenIsGenerating else { return }
                     self.playlistGenTask = nil
-                    self.playGeneratedPlaylist(sourceSong: sourceSong, songs: generatedQueue)
+                    self.playGeneratedPlaylist(sourceTitle: title, sourceArtist: artist, songs: generatedQueue)
                 }
             } catch is CancellationError {
                 await MainActor.run {
@@ -1049,7 +1096,7 @@ class AudioPlayer: NSObject, ObservableObject {
                 }
             } catch {
                 await MainActor.run {
-                    self?.handlePlaylistGenerationFailure(error, sourceTitle: sourceSong.title)
+                    self?.handlePlaylistGenerationFailure(error, sourceTitle: title)
                 }
             }
         }
