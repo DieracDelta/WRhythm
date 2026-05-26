@@ -97,6 +97,22 @@ final class SyncLiveHarness {
             stepCurrentSession(delta: -1)
         case "applySession":
             applySession(parameters)
+        case "receiveSession":
+            receiveSession(parameters)
+        case "ackSession":
+            acknowledgeSession(parameters)
+        case "setPeers":
+            setPeers(parameters)
+        case "remotePlay":
+            DeviceSyncManager.shared.setPlaying(true, targetDeviceID: parameters["target"])
+        case "remotePause":
+            DeviceSyncManager.shared.setPlaying(false, targetDeviceID: parameters["target"])
+        case "remoteNext":
+            DeviceSyncManager.shared.sendNext(targetDeviceID: parameters["target"])
+        case "remotePrevious":
+            DeviceSyncManager.shared.sendPrevious(targetDeviceID: parameters["target"])
+        case "remoteSeek":
+            DeviceSyncManager.shared.sendSeek(to: parameters.double("position") ?? 0, targetDeviceID: parameters["target"])
         case "status":
             break
         default:
@@ -179,17 +195,52 @@ final class SyncLiveHarness {
     }
 
     private func applySession(_ parameters: [String: String]) {
+        if let session = decodeSession(parameters) {
+            DeviceSyncManager.shared.harnessApplyPlaybackSession(session)
+        }
+    }
+
+    private func receiveSession(_ parameters: [String: String]) {
+        if let session = decodeSession(parameters) {
+            DeviceSyncManager.shared.harnessReceivePlaybackSession(session)
+        }
+    }
+
+    private func acknowledgeSession(_ parameters: [String: String]) {
+        if let session = decodeSession(parameters) {
+            DeviceSyncManager.shared.harnessAcknowledgePlaybackSession(session)
+        }
+    }
+
+    private func decodeSession(_ parameters: [String: String]) -> PlaybackSession? {
         guard let encodedSession = parameters["session"],
               let data = Data(base64Encoded: encodedSession) else {
             lastError = "Missing or invalid encoded playback session"
+            return nil
+        }
+
+        do {
+            return try JSONDecoder.syncHarness.decode(PlaybackSession.self, from: data)
+        } catch {
+            lastError = "Failed to decode playback session: \(error.localizedDescription)"
+            return nil
+        }
+    }
+
+    private func setPeers(_ parameters: [String: String]) {
+        guard let encodedPeers = parameters["peers"],
+              let data = Data(base64Encoded: encodedPeers) else {
+            lastError = "Missing or invalid encoded peers"
             return
         }
 
         do {
-            let session = try JSONDecoder.syncHarness.decode(PlaybackSession.self, from: data)
-            DeviceSyncManager.shared.harnessApplyPlaybackSession(session)
+            let peers = try JSONDecoder().decode([HarnessPeer].self, from: data)
+            DeviceSyncManager.shared.harnessSetKnownPeers(peers.map {
+                (id: $0.id, name: $0.name, platform: $0.platform, syncModeEnabled: $0.syncModeEnabled)
+            })
         } catch {
-            lastError = "Failed to decode playback session: \(error.localizedDescription)"
+            lastError = "Failed to decode peers: \(error.localizedDescription)"
         }
     }
 
@@ -280,6 +331,13 @@ private struct HarnessCommand: Codable {
     let parameters: [String: String]
 }
 
+private struct HarnessPeer: Codable {
+    let id: String
+    let name: String
+    let platform: String
+    let syncModeEnabled: Bool
+}
+
 private struct HarnessStatus: Codable {
     struct Session: Codable {
         let id: String
@@ -319,12 +377,14 @@ private struct HarnessStatus: Codable {
     let peerIDs: [String]
     let peerSummaries: [String]
     let watchConnectivity: String
+    let appDisplay: String
     let selectedPlaybackTargetID: String
     let validSelectedPlaybackTargetID: String
     let targets: [Target]
     let sharedSession: Session?
     let sharedSessionPayload: PlaybackSession?
     let player: Player
+    let pendingCommandSummaries: [String]
     let lastProcessedCommandID: String?
     let lastProcessedCommand: String?
     let lastError: String?
@@ -342,6 +402,7 @@ private struct HarnessStatus: Codable {
             peerIDs: manager.harnessPeerIDs,
             peerSummaries: manager.harnessPeerSummaries,
             watchConnectivity: manager.harnessWatchConnectivitySummary,
+            appDisplay: manager.harnessAppDisplaySummary,
             selectedPlaybackTargetID: manager.selectedPlaybackTargetID,
             validSelectedPlaybackTargetID: manager.validSelectedPlaybackTargetID,
             targets: manager.availablePlaybackTargets.map {
@@ -371,6 +432,7 @@ private struct HarnessStatus: Codable {
                 isPlaying: player.isPlaying,
                 queueIDs: player.queue.map(\.id)
             ),
+            pendingCommandSummaries: manager.harnessPendingCommandSummaries,
             lastProcessedCommandID: SyncLiveHarness.shared.lastProcessedCommandID,
             lastProcessedCommand: SyncLiveHarness.shared.lastProcessedCommand,
             lastError: lastError

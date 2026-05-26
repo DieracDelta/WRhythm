@@ -28,6 +28,23 @@ class HarnessError(RuntimeError):
     pass
 
 
+class TraceRecorder:
+    def __init__(self, enabled=True):
+        self.enabled = enabled
+        self.events = []
+
+    def record(self, label, **details):
+        if self.enabled:
+            self.events.append({"label": label, **details})
+
+    def dump(self):
+        if not self.events:
+            return
+        print("Repro trace:")
+        for index, event in enumerate(self.events, start=1):
+            print(f"  {index:03d}: {json.dumps(event, sort_keys=True)}")
+
+
 def run(args, *, env=None, capture=True, check=True, timeout=None):
     try:
         completed = subprocess.run(
@@ -163,13 +180,22 @@ class LiveDevice:
     def apply_session(self, session):
         self.open("applySession", session=encode_session(session))
 
+    def receive_session(self, session):
+        self.open("receiveSession", session=encode_session(session))
+
+    def acknowledge_session(self, session):
+        self.open("ackSession", session=encode_session(session))
+
+    def set_peers(self, peers):
+        self.open("setPeers", peers=encode_peers(peers))
+
     def next_command_id(self):
         self.command_counter += 1
         return f"{self.name}-{self.command_counter}"
 
     def refresh_container(self):
         def container_path():
-            return simctl("get_app_container", self.device_id, self.bundle_id, "data", timeout=15).strip()
+            return simctl("get_app_container", self.device_id, self.bundle_id, "data", timeout=90).strip()
 
         container = wait_for(
             container_path,
@@ -238,6 +264,15 @@ class MacDevice:
     def apply_session(self, session):
         self.open("applySession", session=encode_session(session))
 
+    def receive_session(self, session):
+        self.open("receiveSession", session=encode_session(session))
+
+    def acknowledge_session(self, session):
+        self.open("ackSession", session=encode_session(session))
+
+    def set_peers(self, peers):
+        self.open("setPeers", peers=encode_peers(peers))
+
     def status(self):
         with self.state_path.open() as handle:
             return json.load(handle)
@@ -257,6 +292,11 @@ def write_command(path, command_id, command, params):
 
 def encode_session(session):
     data = json.dumps(session, separators=(",", ":")).encode("utf-8")
+    return base64.b64encode(data).decode("ascii")
+
+
+def encode_peers(peers):
+    data = json.dumps(peers, separators=(",", ":")).encode("utf-8")
     return base64.b64encode(data).decode("ascii")
 
 
@@ -405,7 +445,12 @@ class RelayFaultModel:
                 continue
             if not self.can_deliver(candidate_name, device.name):
                 continue
-            if session_signature(statuses.get(device.name, {})) != candidate_signature:
+            destination_status = statuses.get(device.name, {})
+            destination_session = destination_status.get("sharedSessionPayload")
+            should_send = session_signature(destination_status) != candidate_signature
+            if destination_session is not None:
+                should_send = should_send or self.session_key(candidate_session) > self.session_key(destination_session)
+            if should_send:
                 self.schedule(candidate_name, device, candidate_session, candidate_signature)
 
     def choose_candidate(self, statuses, expected=None):
@@ -417,9 +462,14 @@ class RelayFaultModel:
             for name, status in statuses.items():
                 if not self.is_online(name):
                     continue
-                if session_signature(status) == expected and status.get("sharedSessionPayload"):
-                    return name, status["sharedSessionPayload"], expected
-            return None, None, None
+                session = status.get("sharedSessionPayload")
+                if session_signature(status) != expected or session is None:
+                    continue
+                if candidate_session is None or self.session_key(session) > self.session_key(candidate_session):
+                    candidate_name = name
+                    candidate_session = session
+                    candidate_signature = expected
+            return candidate_name, candidate_session, candidate_signature
 
         for name, status in statuses.items():
             if not self.is_online(name):
@@ -509,11 +559,23 @@ def relay_best_session(devices, statuses, expected=None):
 
     if expected is not None:
         for name, status in statuses.items():
-            if session_signature(status) == expected and status.get("sharedSessionPayload"):
+            session = status.get("sharedSessionPayload")
+            if session_signature(status) == expected and session is not None:
+                candidate_key = (
+                    session.get("revision", 0),
+                    session.get("updatedAt", ""),
+                    session.get("updatedByDeviceID", ""),
+                )
+                best_key = (
+                    candidate_session.get("revision", 0),
+                    candidate_session.get("updatedAt", ""),
+                    candidate_session.get("updatedByDeviceID", ""),
+                ) if candidate_session is not None else None
+                if best_key is not None and candidate_key <= best_key:
+                    continue
                 candidate_name = name
-                candidate_session = status["sharedSessionPayload"]
+                candidate_session = session
                 candidate_signature = expected
-                break
     else:
         for name, status in statuses.items():
             session = status.get("sharedSessionPayload")
@@ -546,7 +608,22 @@ def relay_best_session(devices, statuses, expected=None):
     for device in devices:
         if device.name == candidate_name:
             continue
-        if session_signature(statuses.get(device.name, {})) != candidate_signature:
+        destination_status = statuses.get(device.name, {})
+        destination_session = destination_status.get("sharedSessionPayload")
+        candidate_key = (
+            candidate_session.get("revision", 0),
+            candidate_session.get("updatedAt", ""),
+            candidate_session.get("updatedByDeviceID", ""),
+        )
+        destination_key = (
+            destination_session.get("revision", 0),
+            destination_session.get("updatedAt", ""),
+            destination_session.get("updatedByDeviceID", ""),
+        ) if destination_session is not None else None
+        should_send = session_signature(destination_status) != candidate_signature
+        if destination_key is not None:
+            should_send = should_send or candidate_key > destination_key
+        if should_send:
             device.apply_session(candidate_session)
 
 
@@ -569,6 +646,8 @@ def print_status_snapshot(devices):
                 "index=", session.get("currentIndex"),
                 "playing=", session.get("isPlaying"),
                 "output=", session.get("outputDeviceID"),
+                "display=", status.get("appDisplay"),
+                "pending=", status.get("pendingCommandSummaries"),
                 "lastError=", status.get("lastError"),
             )
         except Exception as error:  # noqa: BLE001 - diagnostic path.
@@ -612,6 +691,103 @@ def paused_session_for_disconnect(status, updated_by_device_id):
         updatedAt=iso_now(),
         updatedByDeviceID=updated_by_device_id,
     )
+
+
+def peer_specs_for(devices):
+    specs_by_device = {}
+    for device in devices:
+        peers = []
+        for other in devices:
+            if other.name == device.name:
+                continue
+            status = other.status()
+            peers.append({
+                "id": status["deviceID"],
+                "name": status["deviceName"],
+                "platform": status["platform"],
+                "syncModeEnabled": True,
+            })
+        specs_by_device[device.name] = peers
+    return specs_by_device
+
+
+def seed_app_visible_peers(devices):
+    specs = peer_specs_for(devices)
+    for device in devices:
+        device.set_peers(specs[device.name])
+
+
+def can_use_watch_connectivity(local_platform, remote_platform):
+    return (
+        (local_platform == "iPhone" and remote_platform == "Apple Watch")
+        or (local_platform == "Apple Watch" and remote_platform == "iPhone")
+    )
+
+
+def can_use_multipeer(platform):
+    return platform in {"iPhone", "Mac"}
+
+
+def expected_selectable_target_ids(device_name, statuses):
+    local_status = statuses[device_name]
+    local_platform = local_status["platform"]
+    expected = {local_status["deviceID"]}
+
+    for other_name, other_status in statuses.items():
+        if other_name == device_name:
+            continue
+        remote_platform = other_status["platform"]
+        if can_use_watch_connectivity(local_platform, remote_platform):
+            expected.add(other_status["deviceID"])
+        elif can_use_multipeer(local_platform) and can_use_multipeer(remote_platform):
+            expected.add(other_status["deviceID"])
+
+    return expected
+
+
+def wait_for_app_visible_state(devices, timeout=20):
+    def visible():
+        statuses = wait_for_statuses(devices, timeout=2)
+        for name, status in statuses.items():
+            targets = status.get("targets", [])
+            target_ids = {target.get("id") for target in targets}
+            if status.get("validSelectedPlaybackTargetID") not in target_ids:
+                return None
+            expected_target_ids = expected_selectable_target_ids(name, statuses)
+            if not expected_target_ids.issubset(target_ids):
+                return None
+            if len(status.get("connectedDeviceNames", [])) < len(devices) - 1:
+                return None
+            if "connected=none" in status.get("appDisplay", ""):
+                return None
+        return statuses
+
+    return wait_for(visible, "app-visible connected devices and playback targets", timeout=timeout)
+
+
+def assert_no_pending_commands(device, timeout=10):
+    def settled():
+        status = device.status()
+        pending = status.get("pendingCommandSummaries", [])
+        if pending:
+            return None
+        return status
+
+    return wait_for(settled, f"{device.name} pending command acknowledgments to settle", timeout=timeout)
+
+
+def wait_for_device_signature(device, expected, timeout=20):
+    def matching():
+        status = device.status()
+        if session_signature(status) == expected:
+            return status
+        return None
+
+    return wait_for(matching, f"{device.name} to publish expected session", timeout=timeout)
+
+
+def mutate_session_payload(session, **updates):
+    return clone_session(session, **updates)
 
 
 def run_transport_scenarios(devices, relay_model):
@@ -688,6 +864,205 @@ def run_transport_scenarios(devices, relay_model):
     print("  watch reconnected -> caught up to latest online state")
 
 
+def run_app_visible_scenarios(devices):
+    print("Running app-visible presence/playback scenarios...")
+    seed_app_visible_peers(devices)
+    wait_for_app_visible_state(devices, timeout=20)
+    mac = next(device for device in devices if device.name == "mac")
+    iphone = next(device for device in devices if device.name == "iphone")
+    watch = next(device for device in devices if device.name == "watch")
+    statuses = wait_for_statuses(devices)
+    mac_id = statuses["mac"]["deviceID"]
+
+    iphone.open("publish", prefix="visible-phone", count=5, index=0, position=4, playing="false", output="local")
+    phone_paused = ("visible-phone-0", 0, False, statuses["iphone"]["deviceID"], tuple(f"visible-phone-{index}" for index in range(5)))
+    iphone_status = wait_for_device_signature(iphone, phone_paused, timeout=20)
+    for device in [watch, mac]:
+        device.apply_session(iphone_status["sharedSessionPayload"])
+    wait_for_convergence(devices, expected=phone_paused, timeout=20, position_tolerance=4)
+
+    mac.open("publish", prefix="visible-mac", count=5, index=1, position=9, playing="true", output="local")
+    mac_playing = ("visible-mac-1", 1, True, mac_id, tuple(f"visible-mac-{index}" for index in range(5)))
+    mac_session = wait_for_device_signature(mac, mac_playing, timeout=20)["sharedSessionPayload"]
+    for device in [iphone, watch]:
+        device.apply_session(mac_session)
+    wait_for_convergence(devices, expected=mac_playing, timeout=20, position_tolerance=5)
+    statuses = wait_for_statuses(devices)
+    for name, status in statuses.items():
+        app_display = status.get("appDisplay", "")
+        if name != "mac" and ("active=Harness Mac|" not in app_display or "|playing=true" not in app_display):
+            raise HarnessError(f"{name} did not expose remote mac playback in app display: {status.get('appDisplay')}")
+    print("  app-visible connected names, targets, and active playback are coherent")
+
+
+def run_command_ack_scenarios(devices):
+    print("Running remote command acknowledgment scenarios...")
+    seed_app_visible_peers(devices)
+    statuses = wait_for_app_visible_state(devices)
+    iphone = next(device for device in devices if device.name == "iphone")
+    watch = next(device for device in devices if device.name == "watch")
+    watch_id = statuses["watch"]["deviceID"]
+
+    watch.open("publish", prefix="ack-watch", count=4, index=0, position=12, playing="true", output="local")
+    watch_playing = ("ack-watch-0", 0, True, watch_id, tuple(f"ack-watch-{index}" for index in range(4)))
+    watch_session = wait_for_device_signature(watch, watch_playing, timeout=20)["sharedSessionPayload"]
+    for device in devices:
+        if device.name != "watch":
+            device.apply_session(watch_session)
+    wait_for_convergence(
+        devices,
+        expected=watch_playing,
+        timeout=20,
+        position_tolerance=5,
+    )
+
+    iphone.open("remotePause", target=watch_id)
+    wait_for(
+        lambda: iphone.status() if iphone.status().get("pendingCommandSummaries") else None,
+        "iphone pending remote pause command",
+        timeout=10,
+    )
+    acknowledged = mutate_session_payload(
+        watch_session,
+        revision=watch_session.get("revision", 0) + 1,
+        position=15,
+        isPlaying=False,
+        updatedAt=iso_now(),
+        updatedByDeviceID=watch_id,
+    )
+    iphone.acknowledge_session(acknowledged)
+    assert_no_pending_commands(iphone, timeout=10)
+    print("  remote pause command creates and clears an acknowledgment")
+
+
+def run_clock_skew_scenarios(devices):
+    print("Running clock skew/stale session scenarios...")
+    iphone = next(device for device in devices if device.name == "iphone")
+    mac = next(device for device in devices if device.name == "mac")
+    mac.open("publish", prefix="skew-good", count=3, index=0, position=10, playing="true", output="local")
+    good_signature = ("skew-good-0", 0, True, mac.status()["deviceID"], tuple(f"skew-good-{index}" for index in range(3)))
+    good = wait_for_device_signature(mac, good_signature, timeout=20)["sharedSessionPayload"]
+    current_iphone_revision = (iphone.status().get("sharedSessionPayload") or {}).get("revision", 0)
+    good = mutate_session_payload(
+        good,
+        revision=max(good.get("revision", 0), current_iphone_revision) + 10,
+        updatedAt=iso_now(),
+    )
+    iphone.receive_session(good)
+    wait_for_convergence(
+        [iphone, mac],
+        expected=good_signature,
+        timeout=15,
+        position_tolerance=5,
+    )
+
+    old = mutate_session_payload(
+        good,
+        revision=max(0, good.get("revision", 0) - 1),
+        currentIndex=1,
+        position=0,
+        updatedAt=datetime.fromtimestamp(1_600_000_000, timezone.utc).isoformat().replace("+00:00", "Z"),
+        updatedByDeviceID="stale-device",
+    )
+    iphone.receive_session(old)
+    time.sleep(1)
+    if session_signature(iphone.status())[0] != "skew-good-0":
+        raise HarnessError("stale playback session was applied")
+
+    future = mutate_session_payload(
+        good,
+        revision=good.get("revision", 0) + 5,
+        currentIndex=2,
+        updatedAt=datetime.fromtimestamp(time.time() + 3600, timezone.utc).isoformat().replace("+00:00", "Z"),
+        updatedByDeviceID="future-device",
+    )
+    iphone.receive_session(future)
+    time.sleep(1)
+    if session_signature(iphone.status())[0] != "skew-good-0":
+        raise HarnessError("future-skew playback session was applied")
+    print("  stale and future-skew sessions are rejected by normal receive path")
+
+
+def run_lifecycle_scenarios(devices, ios_app, watch_app, mac_device, relay_model, host_relay):
+    print("Running launch-order and foreground/relaunch scenarios...")
+    iphone = next(device for device in devices if device.name == "iphone")
+    watch = next(device for device in devices if device.name == "watch")
+    mac = mac_device
+
+    orders = [
+        ("iphone-first", [iphone, watch, mac]),
+        ("watch-first", [watch, iphone, mac]),
+        ("mac-first", [mac, iphone, watch]),
+    ]
+    for label, order in orders:
+        for device in [iphone, watch]:
+            simctl("terminate", device.device_id, device.bundle_id, check=False, timeout=15)
+        mac.terminate()
+        time.sleep(1)
+        for device in order:
+            if device.name == "mac":
+                mac.launch()
+            elif device.name == "iphone":
+                launch_sim_app(iphone, "harness-iphone", "Harness iPhone", disable_real_transports=host_relay)
+            else:
+                launch_sim_app(watch, "harness-watch", "Harness Watch", disable_real_transports=host_relay)
+        wait_for_statuses(devices, timeout=60)
+        seed_app_visible_peers(devices)
+        wait_for_app_visible_state(devices, timeout=20)
+        print(f"  {label} launch order reached app-visible device state")
+
+    mac.open("publish", prefix="lifecycle", count=5, index=0, position=3, playing="true", output="local")
+    expected = ("lifecycle-0", 0, True, "harness-mac", tuple(f"lifecycle-{index}" for index in range(5)))
+    wait_for_convergence(devices, expected=expected, timeout=25, host_relay=host_relay, relay_model=relay_model, position_tolerance=5)
+    simctl("terminate", watch.device_id, watch.bundle_id, check=False, timeout=15)
+    iphone.open("next")
+    expected_next = ("lifecycle-1", 1, True, "harness-mac", tuple(f"lifecycle-{index}" for index in range(5)))
+    wait_for_convergence([iphone, mac], expected=expected_next, timeout=25, host_relay=host_relay, relay_model=relay_model, position_tolerance=5)
+    launch_sim_app(watch, "harness-watch", "Harness Watch", disable_real_transports=host_relay)
+    wait_for_statuses(devices, timeout=60)
+    seed_app_visible_peers(devices)
+    wait_for_convergence(devices, expected=expected_next, timeout=30, host_relay=host_relay, relay_model=relay_model, position_tolerance=8)
+    print("  watch relaunch after queue movement catches up")
+
+
+def run_queue_churn_scenarios(devices, relay_model, host_relay):
+    print("Running queue churn/cache-coupling proxy scenarios...")
+    iphone = next(device for device in devices if device.name == "iphone")
+    watch = next(device for device in devices if device.name == "watch")
+    mac = next(device for device in devices if device.name == "mac")
+
+    iphone.open("publish", prefix="queue-a", count=40, index=18, position=22, playing="true", output="local")
+    expected_a = ("queue-a-18", 18, True, "harness-iphone", tuple(f"queue-a-{index}" for index in range(40)))
+    wait_for_convergence(devices, expected=expected_a, timeout=30, host_relay=host_relay, relay_model=relay_model, position_tolerance=8)
+    mac.open("publish", prefix="queue-b", count=55, index=3, position=0, playing="true", output="local")
+    expected_b = ("queue-b-3", 3, True, "harness-mac", tuple(f"queue-b-{index}" for index in range(55)))
+    wait_for_convergence(devices, expected=expected_b, timeout=30, host_relay=host_relay, relay_model=relay_model, position_tolerance=8)
+    watch.open("previous")
+    expected_prev = ("queue-b-2", 2, True, "harness-mac", tuple(f"queue-b-{index}" for index in range(55)))
+    wait_for_convergence(devices, expected=expected_prev, timeout=30, host_relay=host_relay, relay_model=relay_model, position_tolerance=8)
+    print("  large queue switch and previous navigation converged")
+
+
+def run_native_transport_probe(devices, allow_unreachable_watch):
+    print("Running native transport probe...")
+    for device in devices:
+        device.open("sync")
+    time.sleep(6)
+    statuses = wait_for_statuses(devices, timeout=30)
+    print_status_snapshot(devices)
+    iphone = statuses.get("iphone", {})
+    watch = statuses.get("watch", {})
+    native_indicators = [
+        "activation=2" in iphone.get("watchConnectivity", ""),
+        "activation=2" in watch.get("watchConnectivity", ""),
+        bool(iphone.get("connectedDeviceNames")),
+        bool(watch.get("connectedDeviceNames")),
+    ]
+    if not any(native_indicators) and not allow_unreachable_watch:
+        raise HarnessError("Native transport probe saw no WatchConnectivity or WRhythm peer presence")
+    print("  native probe completed")
+
+
 def create_and_boot_pair():
     ios_runtime = latest_runtime("iOS")
     watch_runtime = latest_runtime("watchOS")
@@ -731,6 +1106,18 @@ def install_sim_app(device, app_path):
     simctl("install", device.device_id, str(app_path))
 
 
+def recover_sim_device(device):
+    print(f"  rebooting {device.name} simulator after launch/container discovery stall...")
+    try:
+        simctl("shutdown", device.device_id, check=False, timeout=90)
+    except HarnessError as error:
+        print(f"  shutdown recovery for {device.name} timed out: {error}")
+    time.sleep(2)
+    simctl("boot", device.device_id, check=False, timeout=90)
+    simctl("bootstatus", device.device_id, "-b", timeout=600)
+    time.sleep(2)
+
+
 def launch_sim_app(device, harness_id, harness_name, disable_real_transports):
     env = os.environ.copy()
     env.update({
@@ -741,7 +1128,7 @@ def launch_sim_app(device, harness_id, harness_name, disable_real_transports):
     if disable_real_transports:
         env["SIMCTL_CHILD_WRHYTHM_SYNC_HARNESS_DISABLE_REAL_TRANSPORTS"] = "1"
     last_error = None
-    for attempt in range(1, 4):
+    for attempt in range(1, 5):
         run_bounded(
             [
                 "xcrun", "simctl",
@@ -753,20 +1140,26 @@ def launch_sim_app(device, harness_id, harness_name, disable_real_transports):
                 device.bundle_id,
             ],
             env=env,
-            timeout=45,
+            timeout=90,
         )
+        time.sleep(2)
         try:
             device.refresh_container()
             return
         except HarnessError as error:
             last_error = error
-            print(f"Retrying {device.name} app launch after container discovery failed (attempt {attempt}/3)...")
-            simctl("terminate", device.device_id, device.bundle_id, check=False, timeout=15)
+            print(f"Retrying {device.name} app launch after container discovery failed (attempt {attempt}/4)...")
+            try:
+                simctl("terminate", device.device_id, device.bundle_id, check=False, timeout=45)
+            except HarnessError as terminate_error:
+                print(f"  terminate retry cleanup for {device.name} timed out: {terminate_error}")
+            if attempt == 2:
+                recover_sim_device(device)
             time.sleep(3)
     raise HarnessError(f"Unable to discover {device.name} app data container after launch: {last_error}")
 
 
-def fuzz(devices, iterations, seed, host_relay, relay_model=None, include_partitions=False):
+def fuzz(devices, iterations, seed, host_relay, relay_model=None, include_partitions=False, trace=None):
     rng = random.Random(seed)
     actors = list(devices)
     if relay_model is not None:
@@ -780,6 +1173,8 @@ def fuzz(devices, iterations, seed, host_relay, relay_model=None, include_partit
     print("Publishing seed playback session from mac...")
     mac = next(device for device in devices if device.name == "mac")
     mac.open("publish", prefix="seed", count=8, index=0, position=0, playing="true", output="local")
+    if trace:
+        trace.record("seed", actor="mac", operation="publish", prefix="seed", count=8, index=0, playing=True)
     expected_seed = ("seed-0", 0, True, "harness-mac", tuple(f"seed-{index}" for index in range(8)))
     statuses = wait_for_convergence(
         devices,
@@ -819,6 +1214,8 @@ def fuzz(devices, iterations, seed, host_relay, relay_model=None, include_partit
                 active_output = expected_signature[3]
                 actor_device_id = actor.status()["deviceID"]
                 relay_model.disconnect(actor.name)
+                if trace:
+                    trace.record("operation", actor=actor.name, operation="disconnect")
                 if active_output == actor_device_id and expected_signature[2]:
                     remaining = relay_model.included_names(devices)
                     if not remaining:
@@ -850,6 +1247,8 @@ def fuzz(devices, iterations, seed, host_relay, relay_model=None, include_partit
             else:
                 actor = rng.choice(offline)
                 relay_model.reconnect(actor.name)
+                if trace:
+                    trace.record("operation", actor=actor.name, operation="reconnect")
                 actor_signature = session_signature(actor.status())
                 if actor_signature is not None and actor_signature[2] and not expected_signature[2]:
                     expected_signature = actor_signature
@@ -881,6 +1280,16 @@ def fuzz(devices, iterations, seed, host_relay, relay_model=None, include_partit
                 playing=str(is_playing).lower(),
                 output="local",
             )
+            if trace:
+                trace.record(
+                    "operation",
+                    actor=actor.name,
+                    operation="publish",
+                    prefix=prefix,
+                    count=count,
+                    index=current_index,
+                    isPlaying=is_playing,
+                )
             expected_signature = (
                 f"{prefix}-{current_index}",
                 current_index,
@@ -890,10 +1299,15 @@ def fuzz(devices, iterations, seed, host_relay, relay_model=None, include_partit
             )
             expected_position_tolerance = 6
         elif operation == "seek":
-            actor.open("seek", position=rng.randint(0, 240))
+            position = rng.randint(0, 240)
+            actor.open("seek", position=position)
+            if trace:
+                trace.record("operation", actor=actor.name, operation="seek", position=position)
             expected_position_tolerance = 10
         else:
             actor.open(operation)
+            if trace:
+                trace.record("operation", actor=actor.name, operation=operation)
             song_id, current_index, is_playing, output_device_id, queue_ids = expected_signature
             if operation == "play":
                 is_playing = True
@@ -950,6 +1364,26 @@ def main():
         action="store_true",
         help="Do not include random disconnect/reconnect operations in the fuzz loop.",
     )
+    parser.add_argument(
+        "--native-probe-only",
+        action="store_true",
+        help="Launch all apps and only probe native WatchConnectivity/Multipeer visibility.",
+    )
+    parser.add_argument(
+        "--skip-expanded-scenarios",
+        action="store_true",
+        help="Skip app-visible, ack, clock-skew, lifecycle, and queue-churn deterministic scenarios.",
+    )
+    parser.add_argument(
+        "--skip-lifecycle-scenarios",
+        action="store_true",
+        help="Skip relaunch/launch-order scenarios.",
+    )
+    parser.add_argument(
+        "--no-trace",
+        action="store_true",
+        help="Do not print a compact repro trace when a fuzz operation fails.",
+    )
     args = parser.parse_args()
 
     temp_dir = Path(tempfile.mkdtemp(prefix="wrhythm-live-sync."))
@@ -973,7 +1407,8 @@ def main():
     ios_app, watch_app, mac_app = build_apps(derived_data)
     phone_id, watch_id = create_and_boot_pair()
     created_sims.extend([phone_id, watch_id])
-    host_relay = not args.watchconnectivity_only
+    host_relay = not args.watchconnectivity_only and not args.native_probe_only
+    trace = TraceRecorder(enabled=not args.no_trace)
 
     iphone = LiveDevice("iphone", "ios", phone_id, IOS_BUNDLE_ID)
     watch = LiveDevice("watch", "watchos", watch_id, WATCH_BUNDLE_ID)
@@ -1001,10 +1436,23 @@ def main():
     elif args.allow_unreachable_watch:
         print("Watch simulator launched; fuzzing mac/iPhone sync cluster while watch transport remains observable.")
         print_status_snapshot(devices)
-        devices = [iphone, mac_device]
+        if not args.native_probe_only:
+            devices = [iphone, mac_device]
     try:
+        if not host_relay or args.native_probe_only:
+            run_native_transport_probe(devices, args.allow_unreachable_watch)
+            if args.native_probe_only:
+                print("Native transport probe passed.")
+                return
         if host_relay and not args.skip_transport_scenarios:
             run_transport_scenarios(devices, relay_model)
+        if host_relay and not args.skip_expanded_scenarios:
+            run_app_visible_scenarios(devices)
+            run_command_ack_scenarios(devices)
+            run_clock_skew_scenarios(devices)
+            if not args.skip_lifecycle_scenarios:
+                run_lifecycle_scenarios(devices, ios_app, watch_app, mac_device, relay_model, host_relay)
+            run_queue_churn_scenarios(devices, relay_model, host_relay)
         fuzz(
             devices,
             args.iterations,
@@ -1012,8 +1460,10 @@ def main():
             host_relay=host_relay,
             relay_model=relay_model,
             include_partitions=host_relay and not args.no_partition_fuzz,
+            trace=trace,
         )
     except Exception:
+        trace.dump()
         print_status_snapshot(devices)
         raise
     print("Live sync fuzz passed.")

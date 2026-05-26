@@ -1449,9 +1449,11 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         if deviceID == localDeviceID {
             return localPeerInfo()
         }
+#if os(iOS) || os(watchOS)
         if deviceID == PlaybackControlTargetPolicy.watchConnectivityCompanionDeviceID {
             return watchConnectivityCompanionPeerInfo()
         }
+#endif
         return peerInfos[deviceID]
     }
 
@@ -1570,6 +1572,30 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             .map { "\($0.id)|\($0.name)|\($0.platform)|sync=\($0.syncModeEnabled)" }
     }
 
+    var harnessPendingCommandSummaries: [String] {
+        pendingTargetedCommands.keys.sorted().map { key in
+            let action = pendingTargetedCommands[key]?.action.rawValue ?? "unknown"
+            let attempts = pendingTargetedCommandRetryAttempts[key, default: 0]
+            let deadline = pendingTargetedCommandDeadlines[key]?.timeIntervalSinceNow ?? 0
+            return "\(key)|\(action)|attempts=\(attempts)|deadline=\(Int(deadline))"
+        }
+    }
+
+    var harnessAppDisplaySummary: String {
+        let targetIDs = availablePlaybackTargets.map(\.id).joined(separator: ",")
+        let targetNames = availablePlaybackTargets.map(\.displayName).joined(separator: ",")
+        let activeSource = activeSharedPlayback.map { "\($0.deviceName)|\($0.platform)|playing=\($0.isPlaying)" } ?? "local"
+        return [
+            "connected=\(connectedDeviceNames.isEmpty ? "none" : connectedDeviceNames.joined(separator: ","))",
+            "targets=\(targetIDs)",
+            "targetNames=\(targetNames)",
+            "selected=\(selectedPlaybackTargetID)",
+            "validSelected=\(validSelectedPlaybackTargetID)",
+            "active=\(activeSource)",
+            "localPlaying=\(localPlaybackIsPlayingForDisplay)"
+        ].joined(separator: "|")
+    }
+
     func harnessPublishPlayback(
         queue: [Song],
         currentIndex: Int,
@@ -1595,6 +1621,41 @@ final class DeviceSyncManager: NSObject, ObservableObject {
     func harnessApplyPlaybackSession(_ session: PlaybackSession) {
         sharedSession = session
         selectedPlaybackTargetID = session.outputDeviceID
+    }
+
+    func harnessReceivePlaybackSession(_ session: PlaybackSession) {
+        applySharedSession(session, applyLocally: true)
+    }
+
+    func harnessAcknowledgePlaybackSession(_ session: PlaybackSession) {
+        if let key = acknowledgingPendingCommandKey(for: session) {
+            clearPendingCommand(forKey: key)
+        }
+        applySharedSession(session, applyLocally: true)
+    }
+
+    func harnessSetKnownPeers(_ peers: [(id: String, name: String, platform: String, syncModeEnabled: Bool)]) {
+        peerInfos = Dictionary(uniqueKeysWithValues: peers.map { peer in
+            (
+                peer.id,
+                SyncPeerInfo(
+                    id: peer.id,
+                    name: peer.name,
+                    platform: peer.platform,
+                    syncModeEnabled: peer.syncModeEnabled,
+                    credentialSyncEnabled: false,
+                    hasCredentials: false
+                )
+            )
+        })
+#if os(iOS) || os(macOS)
+        multipeerDeviceIDs = Set(
+            peers
+                .filter { SyncTransportAvailabilityPolicy.canUseMultipeer(SyncPlatformKind(platformName: $0.platform)) }
+                .map(\.id)
+        )
+#endif
+        updateConnectedDeviceNames()
     }
 
     var harnessWatchConnectivitySummary: String {
@@ -2247,9 +2308,11 @@ final class DeviceSyncManager: NSObject, ObservableObject {
 
     private func selectablePeerInfos() -> [SyncPeerInfo] {
         var peers = Array(peerInfos.values)
+#if os(iOS) || os(watchOS)
         if let companion = watchConnectivityCompanionPeerInfo() {
             peers.append(companion)
         }
+#endif
         return peers
     }
 
@@ -2258,9 +2321,11 @@ final class DeviceSyncManager: NSObject, ObservableObject {
 #if os(iOS) || os(macOS)
         names.formUnion(peerDisplayNames.values)
 #endif
+#if os(iOS) || os(watchOS)
         if let companion = watchConnectivityCompanionPeerInfo() {
             names.insert(companion.name)
         }
+#endif
         connectedDeviceNames = names.sorted()
     }
 
