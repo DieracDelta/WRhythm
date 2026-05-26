@@ -11,7 +11,18 @@ struct RadioPlaylistsView: View {
     @ObservedObject var downloadManager = DownloadManager.shared
     @ObservedObject var player = AudioPlayer.shared
     @ObservedObject private var api = NavidromeAPI.shared
+    @AppStorage("experimentalAudioMuseFeaturesEnabled") private var experimentalAudioMuseFeaturesEnabled = false
     @State private var showingSonicTools = false
+
+    private var sonicToolsCheckingSupport: Bool {
+        api.sonicSimilaritySupported == nil ||
+        (experimentalAudioMuseFeaturesEnabled && api.audioMuseAlchemySupported == nil)
+    }
+
+    private var hasAdvancedGenerator: Bool {
+        api.sonicSimilaritySupported == true ||
+        (experimentalAudioMuseFeaturesEnabled && api.audioMuseAlchemySupported == true)
+    }
 
     var body: some View {
         Group {
@@ -61,11 +72,21 @@ struct RadioPlaylistsView: View {
             if api.sonicSimilaritySupported == nil {
                 _ = await api.checkSonicSimilaritySupport()
             }
+            if experimentalAudioMuseFeaturesEnabled && api.audioMuseAlchemySupported == nil {
+                _ = await api.checkAudioMuseAlchemySupport()
+            }
         }
         .task(id: showingSonicTools) {
             if showingSonicTools {
                 _ = await api.checkSonicSimilaritySupport()
+                if experimentalAudioMuseFeaturesEnabled {
+                    _ = await api.checkAudioMuseAlchemySupport()
+                }
             }
+        }
+        .task(id: experimentalAudioMuseFeaturesEnabled) {
+            guard experimentalAudioMuseFeaturesEnabled else { return }
+            _ = await api.checkAudioMuseAlchemySupport()
         }
         .safeAreaInset(edge: .bottom) {
             if let message = player.playlistGenErrorMessage {
@@ -133,8 +154,8 @@ struct RadioPlaylistsView: View {
                 )
             }
 
-            Section("Sonic Similarity") {
-                if api.sonicSimilaritySupported == nil {
+            Section("Advanced Playlist Gen") {
+                if sonicToolsCheckingSupport {
                     WRhythmCard(padding: WRhythmSpacing.md) {
                         HStack(spacing: WRhythmSpacing.sm) {
                             ProgressView()
@@ -144,16 +165,21 @@ struct RadioPlaylistsView: View {
                         }
                     }
                     .listRowBackground(Color.clear)
-                } else if api.sonicSimilaritySupported == true {
-                    SonicPlaylistGeneratorView {
+                } else if hasAdvancedGenerator {
+                    SonicPlaylistGeneratorView(
+                        sonicSimilarityAvailable: api.sonicSimilaritySupported == true,
+                        audioMuseAlchemyAvailable: experimentalAudioMuseFeaturesEnabled && api.audioMuseAlchemySupported == true
+                    ) {
                         showingSonicTools = false
                     }
                     .listRowBackground(Color.clear)
                 } else {
                     WRhythmEmptyState(
                         systemImage: "waveform.path.ecg",
-                        title: "Sonic Similarity Unavailable",
-                        message: "This server does not advertise the OpenSubsonic sonicSimilarity extension"
+                        title: "No Advanced Generators",
+                        message: experimentalAudioMuseFeaturesEnabled
+                            ? "This server does not advertise sonicSimilarity or expose AudioMuse Alchemy"
+                            : "Enable experimental AudioMuse-AI features in Settings to probe custom generators"
                     )
                     .listRowBackground(Color.clear)
                 }
@@ -286,6 +312,7 @@ private struct PlaylistGenModeToggle: View {
 private enum SonicPlaylistMode: String, CaseIterable, Identifiable {
     case similarTracks = "Sonic Similarity"
     case sonicPath = "Find Sonic Path"
+    case audioMuseAlchemy = "AudioMuse Alchemy"
 
     var id: String { rawValue }
 }
@@ -296,23 +323,48 @@ private struct SonicPlaylistGeneratorView: View {
     @State private var sourceQuery = ""
     @State private var startQuery = ""
     @State private var endQuery = ""
+    @State private var alchemyQuery = ""
     @State private var sourceSong: Song?
     @State private var startSong: Song?
     @State private var endSong: Song?
+    @State private var alchemySong: Song?
 
+    let sonicSimilarityAvailable: Bool
+    let audioMuseAlchemyAvailable: Bool
     let didStartGeneration: () -> Void
+
+    private var availableModes: [SonicPlaylistMode] {
+        var modes: [SonicPlaylistMode] = []
+        if sonicSimilarityAvailable {
+            modes.append(contentsOf: [.similarTracks, .sonicPath])
+        }
+        if audioMuseAlchemyAvailable {
+            modes.append(.audioMuseAlchemy)
+        }
+        return modes
+    }
 
     var body: some View {
         WRhythmCard(padding: WRhythmSpacing.md) {
             VStack(alignment: .leading, spacing: WRhythmSpacing.md) {
                 Picker("Generator", selection: $mode) {
-                    ForEach(SonicPlaylistMode.allCases) { mode in
+                    ForEach(availableModes) { mode in
                         Text(mode.rawValue).tag(mode)
                     }
                 }
 #if !os(watchOS)
                 .pickerStyle(.menu)
 #endif
+                .onAppear {
+                    if !availableModes.contains(mode), let firstMode = availableModes.first {
+                        mode = firstMode
+                    }
+                }
+                .onChange(of: availableModes.map(\.id)) { _, _ in
+                    if !availableModes.contains(mode), let firstMode = availableModes.first {
+                        mode = firstMode
+                    }
+                }
 
                 switch mode {
                 case .similarTracks:
@@ -348,6 +400,20 @@ private struct SonicPlaylistGeneratorView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(startSong == nil || endSong == nil)
+
+                case .audioMuseAlchemy:
+                    SonicTrackSearchPicker(
+                        title: "Seed track",
+                        query: $alchemyQuery,
+                        selectedSong: $alchemySong
+                    )
+
+                    Button(action: generateAudioMuseAlchemy) {
+                        Label("Generate Alchemy", systemImage: "atom")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(alchemySong == nil)
                 }
             }
         }
@@ -363,6 +429,12 @@ private struct SonicPlaylistGeneratorView: View {
         guard let startSong, let endSong else { return }
         didStartGeneration()
         player.startSonicPathPlaylistGeneration(from: startSong, to: endSong)
+    }
+
+    private func generateAudioMuseAlchemy() {
+        guard let alchemySong else { return }
+        didStartGeneration()
+        player.startAudioMuseAlchemyPlaylistGeneration(for: alchemySong)
     }
 }
 

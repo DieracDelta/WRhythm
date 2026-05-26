@@ -2816,6 +2816,41 @@ struct PlaybackSyncPolicyTests {
     }
 
     @MainActor
+    @Test func audioMuseAlchemyProbeTreatsUnauthorizedAsEndpointPresent() {
+        #expect(AudioMuseAlchemySupportPolicy.endpointExists(statusCode: 200))
+        #expect(AudioMuseAlchemySupportPolicy.endpointExists(statusCode: 401))
+        #expect(!AudioMuseAlchemySupportPolicy.endpointExists(statusCode: 404))
+        #expect(!AudioMuseAlchemySupportPolicy.endpointExists(statusCode: 500))
+    }
+
+    @MainActor
+    @Test func audioMuseAlchemyResponseMapsResultsToPlayableSongs() throws {
+        let payload = """
+        {
+          "results": [
+            {
+              "item_id": "song-1",
+              "title": "Alchemy Track",
+              "author": "AudioMuse Artist"
+            },
+            {
+              "id": "song-2",
+              "name": "Fallback Name",
+              "artist": "Fallback Artist",
+              "album": "Fallback Album"
+            }
+          ]
+        }
+        """
+
+        let response = try JSONDecoder().decode(AudioMuseAlchemyResponse.self, from: Data(payload.utf8))
+
+        #expect(response.songs.map(\.id) == ["song-1", "song-2"])
+        #expect(response.songs.map(\.title) == ["Alchemy Track", "Fallback Name"])
+        #expect(response.songs.map(\.artist) == ["AudioMuse Artist", "Fallback Artist"])
+    }
+
+    @MainActor
     @Test func downloadedSongRequiresExplicitBitrate() {
         let payload = """
         {

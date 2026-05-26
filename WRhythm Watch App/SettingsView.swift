@@ -21,6 +21,7 @@ struct SettingsView: View {
     @AppStorage("scrobblingEnabled") private var scrobblingEnabled = true
     @AppStorage("prebufferAheadCount") private var prebufferAheadCount = 8
     @AppStorage("retainPreviousPrebufferCount") private var retainPreviousPrebufferCount = 3
+    @AppStorage("experimentalAudioMuseFeaturesEnabled") private var experimentalAudioMuseFeaturesEnabled = false
 
     private var streamingQuality: Binding<StreamingQuality> {
         Binding {
@@ -378,6 +379,23 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var playlistGenSettingsContent: some View {
+        Toggle(isOn: $experimentalAudioMuseFeaturesEnabled) {
+            SettingsToggleLabel(
+                title: "AudioMuse-AI Features",
+                subtitle: "Experimental server-specific playlist tools"
+            )
+        }
+        .onChange(of: experimentalAudioMuseFeaturesEnabled) { _, enabled in
+            if enabled {
+                Task {
+                    await api.checkAudioMuseAlchemySupport()
+                }
+            } else {
+                api.audioMuseAlchemySupported = false
+                UserDefaults.standard.set(false, forKey: "server_supports_audiomuse_alchemy")
+            }
+        }
+
         SettingsSliderRow(
             title: "Default Playlist Gen Size",
             valueText: "\(radioDownloadCount)",

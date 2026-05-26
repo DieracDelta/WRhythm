@@ -1046,6 +1046,20 @@ class AudioPlayer: NSObject, ObservableObject {
         }
     }
 
+    func startAudioMuseAlchemyPlaylistGeneration(for sourceSong: Song, count: Int = 100) {
+        startPlaylistGeneration(title: "AudioMuse Alchemy", artist: sourceSong.title) {
+            let songs = try await NavidromeAPI.shared.getAudioMuseAlchemySongs(
+                seedSong: sourceSong,
+                count: max(count, 1)
+            )
+            let filteredSongs = songs.filter { $0.id != sourceSong.id }
+            guard !filteredSongs.isEmpty else {
+                throw PlaylistGenerationError.noSongs
+            }
+            return [sourceSong] + filteredSongs
+        }
+    }
+
     private func startPlaylistGeneration(
         title: String,
         artist: String?,

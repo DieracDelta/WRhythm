@@ -104,6 +104,7 @@ final class NavidromeAPI: ObservableObject {
     @Published var transcodingSupported: Bool? = nil  // nil = not yet checked
     @Published var isCheckingTranscoding: Bool = false
     @Published var sonicSimilaritySupported: Bool? = nil
+    @Published var audioMuseAlchemySupported: Bool? = nil
 
     private var baseURL: String
     private var username: String
@@ -148,6 +149,9 @@ final class NavidromeAPI: ObservableObject {
         if UserDefaults.standard.object(forKey: "server_supports_sonic_similarity") != nil {
             self.sonicSimilaritySupported = UserDefaults.standard.bool(forKey: "server_supports_sonic_similarity")
         }
+        if UserDefaults.standard.object(forKey: "server_supports_audiomuse_alchemy") != nil {
+            self.audioMuseAlchemySupported = UserDefaults.standard.bool(forKey: "server_supports_audiomuse_alchemy")
+        }
     }
 
     private func normalizedBaseURL(_ value: String) -> String {
@@ -168,6 +172,10 @@ final class NavidromeAPI: ObservableObject {
         UserDefaults.standard.set(issuedAt, forKey: Self.credentialIssuedAtKey)
 
         self.isAuthenticated = true
+        sonicSimilaritySupported = nil
+        audioMuseAlchemySupported = nil
+        UserDefaults.standard.removeObject(forKey: "server_supports_sonic_similarity")
+        UserDefaults.standard.removeObject(forKey: "server_supports_audiomuse_alchemy")
         if notifySync {
             DeviceSyncManager.shared.credentialsDidChange()
         }
@@ -412,6 +420,12 @@ final class NavidromeAPI: ObservableObject {
         var params = generateAuthParams(username: requestUsername, password: requestPassword)
         params.merge(additionalParams) { _, new in new }
         components?.queryItems = params.map { URLQueryItem(name: $0.key, value: $0.value) }
+        return components?.url
+    }
+
+    private func buildAudioMuseAPIURL(path: String, queryItems: [URLQueryItem] = []) -> URL? {
+        var components = URLComponents(string: "\(baseURL)\(path)")
+        components?.queryItems = queryItems.isEmpty ? nil : queryItems
         return components?.url
     }
 
@@ -729,6 +743,108 @@ final class NavidromeAPI: ObservableObject {
         }
 
         return result.subsonicResponse.songs
+    }
+
+    func checkAudioMuseAlchemySupport() async -> Bool {
+        guard UserDefaults.standard.bool(forKey: "experimentalAudioMuseFeaturesEnabled") else {
+            audioMuseAlchemySupported = false
+            UserDefaults.standard.set(false, forKey: "server_supports_audiomuse_alchemy")
+            return false
+        }
+
+        guard let url = buildAudioMuseAPIURL(
+            path: "/api/alchemy/search_artists",
+            queryItems: [URLQueryItem(name: "query", value: "a")]
+        ) else {
+            audioMuseAlchemySupported = false
+            UserDefaults.standard.set(false, forKey: "server_supports_audiomuse_alchemy")
+            return false
+        }
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 5
+
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                audioMuseAlchemySupported = false
+                UserDefaults.standard.set(false, forKey: "server_supports_audiomuse_alchemy")
+                return false
+            }
+
+            let supported = AudioMuseAlchemySupportPolicy.endpointExists(statusCode: httpResponse.statusCode)
+            audioMuseAlchemySupported = supported
+            UserDefaults.standard.set(supported, forKey: "server_supports_audiomuse_alchemy")
+            return supported
+        } catch {
+            print("⚠️ AudioMuse Alchemy support check failed: \(error.localizedDescription)")
+            audioMuseAlchemySupported = false
+            UserDefaults.standard.set(false, forKey: "server_supports_audiomuse_alchemy")
+            return false
+        }
+    }
+
+    func getAudioMuseAlchemySongs(seedSong: Song, count: Int = 100) async throws -> [Song] {
+        let jwt = try await loginToAudioMuseAPI()
+        guard let url = buildAudioMuseAPIURL(path: "/api/alchemy") else {
+            throw NavidromeError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 30
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(jwt)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try JSONEncoder().encode(AudioMuseAlchemyRequest(
+            items: [AudioMuseAlchemyRequest.Item(id: seedSong.id, op: "ADD", type: "song")],
+            n: max(count, 1),
+            temperature: 1.0,
+            subtractDistance: 0.3
+        ))
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw NavidromeError.unknown
+        }
+
+        let decoded = try JSONDecoder().decode(AudioMuseAlchemyResponse.self, from: data)
+        guard (200..<300).contains(httpResponse.statusCode), decoded.error == nil else {
+            throw NavidromeError.apiError(decoded.error ?? "AudioMuse Alchemy failed with HTTP \(httpResponse.statusCode)")
+        }
+
+        return decoded.songs
+    }
+
+    private func loginToAudioMuseAPI() async throws -> String {
+        guard let url = buildAudioMuseAPIURL(path: "/api/v1/user/login") else {
+            throw NavidromeError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 10
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(AudioMuseLoginRequest(
+            username: username,
+            password: password
+        ))
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw NavidromeError.unknown
+        }
+
+        if (200..<300).contains(httpResponse.statusCode) {
+            let decoded = try JSONDecoder().decode(AudioMuseLoginResponse.self, from: data)
+            return decoded.token
+        }
+
+        if let decoded = try? JSONDecoder().decode(AudioMuseAPIErrorResponse.self, from: data),
+           let error = decoded.error {
+            throw NavidromeError.apiError(error)
+        }
+
+        throw NavidromeError.apiError("AudioMuse login failed with HTTP \(httpResponse.statusCode)")
     }
 
     func getCoverArtURL(id: String, size: Int = 300) -> URL? {
@@ -1176,6 +1292,106 @@ struct SonicMatchesResponse: Decodable {
 struct SonicMatch: Decodable {
     let entry: Song
     let similarity: Double?
+}
+
+enum AudioMuseAlchemySupportPolicy {
+    static func endpointExists(statusCode: Int) -> Bool {
+        statusCode == 200 || statusCode == 401
+    }
+}
+
+struct AudioMuseLoginRequest: Encodable {
+    let username: String
+    let password: String
+}
+
+struct AudioMuseLoginResponse: Decodable {
+    let token: String
+}
+
+struct AudioMuseAPIErrorResponse: Decodable {
+    let error: String?
+}
+
+struct AudioMuseAlchemyRequest: Encodable {
+    struct Item: Encodable {
+        let id: String
+        let op: String
+        let type: String
+    }
+
+    let items: [Item]
+    let n: Int
+    let temperature: Double
+    let subtractDistance: Double
+
+    enum CodingKeys: String, CodingKey {
+        case items
+        case n
+        case temperature
+        case subtractDistance = "subtract_distance"
+    }
+}
+
+struct AudioMuseAlchemyResponse: Decodable {
+    let results: [AudioMuseAlchemyResult]?
+    let error: String?
+
+    var songs: [Song] {
+        (results ?? []).compactMap(\.song)
+    }
+}
+
+struct AudioMuseAlchemyResult: Decodable {
+    let itemID: String?
+    let id: String?
+    let songID: String?
+    let title: String?
+    let name: String?
+    let author: String?
+    let artist: String?
+    let album: String?
+    let albumID: String?
+    let coverArt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case itemID = "item_id"
+        case id
+        case songID = "songId"
+        case title
+        case name
+        case author
+        case artist
+        case album
+        case albumID = "albumId"
+        case coverArt
+    }
+
+    var song: Song? {
+        guard let resolvedID = itemID ?? id ?? songID,
+              let resolvedTitle = title ?? name else {
+            return nil
+        }
+
+        return Song(
+            id: resolvedID,
+            title: resolvedTitle,
+            album: album,
+            albumId: albumID,
+            artist: artist ?? author,
+            artistId: nil,
+            track: nil,
+            year: nil,
+            genre: nil,
+            coverArt: coverArt ?? resolvedID,
+            size: nil,
+            contentType: nil,
+            suffix: nil,
+            duration: nil,
+            bitRate: nil,
+            path: nil
+        )
+    }
 }
 
 struct Album: Decodable, Identifiable {
