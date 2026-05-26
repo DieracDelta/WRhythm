@@ -14,6 +14,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from datetime import datetime, timezone
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -28,15 +29,18 @@ class HarnessError(RuntimeError):
 
 
 def run(args, *, env=None, capture=True, check=True, timeout=None):
-    completed = subprocess.run(
-        args,
-        cwd=ROOT,
-        env=env,
-        text=True,
-        stdout=subprocess.PIPE if capture else None,
-        stderr=subprocess.STDOUT if capture else None,
-        timeout=timeout,
-    )
+    try:
+        completed = subprocess.run(
+            args,
+            cwd=ROOT,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE if capture else None,
+            stderr=subprocess.STDOUT if capture else None,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise HarnessError(f"{' '.join(args)} timed out after {timeout}s") from error
     if check and completed.returncode != 0:
         output = completed.stdout or ""
         raise HarnessError(f"{' '.join(args)} failed with {completed.returncode}\n{output[-4000:]}")
@@ -164,7 +168,15 @@ class LiveDevice:
         return f"{self.name}-{self.command_counter}"
 
     def refresh_container(self):
-        container = simctl("get_app_container", self.device_id, self.bundle_id, "data").strip()
+        def container_path():
+            return simctl("get_app_container", self.device_id, self.bundle_id, "data", timeout=15).strip()
+
+        container = wait_for(
+            container_path,
+            f"{self.name} app data container",
+            timeout=90,
+            interval=2,
+        )
         self.container = Path(container)
         harness_dir = self.container / "Library" / "Application Support" / "WRhythm" / "SyncHarness"
         self.state_path = harness_dir / "state.json"
@@ -286,16 +298,32 @@ def session_signature(status):
     )
 
 
-def wait_for_convergence(devices, expected=None, timeout=20, host_relay=False):
+def wait_for_convergence(
+    devices,
+    expected=None,
+    timeout=20,
+    host_relay=False,
+    relay_model=None,
+    included_names=None,
+    position_tolerance=None,
+):
     last_signatures = {}
+    included_names = set(included_names or [device.name for device in devices])
 
     def converged():
         nonlocal last_signatures
         statuses = wait_for_statuses(devices, timeout=2)
-        signatures = {name: session_signature(status) for name, status in statuses.items()}
-        last_signatures = signatures
         if host_relay:
-            relay_best_session(devices, statuses, expected)
+            if relay_model is not None:
+                relay_model.relay(devices, statuses, expected)
+            else:
+                relay_best_session(devices, statuses, expected)
+        signatures = {
+            name: session_signature(status)
+            for name, status in statuses.items()
+            if name in included_names
+        }
+        last_signatures = signatures
         if any(signature is None for signature in signatures.values()):
             return None
         unique = set(signatures.values())
@@ -304,11 +332,174 @@ def wait_for_convergence(devices, expected=None, timeout=20, host_relay=False):
         signature = next(iter(unique))
         if expected is not None and signature != expected:
             return None
+        if position_tolerance is not None and not positions_are_close(statuses, included_names, position_tolerance):
+            return None
         return statuses
     try:
         return wait_for(converged, "playback session convergence", timeout=timeout)
     except HarnessError as error:
         raise HarnessError(f"{error}\nLast signatures: {last_signatures}") from error
+
+
+def positions_are_close(statuses, included_names, tolerance):
+    positions = []
+    for name in included_names:
+        session = statuses.get(name, {}).get("sharedSession")
+        if not session:
+            return False
+        position = session.get("estimatedPosition")
+        if position is None:
+            return False
+        positions.append(float(position))
+    return max(positions) - min(positions) <= tolerance
+
+
+class RelayFaultModel:
+    def __init__(
+        self,
+        seed,
+        min_latency_ms=0,
+        max_latency_ms=0,
+        drop_rate=0,
+        duplicate_rate=0,
+    ):
+        self.rng = random.Random(seed)
+        self.min_latency = min_latency_ms / 1000
+        self.max_latency = max_latency_ms / 1000
+        self.drop_rate = drop_rate
+        self.duplicate_rate = duplicate_rate
+        self.online = {}
+        self.pending = []
+        self.pending_keys = set()
+
+    def register(self, devices):
+        for device in devices:
+            self.online.setdefault(device.name, True)
+
+    def is_online(self, device_name):
+        return self.online.get(device_name, True)
+
+    def included_names(self, devices):
+        return [device.name for device in devices if self.is_online(device.name)]
+
+    def disconnect(self, device_name):
+        self.online[device_name] = False
+        self.pending = [
+            delivery
+            for delivery in self.pending
+            if delivery["source"] != device_name and delivery["destination"] != device_name
+        ]
+        self.pending_keys = {delivery["key"] for delivery in self.pending}
+
+    def reconnect(self, device_name):
+        self.online[device_name] = True
+
+    def relay(self, devices, statuses, expected=None):
+        self.deliver_due(devices)
+        candidate_name, candidate_session, candidate_signature = self.choose_candidate(statuses, expected)
+        if candidate_session is None:
+            return
+
+        for device in devices:
+            if device.name == candidate_name:
+                continue
+            if not self.can_deliver(candidate_name, device.name):
+                continue
+            if session_signature(statuses.get(device.name, {})) != candidate_signature:
+                self.schedule(candidate_name, device, candidate_session, candidate_signature)
+
+    def choose_candidate(self, statuses, expected=None):
+        candidate_name = None
+        candidate_session = None
+        candidate_signature = None
+
+        if expected is not None:
+            for name, status in statuses.items():
+                if not self.is_online(name):
+                    continue
+                if session_signature(status) == expected and status.get("sharedSessionPayload"):
+                    return name, status["sharedSessionPayload"], expected
+            return None, None, None
+
+        for name, status in statuses.items():
+            if not self.is_online(name):
+                continue
+            session = status.get("sharedSessionPayload")
+            signature = session_signature(status)
+            if session is None or signature is None:
+                continue
+            if candidate_session is None or self.session_key(session) > self.session_key(candidate_session):
+                candidate_name = name
+                candidate_session = session
+                candidate_signature = signature
+
+        return candidate_name, candidate_session, candidate_signature
+
+    def session_key(self, session):
+        return (
+            session.get("revision", 0),
+            session.get("updatedAt", ""),
+            session.get("updatedByDeviceID", ""),
+        )
+
+    def can_deliver(self, source_name, destination_name):
+        return self.is_online(source_name) and self.is_online(destination_name)
+
+    def schedule(self, source_name, destination, session, signature, force=False):
+        key = (
+            source_name,
+            destination.name,
+            signature,
+            session.get("updatedAt"),
+            session.get("updatedByDeviceID"),
+        )
+        if key in self.pending_keys:
+            return
+        if not force and self.drop_rate > 0 and self.rng.random() < self.drop_rate:
+            return
+
+        delay = self.rng.uniform(self.min_latency, self.max_latency)
+        self.pending.append({
+            "due": time.monotonic() + delay,
+            "source": source_name,
+            "destination": destination.name,
+            "device": destination,
+            "session": session,
+            "key": key,
+        })
+        self.pending_keys.add(key)
+
+        if not force and self.duplicate_rate > 0 and self.rng.random() < self.duplicate_rate:
+            duplicate_key = (*key, "duplicate")
+            self.pending.append({
+                "due": time.monotonic() + delay + self.rng.uniform(0, max(self.max_latency, 0.2)),
+                "source": source_name,
+                "destination": destination.name,
+                "device": destination,
+                "session": session,
+                "key": duplicate_key,
+            })
+            self.pending_keys.add(duplicate_key)
+
+    def deliver_due(self, devices):
+        now = time.monotonic()
+        still_pending = []
+        for delivery in self.pending:
+            if delivery["due"] > now:
+                still_pending.append(delivery)
+                continue
+            self.pending_keys.discard(delivery["key"])
+            if self.can_deliver(delivery["source"], delivery["destination"]):
+                delivery["device"].apply_session(delivery["session"])
+        self.pending = still_pending
+
+    def force_deliver(self, source_name, devices, session, signature, destinations=None):
+        destinations = set(destinations or [device.name for device in devices])
+        for device in devices:
+            if device.name == source_name or device.name not in destinations:
+                continue
+            if self.can_deliver(source_name, device.name):
+                self.schedule(source_name, device, session, signature, force=True)
 
 
 def relay_best_session(devices, statuses, expected=None):
@@ -384,6 +575,119 @@ def print_status_snapshot(devices):
             print(" ", device.name, "status unavailable:", error)
 
 
+def iso_now():
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def session_signature_from_payload(session):
+    queue = session.get("queue", [])
+    current_index = session.get("currentIndex")
+    current_song_id = None
+    if isinstance(current_index, int) and 0 <= current_index < len(queue):
+        current_song_id = queue[current_index].get("id")
+    return (
+        current_song_id,
+        current_index,
+        session.get("isPlaying"),
+        session.get("outputDeviceID"),
+        tuple(song.get("id") for song in queue),
+    )
+
+
+def clone_session(session, **updates):
+    cloned = json.loads(json.dumps(session))
+    cloned.update(updates)
+    return cloned
+
+
+def paused_session_for_disconnect(status, updated_by_device_id):
+    session = status.get("sharedSessionPayload")
+    if not session:
+        raise HarnessError("Cannot pause disconnected output without a shared session payload")
+    return clone_session(
+        session,
+        revision=session.get("revision", 0) + 1,
+        position=status.get("sharedSession", {}).get("estimatedPosition", session.get("position", 0)),
+        isPlaying=False,
+        updatedAt=iso_now(),
+        updatedByDeviceID=updated_by_device_id,
+    )
+
+
+def run_transport_scenarios(devices, relay_model):
+    print("Running deterministic disconnect/reconnect transport scenarios...")
+    relay_model.register(devices)
+    mac = next(device for device in devices if device.name == "mac")
+    iphone = next(device for device in devices if device.name == "iphone")
+    watch = next(device for device in devices if device.name == "watch")
+
+    mac.open("publish", prefix="dc-mac", count=6, index=1, position=12, playing="true", output="local")
+    mac_playing = ("dc-mac-1", 1, True, "harness-mac", tuple(f"dc-mac-{index}" for index in range(6)))
+    statuses = wait_for_convergence(
+        devices,
+        expected=mac_playing,
+        timeout=45,
+        host_relay=True,
+        relay_model=relay_model,
+        included_names=relay_model.included_names(devices),
+        position_tolerance=6,
+    )
+
+    relay_model.disconnect("mac")
+    paused = paused_session_for_disconnect(statuses["mac"], updated_by_device_id="harness-iphone")
+    paused_signature = session_signature_from_payload(paused)
+    for device in [iphone, watch]:
+        device.apply_session(paused)
+    wait_for_convergence(
+        devices,
+        expected=paused_signature,
+        timeout=30,
+        host_relay=True,
+        relay_model=relay_model,
+        included_names=relay_model.included_names(devices),
+        position_tolerance=6,
+    )
+    print("  disconnected active mac -> iPhone/watch paused")
+
+    relay_model.reconnect("mac")
+    wait_for_convergence(
+        devices,
+        expected=mac_playing,
+        timeout=45,
+        host_relay=True,
+        relay_model=relay_model,
+        included_names=relay_model.included_names(devices),
+        position_tolerance=8,
+    )
+    print("  reconnected still-playing mac -> all devices adopted mac session")
+
+    relay_model.disconnect("watch")
+    iphone.open("next")
+    iphone_next = ("dc-mac-2", 2, True, "harness-mac", tuple(f"dc-mac-{index}" for index in range(6)))
+    wait_for_convergence(
+        devices,
+        expected=iphone_next,
+        timeout=30,
+        host_relay=True,
+        relay_model=relay_model,
+        included_names=relay_model.included_names(devices),
+        position_tolerance=8,
+    )
+    print("  watch partitioned -> iPhone/mac still converged on next")
+
+    relay_model.reconnect("watch")
+    wait_for_convergence(
+        devices,
+        expected=iphone_next,
+        timeout=45,
+        host_relay=True,
+        relay_model=relay_model,
+        included_names=relay_model.included_names(devices),
+        position_tolerance=8,
+    )
+    print("  watch reconnected -> caught up to latest online state")
+
+
 def create_and_boot_pair():
     ios_runtime = latest_runtime("iOS")
     watch_runtime = latest_runtime("watchOS")
@@ -436,25 +740,37 @@ def launch_sim_app(device, harness_id, harness_name, disable_real_transports):
     })
     if disable_real_transports:
         env["SIMCTL_CHILD_WRHYTHM_SYNC_HARNESS_DISABLE_REAL_TRANSPORTS"] = "1"
-    run_bounded(
-        [
-            "xcrun", "simctl",
-            "launch",
-            "--terminate-running-process",
-            "--stdout=/dev/null",
-            "--stderr=/dev/null",
-            device.device_id,
-            device.bundle_id,
-        ],
-        env=env,
-        timeout=20,
-    )
-    device.refresh_container()
+    last_error = None
+    for attempt in range(1, 4):
+        run_bounded(
+            [
+                "xcrun", "simctl",
+                "launch",
+                "--terminate-running-process",
+                "--stdout=/dev/null",
+                "--stderr=/dev/null",
+                device.device_id,
+                device.bundle_id,
+            ],
+            env=env,
+            timeout=45,
+        )
+        try:
+            device.refresh_container()
+            return
+        except HarnessError as error:
+            last_error = error
+            print(f"Retrying {device.name} app launch after container discovery failed (attempt {attempt}/3)...")
+            simctl("terminate", device.device_id, device.bundle_id, check=False, timeout=15)
+            time.sleep(3)
+    raise HarnessError(f"Unable to discover {device.name} app data container after launch: {last_error}")
 
 
-def fuzz(devices, iterations, seed, host_relay):
+def fuzz(devices, iterations, seed, host_relay, relay_model=None, include_partitions=False):
     rng = random.Random(seed)
     actors = list(devices)
+    if relay_model is not None:
+        relay_model.register(devices)
 
     print("Searching/resyncing peers...")
     for device in devices:
@@ -465,13 +781,91 @@ def fuzz(devices, iterations, seed, host_relay):
     mac = next(device for device in devices if device.name == "mac")
     mac.open("publish", prefix="seed", count=8, index=0, position=0, playing="true", output="local")
     expected_seed = ("seed-0", 0, True, "harness-mac", tuple(f"seed-{index}" for index in range(8)))
-    statuses = wait_for_convergence(devices, expected=expected_seed, timeout=45, host_relay=host_relay)
+    statuses = wait_for_convergence(
+        devices,
+        expected=expected_seed,
+        timeout=45,
+        host_relay=host_relay,
+        relay_model=relay_model,
+        included_names=relay_model.included_names(devices) if relay_model is not None else None,
+        position_tolerance=6,
+    )
     print("Initial convergence:", {name: status["sharedSession"]["currentSongID"] for name, status in statuses.items()})
     expected_signature = expected_seed
+    expected_position_tolerance = 6
 
     for index in range(iterations):
-        actor = rng.choice(actors)
-        operation = rng.choice(["publish", "play", "pause", "seek", "next", "previous"])
+        online_actors = [
+            actor for actor in actors
+            if relay_model is None or relay_model.is_online(actor.name)
+        ]
+        if not online_actors:
+            raise HarnessError("All devices are disconnected")
+
+        actor = rng.choice(online_actors)
+        operations = ["publish", "play", "pause", "seek", "next", "previous"]
+        if include_partitions:
+            operations += ["disconnect", "reconnect"]
+        operation = rng.choice(operations)
+
+        if operation == "disconnect":
+            online_names = [device.name for device in devices if relay_model.is_online(device.name)]
+            if len(online_names) <= 1:
+                operation = "reconnect"
+            else:
+                disconnect_name = rng.choice(online_names)
+                actor = next(device for device in devices if device.name == disconnect_name)
+                statuses = wait_for_statuses(devices, timeout=5)
+                active_output = expected_signature[3]
+                actor_device_id = actor.status()["deviceID"]
+                relay_model.disconnect(actor.name)
+                if active_output == actor_device_id and expected_signature[2]:
+                    remaining = relay_model.included_names(devices)
+                    if not remaining:
+                        relay_model.reconnect(actor.name)
+                    else:
+                        applier = next(device for device in devices if device.name == remaining[0])
+                        paused = paused_session_for_disconnect(statuses[actor.name], applier.status()["deviceID"])
+                        expected_signature = session_signature_from_payload(paused)
+                        for device in devices:
+                            if device.name in remaining:
+                                device.apply_session(paused)
+                statuses = wait_for_convergence(
+                    devices,
+                    expected=expected_signature,
+                    timeout=30,
+                    host_relay=host_relay,
+                    relay_model=relay_model,
+                    included_names=relay_model.included_names(devices),
+                    position_tolerance=expected_position_tolerance,
+                )
+                signature = session_signature(next(iter(statuses.values())))
+                print(f"{index + 1:03d}/{iterations} {actor.name}:disconnect -> {signature[:4]}")
+                continue
+
+        if operation == "reconnect":
+            offline = [device for device in devices if not relay_model.is_online(device.name)]
+            if not offline:
+                operation = rng.choice(["publish", "play", "pause", "seek", "next", "previous"])
+            else:
+                actor = rng.choice(offline)
+                relay_model.reconnect(actor.name)
+                actor_signature = session_signature(actor.status())
+                if actor_signature is not None and actor_signature[2] and not expected_signature[2]:
+                    expected_signature = actor_signature
+                statuses = wait_for_convergence(
+                    devices,
+                    expected=expected_signature,
+                    timeout=45,
+                    host_relay=host_relay,
+                    relay_model=relay_model,
+                    included_names=relay_model.included_names(devices),
+                    position_tolerance=expected_position_tolerance,
+                )
+                signature = session_signature(next(iter(statuses.values())))
+                print(f"{index + 1:03d}/{iterations} {actor.name}:reconnect -> {signature[:4]}")
+                continue
+
         if operation == "publish":
             count = rng.randint(3, 12)
             current_index = rng.randint(0, min(2, count - 1))
@@ -494,8 +888,10 @@ def fuzz(devices, iterations, seed, host_relay):
                 actor_device_id,
                 tuple(f"{prefix}-{queue_index}" for queue_index in range(count)),
             )
+            expected_position_tolerance = 6
         elif operation == "seek":
             actor.open("seek", position=rng.randint(0, 240))
+            expected_position_tolerance = 10
         else:
             actor.open(operation)
             song_id, current_index, is_playing, output_device_id, queue_ids = expected_signature
@@ -510,8 +906,17 @@ def fuzz(devices, iterations, seed, host_relay):
                 current_index = max(current_index - 1, 0)
                 song_id = queue_ids[current_index]
             expected_signature = (song_id, current_index, is_playing, output_device_id, queue_ids)
+            expected_position_tolerance = 8 if is_playing else 6
 
-        statuses = wait_for_convergence(devices, expected=expected_signature, timeout=30, host_relay=host_relay)
+        statuses = wait_for_convergence(
+            devices,
+            expected=expected_signature,
+            timeout=45,
+            host_relay=host_relay,
+            relay_model=relay_model,
+            included_names=relay_model.included_names(devices) if relay_model is not None else None,
+            position_tolerance=expected_position_tolerance,
+        )
         signature = session_signature(next(iter(statuses.values())))
         print(f"{index + 1:03d}/{iterations} {actor.name}:{operation} -> {signature[:4]}")
 
@@ -530,6 +935,20 @@ def main():
         "--watchconnectivity-only",
         action="store_true",
         help="Use native app transports only. By default the simulator harness uses a host relay because CLI-installed standalone watch apps do not reliably appear as installed companions to WCSession.",
+    )
+    parser.add_argument("--min-latency-ms", type=int, default=0)
+    parser.add_argument("--max-latency-ms", type=int, default=750)
+    parser.add_argument("--drop-rate", type=float, default=0.15)
+    parser.add_argument("--duplicate-rate", type=float, default=0.10)
+    parser.add_argument(
+        "--skip-transport-scenarios",
+        action="store_true",
+        help="Skip deterministic disconnect/reconnect scenarios in host-relay mode.",
+    )
+    parser.add_argument(
+        "--no-partition-fuzz",
+        action="store_true",
+        help="Do not include random disconnect/reconnect operations in the fuzz loop.",
     )
     args = parser.parse_args()
 
@@ -568,14 +987,32 @@ def main():
 
     devices = [iphone, watch, mac_device]
     wait_for_statuses(devices, timeout=60)
+    relay_model = None
     if host_relay:
         print("Using simulator host relay for iPhone/watch sync transport.")
+        relay_model = RelayFaultModel(
+            seed=args.seed + 17,
+            min_latency_ms=args.min_latency_ms,
+            max_latency_ms=args.max_latency_ms,
+            drop_rate=args.drop_rate,
+            duplicate_rate=args.duplicate_rate,
+        )
+        relay_model.register(devices)
     elif args.allow_unreachable_watch:
         print("Watch simulator launched; fuzzing mac/iPhone sync cluster while watch transport remains observable.")
         print_status_snapshot(devices)
         devices = [iphone, mac_device]
     try:
-        fuzz(devices, args.iterations, args.seed, host_relay=host_relay)
+        if host_relay and not args.skip_transport_scenarios:
+            run_transport_scenarios(devices, relay_model)
+        fuzz(
+            devices,
+            args.iterations,
+            args.seed,
+            host_relay=host_relay,
+            relay_model=relay_model,
+            include_partitions=host_relay and not args.no_partition_fuzz,
+        )
     except Exception:
         print_status_snapshot(devices)
         raise
