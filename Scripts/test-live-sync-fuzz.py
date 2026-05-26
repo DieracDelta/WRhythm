@@ -177,7 +177,9 @@ class LiveDevice:
     def open(self, command, **params):
         if self.command_path is None:
             self.refresh_container()
-        write_command(self.command_path, self.next_command_id(), command, params)
+        command_id = self.next_command_id()
+        write_command(self.command_path, command_id, command, params)
+        self.wait_for_command(command_id, command)
 
     def apply_session(self, session):
         self.open("applySession", session=encode_session(session))
@@ -215,6 +217,20 @@ class LiveDevice:
             self.refresh_container()
         with self.state_path.open() as handle:
             return json.load(handle)
+
+    def wait_for_command(self, command_id, command, timeout=10):
+        def processed():
+            status = self.status()
+            if status.get("lastProcessedCommandID") == command_id:
+                if status.get("lastProcessedCommand") != command:
+                    raise HarnessError(
+                        f"{self.name} processed {status.get('lastProcessedCommand')} "
+                        f"for {command_id}, expected {command}"
+                    )
+                return status
+            return None
+
+        return wait_for(processed, f"{self.name} to process command {command_id}:{command}", timeout=timeout, interval=0.1)
 
 
 class MacDevice:
@@ -265,7 +281,9 @@ class MacDevice:
 
     def open(self, command, **params):
         self.command_counter += 1
-        write_command(self.command_path, f"{self.name}-{self.command_counter}", command, params)
+        command_id = f"{self.name}-{self.command_counter}"
+        write_command(self.command_path, command_id, command, params)
+        self.wait_for_command(command_id, command)
 
     def apply_session(self, session):
         self.open("applySession", session=encode_session(session))
@@ -282,6 +300,20 @@ class MacDevice:
     def status(self):
         with self.state_path.open() as handle:
             return json.load(handle)
+
+    def wait_for_command(self, command_id, command, timeout=10):
+        def processed():
+            status = self.status()
+            if status.get("lastProcessedCommandID") == command_id:
+                if status.get("lastProcessedCommand") != command:
+                    raise HarnessError(
+                        f"{self.name} processed {status.get('lastProcessedCommand')} "
+                        f"for {command_id}, expected {command}"
+                    )
+                return status
+            return None
+
+        return wait_for(processed, f"{self.name} to process command {command_id}:{command}", timeout=timeout, interval=0.1)
 
 
 def write_command(path, command_id, command, params):
@@ -443,10 +475,11 @@ def wait_for_convergence(
     position_tolerance=None,
 ):
     last_signatures = {}
+    last_positions = {}
     included_names = set(included_names or [device.name for device in devices])
 
     def converged():
-        nonlocal last_signatures
+        nonlocal last_signatures, last_positions
         statuses = wait_for_statuses(devices, timeout=2)
         if host_relay:
             if relay_model is not None:
@@ -455,6 +488,11 @@ def wait_for_convergence(
                 relay_best_session(devices, statuses, expected)
         signatures = {
             name: session_signature(status)
+            for name, status in statuses.items()
+            if name in included_names
+        }
+        last_positions = {
+            name: status.get("sharedSession", {}).get("estimatedPosition")
             for name, status in statuses.items()
             if name in included_names
         }
@@ -473,7 +511,12 @@ def wait_for_convergence(
     try:
         return wait_for(converged, "playback session convergence", timeout=timeout)
     except HarnessError as error:
-        raise HarnessError(f"{error}\nLast signatures: {last_signatures}") from error
+        raise HarnessError(
+            f"{error}\n"
+            f"Expected signature: {expected}\n"
+            f"Last signatures: {last_signatures}\n"
+            f"Last positions: {last_positions}"
+        ) from error
 
 
 def positions_are_close(statuses, included_names, tolerance):

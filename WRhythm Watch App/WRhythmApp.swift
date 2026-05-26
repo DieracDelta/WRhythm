@@ -54,7 +54,6 @@ struct PlaybackKeyboardCommands: Commands {
                 PlaybackKeyboardActions.togglePlayback()
             }
             .keyboardShortcut("p", modifiers: [])
-            .keyboardShortcut(.space, modifiers: [])
 
             Button("Favorite Current Song") {
                 PlaybackKeyboardActions.toggleFavoriteCurrentSong()

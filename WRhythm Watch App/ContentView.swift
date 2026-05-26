@@ -111,6 +111,9 @@ struct ContentView: View {
             }
         }
         .wrhythmPageBackground()
+#if os(macOS)
+        .macSpacebarPlaybackShortcut()
+#endif
         .onChange(of: scenePhase) { _, newPhase in
             switch newPhase {
             case .active:
