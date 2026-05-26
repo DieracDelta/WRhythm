@@ -134,13 +134,103 @@ struct PrebufferCachePruningPolicy: Sendable {
 struct PrebufferRetryPolicy: Sendable {
     static let maxRetryDelay: TimeInterval = 30
     static let maxRetryAttempts = 6
+    static let jitterRange: ClosedRange<Double> = 0.8...1.2
+    static let cooldownFailureThreshold = 4
+    static let cooldownWindow: TimeInterval = 45
+    static let cooldownDuration: TimeInterval = 20
 
     static func retryDelay(forAttempt attempt: Int) -> TimeInterval {
         min(pow(2.0, Double(max(0, attempt))), maxRetryDelay)
     }
 
+    static func retryDelay(forAttempt attempt: Int, key: String) -> TimeInterval {
+        let baseDelay = retryDelay(forAttempt: attempt)
+        guard baseDelay < maxRetryDelay else { return maxRetryDelay }
+        return min(baseDelay * jitterMultiplier(for: key, attempt: attempt), maxRetryDelay)
+    }
+
     static func shouldRetry(afterAttempt attempt: Int) -> Bool {
         attempt < maxRetryAttempts
+    }
+
+    static func recentFailures(
+        from failureDates: [Date],
+        now: Date
+    ) -> [Date] {
+        failureDates.filter { now.timeIntervalSince($0) <= cooldownWindow }
+    }
+
+    static func shouldEnterCooldown(
+        recentFailureDates: [Date],
+        now: Date
+    ) -> Bool {
+        recentFailures(from: recentFailureDates, now: now).count >= cooldownFailureThreshold
+    }
+
+    private static func jitterMultiplier(for key: String, attempt: Int) -> Double {
+        let seed = key.unicodeScalars.reduce(UInt64(attempt + 1)) { partial, scalar in
+            ((partial &* 1_099_511_628_211) &+ UInt64(scalar.value)) & 0xFFFF_FFFF
+        }
+        let normalized = Double(seed % 10_000) / 10_000
+        return jitterRange.lowerBound + ((jitterRange.upperBound - jitterRange.lowerBound) * normalized)
+    }
+}
+
+enum WRhythmLogRedactor {
+    private static let sensitiveQueryNames: Set<String> = [
+        "u",
+        "p",
+        "s",
+        "t",
+        "token",
+        "password",
+    ]
+
+    static func redacted(_ url: URL) -> String {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return redactSensitiveURLData(in: url.absoluteString)
+        }
+        components.queryItems = components.queryItems?.map { item in
+            guard sensitiveQueryNames.contains(item.name.lowercased()) else { return item }
+            return URLQueryItem(name: item.name, value: "<redacted>")
+        }
+        return components.string ?? redactSensitiveURLData(in: url.absoluteString)
+    }
+
+    static func redactedURLString(_ string: String) -> String {
+        if let url = URL(string: string), url.scheme != nil {
+            return redacted(url)
+        }
+        return redactSensitiveURLData(in: string)
+    }
+
+    static func errorSummary(_ error: Error) -> String {
+        let nsError = error as NSError
+        var parts = ["\(nsError.domain) \(nsError.code): \(error.localizedDescription)"]
+        if let failingURL = nsError.userInfo[NSURLErrorFailingURLErrorKey] as? URL {
+            parts.append("URL: \(redacted(failingURL))")
+        } else if let failingURLString = nsError.userInfo["NSErrorFailingURLStringKey"] as? String {
+            parts.append("URL: \(redactedURLString(failingURLString))")
+        }
+        return parts.joined(separator: " ")
+    }
+
+    static func redactSensitiveURLData(in text: String) -> String {
+        var redacted = text
+        for name in sensitiveQueryNames {
+            let pattern = "([?&]\(NSRegularExpression.escapedPattern(for: name))=)[^&\\s]+"
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+                continue
+            }
+            let range = NSRange(redacted.startIndex..<redacted.endIndex, in: redacted)
+            redacted = regex.stringByReplacingMatches(
+                in: redacted,
+                options: [],
+                range: range,
+                withTemplate: "$1<redacted>"
+            )
+        }
+        return redacted
     }
 }
 
@@ -411,6 +501,9 @@ class AudioPlayer: NSObject, ObservableObject {
     private var prebufferRetryAttemptsByKey: [String: Int] = [:]
     private var prebufferRetryTasksByKey: [String: Task<Void, Never>] = [:]
     private var exhaustedPrebufferRetryKeys: Set<String> = []
+    private var recentPrebufferFailureDates: [Date] = []
+    private var prebufferRetryCooldownUntil: Date?
+    private var prebufferCooldownWakeTask: Task<Void, Never>?
 #if os(iOS) || os(watchOS) || os(macOS)
     private var nowPlayingArtworkTask: Task<Void, Never>?
     private var nowPlayingArtworkSongID: String?
@@ -1505,6 +1598,16 @@ class AudioPlayer: NSObject, ObservableObject {
             return
         }
 
+        if let cooldownUntil = prebufferRetryCooldownUntil {
+            let now = Date()
+            if cooldownUntil > now {
+                schedulePrebufferCooldownWake(at: cooldownUntil)
+                updatePrebufferedTrackCount()
+                return
+            }
+            prebufferRetryCooldownUntil = nil
+        }
+
         let queueKeys = queue.map(prebufferKey)
         let currentQueueSong = queue.indices.contains(currentIndex) ? queue[currentIndex] : currentSong
         let currentKey = currentQueueSong.map(prebufferKey)
@@ -1612,7 +1715,7 @@ class AudioPlayer: NSObject, ObservableObject {
                     player.prebufferTaskTokens.removeValue(forKey: key)
                     player.prebufferProgressByKey.removeValue(forKey: key)
                     player.updatePrebufferedTrackCount()
-                    print("⚠️ Failed to prebuffer \(song.title): \(error)")
+                    print("⚠️ Failed to prebuffer \(song.title): \(WRhythmLogRedactor.errorSummary(error))")
                     player.schedulePrebufferRetry(for: song, key: key)
                 }
             }
@@ -1686,7 +1789,7 @@ class AudioPlayer: NSObject, ObservableObject {
                     try? FileManager.default.removeItem(at: url)
                 }
                 player.updatePrebufferedTrackCount()
-                print("⚠️ Failed to prepare prebuffered file for \(song.title): \(error)")
+                print("⚠️ Failed to prepare prebuffered file for \(song.title): \(WRhythmLogRedactor.errorSummary(error))")
                 player.schedulePrebufferRetry(for: song, key: key)
             }
         }
@@ -1707,6 +1810,8 @@ class AudioPlayer: NSObject, ObservableObject {
         guard prebufferRetryTasksByKey[key] == nil else { return }
         guard desiredPrebufferKeys().contains(key) else { return }
 
+        let now = Date()
+        recordPrebufferFailure(at: now)
         let attempt = prebufferRetryAttemptsByKey[key, default: 0]
         guard PrebufferRetryPolicy.shouldRetry(afterAttempt: attempt) else {
             exhaustedPrebufferRetryKeys.insert(key)
@@ -1718,9 +1823,15 @@ class AudioPlayer: NSObject, ObservableObject {
             return
         }
 
-        let delay = PrebufferRetryPolicy.retryDelay(forAttempt: attempt)
+        var delay = PrebufferRetryPolicy.retryDelay(forAttempt: attempt, key: key)
+        if PrebufferRetryPolicy.shouldEnterCooldown(recentFailureDates: recentPrebufferFailureDates, now: now) {
+            let cooldownUntil = now.addingTimeInterval(PrebufferRetryPolicy.cooldownDuration)
+            prebufferRetryCooldownUntil = max(prebufferRetryCooldownUntil ?? cooldownUntil, cooldownUntil)
+            delay = max(delay, PrebufferRetryPolicy.cooldownDuration)
+            print("⏸️ Prebuffer retries cooling down for \(Int(PrebufferRetryPolicy.cooldownDuration))s after repeated timeouts")
+        }
         prebufferRetryAttemptsByKey[key] = attempt + 1
-        print("⏳ Retrying prebuffer for \(song.title) in \(Int(delay))s (attempt \(attempt + 1))")
+        print("⏳ Retrying prebuffer for \(song.title) in \(Int(delay.rounded()))s (attempt \(attempt + 1))")
 
         prebufferRetryTasksByKey[key] = Task { @MainActor [weak self] in
             do {
@@ -1730,6 +1841,32 @@ class AudioPlayer: NSObject, ObservableObject {
             }
             guard !Task.isCancelled, let self else { return }
             self.prebufferRetryTasksByKey.removeValue(forKey: key)
+            self.scheduleQueuePrebuffer()
+        }
+    }
+
+    private func recordPrebufferFailure(at date: Date) {
+        recentPrebufferFailureDates.append(date)
+        recentPrebufferFailureDates = PrebufferRetryPolicy.recentFailures(
+            from: recentPrebufferFailureDates,
+            now: date
+        )
+    }
+
+    private func schedulePrebufferCooldownWake(at date: Date) {
+        guard prebufferCooldownWakeTask == nil else { return }
+        prebufferCooldownWakeTask = Task { @MainActor [weak self] in
+            let delay = max(0, date.timeIntervalSinceNow)
+            do {
+                try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            } catch {
+                return
+            }
+            guard let self else { return }
+            self.prebufferCooldownWakeTask = nil
+            if let cooldownUntil = self.prebufferRetryCooldownUntil, cooldownUntil <= Date() {
+                self.prebufferRetryCooldownUntil = nil
+            }
             self.scheduleQueuePrebuffer()
         }
     }
@@ -1745,6 +1882,10 @@ class AudioPlayer: NSObject, ObservableObject {
         prebufferRetryTasksByKey.removeAll()
         prebufferRetryAttemptsByKey.removeAll()
         exhaustedPrebufferRetryKeys.removeAll()
+        recentPrebufferFailureDates.removeAll()
+        prebufferRetryCooldownUntil = nil
+        prebufferCooldownWakeTask?.cancel()
+        prebufferCooldownWakeTask = nil
     }
 
     private func prunePrebufferRetryState(keeping desiredKeys: Set<String>) {
@@ -1920,7 +2061,7 @@ class AudioPlayer: NSObject, ObservableObject {
                 if let streamURL = streamURLForPlayback(song) {
                     playURL = streamURL
                     preparedAsset = nil
-                    print("🎵 Streaming transcoded: \(streamURL.absoluteString)")
+                    print("🎵 Streaming transcoded: \(WRhythmLogRedactor.redacted(streamURL))")
                 } else {
                     print("❌ Failed to get transcoded stream URL")
                     publishPlaybackError(
@@ -1938,7 +2079,7 @@ class AudioPlayer: NSObject, ObservableObject {
                 if let streamURL = streamURLForPlayback(song) {
                     playURL = streamURL
                     preparedAsset = nil
-                    print("🎵 Streaming from: \(streamURL.absoluteString)")
+                    print("🎵 Streaming from: \(WRhythmLogRedactor.redacted(streamURL))")
                 } else {
                     print("❌ Failed to get stream URL")
                     publishPlaybackError(
@@ -1954,7 +2095,7 @@ class AudioPlayer: NSObject, ObservableObject {
             }
         }
 
-        print("🎵 Playback URL: \(playURL.absoluteString)")
+        print("🎵 Playback URL: \(playURL.isFileURL ? playURL.absoluteString : WRhythmLogRedactor.redacted(playURL))")
         self.isPlaying = PlaybackStartupStatePolicy.isPlayingDuringStartup(autoplay: autoplay)
         currentPlaybackURL = playURL
         currentPlaybackIsLocalFile = playURL.isFileURL
@@ -2195,7 +2336,7 @@ class AudioPlayer: NSObject, ObservableObject {
                         let nsError = error as NSError
                         print("❌ Error domain: \(nsError.domain)")
                         print("❌ Error code: \(nsError.code)")
-                        print("❌ Error userInfo: \(nsError.userInfo)")
+                        print("❌ Error userInfo: \(WRhythmLogRedactor.redactSensitiveURLData(in: String(describing: nsError.userInfo)))")
 
                         // Provide specific guidance for common errors
                         if nsError.code == -11850 {
@@ -2207,7 +2348,7 @@ class AudioPlayer: NSObject, ObservableObject {
                         if let accessLog = item.accessLog() {
                             print("📊 Access log events: \(accessLog.events.count)")
                             for event in accessLog.events {
-                                print("📊 URI: \(event.uri ?? "nil")")
+                                print("📊 URI: \(event.uri.map(WRhythmLogRedactor.redactedURLString) ?? "nil")")
                                 print("📊 Server address: \(event.serverAddress ?? "nil")")
                                 print("📊 Number of server address changes: \(event.numberOfServerAddressChanges)")
                                 if let errorLog = item.errorLog() {
@@ -2308,7 +2449,7 @@ class AudioPlayer: NSObject, ObservableObject {
     ) {
         let songTitle = song.map { "\"\($0.title)\"" } ?? "the current track"
         let errorText = error.map { "\nError: \($0.localizedDescription)" } ?? ""
-        let urlText = url.map { "\nURL: \($0.absoluteString)" } ?? ""
+        let urlText = url.map { "\nURL: \(WRhythmLogRedactor.redacted($0))" } ?? ""
         playbackError = PlaybackErrorInfo(
             title: title,
             message: "Could not play \(songTitle).",
@@ -2336,7 +2477,7 @@ class AudioPlayer: NSObject, ObservableObject {
 
         if let accessEvent = item.accessLog()?.events.last {
             lines.append("Server: \(accessEvent.serverAddress ?? "unknown")")
-            lines.append("URI: \(accessEvent.uri ?? "unknown")")
+            lines.append("URI: \(accessEvent.uri.map(WRhythmLogRedactor.redactedURLString) ?? "unknown")")
             lines.append("Server address changes: \(accessEvent.numberOfServerAddressChanges)")
         }
 

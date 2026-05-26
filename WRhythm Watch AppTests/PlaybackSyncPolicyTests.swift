@@ -1851,10 +1851,69 @@ struct PlaybackSyncPolicyTests {
         #expect(PrebufferRetryPolicy.retryDelay(forAttempt: 20) == 30)
     }
 
+    @Test func prebufferRetryJitterKeepsDelayBoundedAndDeterministic() {
+        let first = PrebufferRetryPolicy.retryDelay(forAttempt: 2, key: "song-a")
+        let repeated = PrebufferRetryPolicy.retryDelay(forAttempt: 2, key: "song-a")
+        let other = PrebufferRetryPolicy.retryDelay(forAttempt: 2, key: "song-b")
+
+        #expect(first == repeated)
+        #expect(first >= 3.2)
+        #expect(first <= 4.8)
+        #expect(other >= 3.2)
+        #expect(other <= 4.8)
+    }
+
     @Test func prebufferRetryStopsAfterBoundedAttempts() {
         #expect(PrebufferRetryPolicy.shouldRetry(afterAttempt: 0))
         #expect(PrebufferRetryPolicy.shouldRetry(afterAttempt: PrebufferRetryPolicy.maxRetryAttempts - 1))
         #expect(PrebufferRetryPolicy.shouldRetry(afterAttempt: PrebufferRetryPolicy.maxRetryAttempts) == false)
+    }
+
+    @Test func prebufferRetryCooldownStartsAfterRepeatedRecentFailures() {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let recentFailures = [
+            now.addingTimeInterval(-1),
+            now.addingTimeInterval(-5),
+            now.addingTimeInterval(-12),
+            now.addingTimeInterval(-30),
+        ]
+        let spreadOutFailures = [
+            now.addingTimeInterval(-1),
+            now.addingTimeInterval(-5),
+            now.addingTimeInterval(-70),
+            now.addingTimeInterval(-100),
+        ]
+
+        #expect(PrebufferRetryPolicy.shouldEnterCooldown(recentFailureDates: recentFailures, now: now))
+        #expect(PrebufferRetryPolicy.shouldEnterCooldown(recentFailureDates: spreadOutFailures, now: now) == false)
+    }
+
+    @Test func logRedactorRemovesSubsonicCredentialsButKeepsUsefulQueryContext() throws {
+        let url = try #require(URL(string: "https://example.test/rest/stream.view?u=admin&t=token&s=salt&c=WRhythm&v=1.16.1&id=song-1&maxBitRate=192&format=mp3"))
+        let redacted = WRhythmLogRedactor.redacted(url)
+
+        #expect(redacted.contains("u=%3Credacted%3E"))
+        #expect(redacted.contains("t=%3Credacted%3E"))
+        #expect(redacted.contains("s=%3Credacted%3E"))
+        #expect(redacted.contains("id=song-1"))
+        #expect(redacted.contains("maxBitRate=192"))
+        #expect(redacted.contains("format=mp3"))
+        #expect(redacted.contains("admin") == false)
+        #expect(redacted.contains("token") == false)
+        #expect(redacted.contains("salt") == false)
+    }
+
+    @Test func logRedactorScrubsSensitiveURLsInsideErrorText() {
+        let raw = "Error url=https://example.test/rest/scrobble.view?u=admin&t=token&s=salt&id=song-1 failed"
+        let redacted = WRhythmLogRedactor.redactSensitiveURLData(in: raw)
+
+        #expect(redacted.contains("u=<redacted>"))
+        #expect(redacted.contains("t=<redacted>"))
+        #expect(redacted.contains("s=<redacted>"))
+        #expect(redacted.contains("id=song-1"))
+        #expect(redacted.contains("admin") == false)
+        #expect(redacted.contains("token") == false)
+        #expect(redacted.contains("salt") == false)
     }
 
     @Test func prebufferSchedulingSkipsRetryExhaustedKeys() {

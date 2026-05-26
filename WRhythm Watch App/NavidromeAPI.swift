@@ -439,7 +439,7 @@ final class NavidromeAPI: ObservableObject {
             throw NavidromeError.invalidURL
         }
 
-        print("🔍 Pinging: \(url.absoluteString)")
+        print("🔍 Pinging: \(WRhythmLogRedactor.redacted(url))")
 
         var request = URLRequest(url: url)
         request.timeoutInterval = 15
@@ -473,7 +473,7 @@ final class NavidromeAPI: ObservableObject {
             throw NavidromeError.invalidURL
         }
 
-        print("🔍 Fetching artists from: \(url.absoluteString)")
+        print("🔍 Fetching artists from: \(WRhythmLogRedactor.redacted(url))")
 
         var request = URLRequest(url: url)
         request.timeoutInterval = 30
@@ -886,9 +886,9 @@ final class NavidromeAPI: ObservableObject {
 
         let url = components?.url
         if let format = format {
-            print("🔊 Stream URL built (format: \(format), maxBitRate: \(maxBitRate.map(String.init) ?? "original")): \(url?.absoluteString ?? "nil")")
+            print("🔊 Stream URL built (format: \(format), maxBitRate: \(maxBitRate.map(String.init) ?? "original")): \(url.map(WRhythmLogRedactor.redacted) ?? "nil")")
         } else {
-            print("🔊 Stream URL built (maxBitRate: \(maxBitRate.map(String.init) ?? "original")): \(url?.absoluteString ?? "nil")")
+            print("🔊 Stream URL built (maxBitRate: \(maxBitRate.map(String.init) ?? "original")): \(url.map(WRhythmLogRedactor.redacted) ?? "nil")")
         }
         return url
     }
@@ -899,7 +899,7 @@ final class NavidromeAPI: ObservableObject {
             throw NavidromeError.invalidURL
         }
 
-        print("🔍 Fetching playlists from: \(url.absoluteString)")
+        print("🔍 Fetching playlists from: \(WRhythmLogRedactor.redacted(url))")
 
         var request = URLRequest(url: url)
         request.timeoutInterval = 30
@@ -979,7 +979,7 @@ final class NavidromeAPI: ObservableObject {
             throw NavidromeError.invalidURL
         }
 
-        print("🔍 Fetching starred content from: \(url.absoluteString)")
+        print("🔍 Fetching starred content from: \(WRhythmLogRedactor.redacted(url))")
 
         var request = URLRequest(url: url)
         request.timeoutInterval = 30
