@@ -102,6 +102,7 @@ struct PlatformSearchSheet<Content: View>: View {
                     }
                 }
         }
+        .interactiveDismissDisabled()
 #endif
     }
 }
