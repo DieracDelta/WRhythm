@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import CoreText
 
 extension ToolbarItemPlacement {
     static var platformTopBarTrailing: ToolbarItemPlacement {
@@ -189,30 +190,109 @@ enum WRhythmSpacing {
 }
 
 enum WRhythmTypography {
-    static let appTitle = Font.system(.largeTitle, design: .serif).weight(.bold)
-    static let screenTitle = Font.system(.title, design: .serif).weight(.bold)
-    static let heroTitle = Font.system(.title3, design: .serif).weight(.semibold)
-    static let featureTitle = Font.system(.headline, design: .serif).weight(.semibold)
-    static let sectionLabel = Font.system(.caption, design: .rounded).weight(.semibold)
-    static let body = Font.system(.body, design: .rounded)
-    static let bodyEmphasis = Font.system(.body, design: .rounded).weight(.semibold)
-    static let subhead = Font.system(.subheadline, design: .rounded)
-    static let subheadEmphasis = Font.system(.subheadline, design: .rounded).weight(.medium)
-    static let rowTitle = Font.system(.subheadline, design: .rounded).weight(.semibold)
-    static let rowSubtitle = Font.system(.caption, design: .rounded)
-    static let metadata = Font.system(.caption2, design: .rounded)
-    static let metadataEmphasis = Font.system(.caption2, design: .rounded).weight(.semibold)
-    static let controlLabel = Font.system(.caption, design: .rounded).weight(.medium)
-    static let controlLabelEmphasis = Font.system(.caption, design: .rounded).weight(.semibold)
-    static let numericValue = Font.system(.title3, design: .rounded).weight(.semibold)
-    static let timer = Font.system(.caption2, design: .monospaced)
+    static let appTitle = WRhythmFont.bold(.largeTitle)
+    static let screenTitle = WRhythmFont.bold(.title)
+    static let heroTitle = WRhythmFont.semiBold(.title3)
+    static let featureTitle = WRhythmFont.semiBold(.headline)
+    static let sectionLabel = WRhythmFont.semiBold(.caption)
+    static let body = WRhythmFont.regular(.body)
+    static let bodyEmphasis = WRhythmFont.semiBold(.body)
+    static let subhead = WRhythmFont.regular(.subheadline)
+    static let subheadEmphasis = WRhythmFont.medium(.subheadline)
+    static let rowTitle = WRhythmFont.semiBold(.subheadline)
+    static let rowSubtitle = WRhythmFont.regular(.caption)
+    static let metadata = WRhythmFont.regular(.caption2)
+    static let metadataEmphasis = WRhythmFont.semiBold(.caption2)
+    static let controlLabel = WRhythmFont.medium(.caption)
+    static let controlLabelEmphasis = WRhythmFont.semiBold(.caption)
+    static let numericValue = WRhythmFont.semiBold(.title3)
+    static let timer = WRhythmFont.regular(.caption2)
 
     static func queueTitle(isCurrent: Bool) -> Font {
-        Font.system(.subheadline, design: .rounded).weight(isCurrent ? .semibold : .medium)
+        isCurrent ? WRhythmFont.semiBold(.subheadline) : WRhythmFont.medium(.subheadline)
     }
 
     static func queueCompactTitle(isCurrent: Bool) -> Font {
-        Font.system(.caption, design: .rounded).weight(isCurrent ? .semibold : .regular)
+        isCurrent ? WRhythmFont.semiBold(.caption) : WRhythmFont.regular(.caption)
+    }
+}
+
+enum WRhythmFont {
+    enum Face: String, CaseIterable {
+        case regular = "ChakraPetch-Regular"
+        case medium = "ChakraPetch-Medium"
+        case semiBold = "ChakraPetch-SemiBold"
+        case bold = "ChakraPetch-Bold"
+    }
+
+    private static let fileNames = [
+        "ChakraPetch-Regular",
+        "ChakraPetch-Medium",
+        "ChakraPetch-SemiBold",
+        "ChakraPetch-Bold",
+    ]
+
+    private static var didRegister = false
+
+    static func registerIfNeeded() {
+        guard !didRegister else { return }
+        didRegister = true
+
+        for fileName in fileNames {
+            let url = Bundle.main.url(forResource: fileName, withExtension: "ttf", subdirectory: "Resources/Fonts")
+                ?? Bundle.main.url(forResource: fileName, withExtension: "ttf")
+            guard let url else { continue }
+
+            var error: Unmanaged<CFError>?
+            CTFontManagerRegisterFontsForURL(url as CFURL, .process, &error)
+        }
+    }
+
+    static func regular(_ textStyle: Font.TextStyle) -> Font {
+        custom(.regular, textStyle)
+    }
+
+    static func medium(_ textStyle: Font.TextStyle) -> Font {
+        custom(.medium, textStyle)
+    }
+
+    static func semiBold(_ textStyle: Font.TextStyle) -> Font {
+        custom(.semiBold, textStyle)
+    }
+
+    static func bold(_ textStyle: Font.TextStyle) -> Font {
+        custom(.bold, textStyle)
+    }
+
+    private static func custom(_ face: Face, _ textStyle: Font.TextStyle) -> Font {
+        Font.custom(face.rawValue, size: pointSize(for: textStyle), relativeTo: textStyle)
+    }
+
+    private static func pointSize(for textStyle: Font.TextStyle) -> CGFloat {
+        switch textStyle {
+        case .largeTitle:
+            34
+        case .title:
+            28
+        case .title2:
+            22
+        case .title3:
+            20
+        case .headline, .body:
+            17
+        case .subheadline:
+            15
+        case .callout:
+            16
+        case .footnote:
+            13
+        case .caption:
+            12
+        case .caption2:
+            11
+        @unknown default:
+            15
+        }
     }
 }
 

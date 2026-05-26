@@ -22,6 +22,13 @@
 	<string>com.restivollc.wrhythm</string>
 	<key>WKRunsIndependentlyOfCompanionApp</key>
 	<true/>
+	<key>UIAppFonts</key>
+	<array>
+		<string>ChakraPetch-Regular.ttf</string>
+		<string>ChakraPetch-Medium.ttf</string>
+		<string>ChakraPetch-SemiBold.ttf</string>
+		<string>ChakraPetch-Bold.ttf</string>
+	</array>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>

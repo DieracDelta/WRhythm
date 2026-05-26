@@ -14,6 +14,7 @@ struct WRhythm_Watch_AppApp: App {
     @AppStorage("darkModeEnabled") private var darkModeEnabled = true
 
     init() {
+        WRhythmFont.registerIfNeeded()
 #if DEBUG
         Task { @MainActor in
             SyncLiveHarness.shared.startIfNeeded()
