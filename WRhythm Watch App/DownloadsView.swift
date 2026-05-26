@@ -157,7 +157,7 @@ struct DownloadsView: View {
 
                 VStack(alignment: .leading, spacing: WRhythmSpacing.xxs) {
                     Text("\(downloadManager.getTotalDownloaded()) songs")
-                        .font(.headline)
+                        .font(WRhythmTypography.featureTitle)
                     Text(formatBytes(downloadManager.getTotalSize()))
                         .font(WRhythmTypography.rowSubtitle)
                         .foregroundColor(.secondary)
@@ -201,7 +201,7 @@ struct DownloadsView: View {
 
                 if player.currentSong?.id == downloadedSong.songId && player.isPlaying {
                     Image(systemName: "speaker.wave.2.fill")
-                        .font(.caption2)
+                        .font(WRhythmTypography.metadata)
                         .foregroundColor(WRhythmTheme.accent)
                 }
 
@@ -225,7 +225,7 @@ struct DownloadsView: View {
                 WRhythmCard {
                     VStack(spacing: WRhythmSpacing.md) {
                         Text("Delete All Downloads?")
-                            .font(.headline)
+                            .font(WRhythmTypography.featureTitle)
 
                         Text("This will delete \(downloadManager.getTotalDownloaded()) songs (\(formatBytes(downloadManager.getTotalSize())))")
                             .font(WRhythmTypography.rowSubtitle)

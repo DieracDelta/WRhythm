@@ -19,7 +19,7 @@ struct SongRowView: View {
             HStack(spacing: WRhythmSpacing.sm) {
                 if let track = song.track {
                     Text("\(track)")
-                        .font(.caption)
+                        .font(WRhythmTypography.rowSubtitle)
                         .foregroundColor(.secondary)
                         .frame(width: 20, alignment: .leading)
                 }
@@ -28,11 +28,11 @@ struct SongRowView: View {
 
                 VStack(alignment: .leading) {
                     Text(song.title)
-                        .font(.subheadline.weight(.medium))
+                        .font(WRhythmTypography.subheadEmphasis)
                         .lineLimit(1)
                     if let duration = song.duration {
                         Text(formatDuration(duration))
-                            .font(.caption2)
+                            .font(WRhythmTypography.metadata)
                             .foregroundColor(.secondary)
                     }
                 }
@@ -52,13 +52,13 @@ struct SongRowView: View {
                     }
                 } else if downloadManager.isDownloaded(song.id) {
                     Image(systemName: "arrow.down.circle.fill")
-                        .font(.caption2)
+                        .font(WRhythmTypography.metadata)
                         .foregroundColor(WRhythmTheme.success)
                 }
 
                 if player.currentSong?.id == song.id && player.isPlaying {
                     Image(systemName: "speaker.wave.2.fill")
-                        .font(.caption2)
+                        .font(WRhythmTypography.metadata)
                         .foregroundColor(WRhythmTheme.accent)
                 }
 
@@ -68,7 +68,7 @@ struct SongRowView: View {
                     sourceType: .song
                 )) {
                     Image(systemName: "music.note.list")
-                        .font(.caption2)
+                        .font(WRhythmTypography.metadata)
                         .foregroundColor(WRhythmTheme.accent)
                 }
                 .buttonStyle(.plain)
@@ -279,7 +279,7 @@ struct AlbumDetailView: View {
                             tint: WRhythmTheme.artist
                         ) {
                             Image(systemName: "chevron.right")
-                                .font(.caption)
+                                .font(WRhythmTypography.rowSubtitle)
                                 .foregroundColor(.secondary)
                         }
                     }
@@ -447,7 +447,7 @@ struct AlbumDownloadButton: View {
                         ProgressView()
                             .scaleEffect(0.7)
                         Text("Downloading")
-                            .font(.caption2)
+                            .font(WRhythmTypography.metadata)
                     }
                 }
                 .buttonStyle(.bordered)

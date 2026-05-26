@@ -52,7 +52,7 @@ struct PhoneQueueView: View {
     private var queueHeader: some View {
         VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
             Text("Queue")
-                .font(.largeTitle.weight(.bold))
+                .font(WRhythmTypography.appTitle)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             Text(queueSummary)
@@ -253,12 +253,12 @@ private struct PhoneQueueRow: View {
                 HStack(spacing: WRhythmSpacing.xs) {
                     if isCurrent {
                         Image(systemName: isPlaying ? "speaker.wave.2.fill" : "speaker")
-                            .font(.caption.weight(.semibold))
+                            .font(WRhythmTypography.controlLabelEmphasis)
                             .foregroundStyle(WRhythmTheme.accent)
                     }
 
                     Text(song.title)
-                        .font(.subheadline.weight(isCurrent ? .semibold : .medium))
+                        .font(WRhythmTypography.queueTitle(isCurrent: isCurrent))
                         .lineLimit(1)
                 }
 
@@ -271,7 +271,7 @@ private struct PhoneQueueRow: View {
             Spacer(minLength: WRhythmSpacing.xs)
 
             Text("\(index + 1)")
-                .font(.caption.weight(.semibold))
+                .font(WRhythmTypography.controlLabelEmphasis)
                 .foregroundStyle(isCurrent ? WRhythmTheme.accent : .secondary)
                 .frame(minWidth: 24)
         }

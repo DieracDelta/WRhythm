@@ -63,7 +63,7 @@ struct TrackRowView: View {
                         } else {
                             // Offline mode: just an indicator
                             Image(systemName: "arrow.down.circle.fill")
-                                .font(.caption2)
+                                .font(WRhythmTypography.metadata)
                                 .foregroundColor(WRhythmTheme.success)
                         }
                     } else if !offlineMode {
@@ -91,7 +91,7 @@ struct TrackRowView: View {
                             sourceType: .song
                         )) {
                             Image(systemName: "music.note.list")
-                                .font(.caption2)
+                                .font(WRhythmTypography.metadata)
                                 .foregroundColor(WRhythmTheme.accent)
                         }
                         .buttonStyle(.plain)

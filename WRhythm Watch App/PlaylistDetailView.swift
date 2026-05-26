@@ -190,7 +190,7 @@ struct PlaylistDetailView: View {
                     ProgressView()
                         .scaleEffect(0.7)
                     Text("Downloading")
-                        .font(.caption2)
+                        .font(WRhythmTypography.metadata)
                 }
             }
             .disabled(true)

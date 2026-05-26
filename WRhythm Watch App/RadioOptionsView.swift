@@ -37,13 +37,12 @@ struct RadioOptionsView: View {
                 WRhythmCard {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Number of Songs")
-                            .font(.caption)
+                            .font(WRhythmTypography.rowSubtitle)
                             .foregroundColor(.secondary)
 
                         HStack {
                             Text("\(selectedCount)")
-                                .font(.title3)
-                                .fontWeight(.semibold)
+                                .font(WRhythmTypography.numericValue)
                                 .monospacedDigit()
                                 .frame(width: 50, alignment: .leading)
 
@@ -58,7 +57,7 @@ struct RadioOptionsView: View {
                         }
 
                         Text("Similar songs to include in Playlist Gen")
-                            .font(.caption2)
+                            .font(WRhythmTypography.metadata)
                             .foregroundColor(.secondary)
                     }
                 }
@@ -96,7 +95,7 @@ struct RadioOptionsView: View {
                         HStack(spacing: WRhythmSpacing.xs) {
                             ProgressView()
                             Text("Preparing playlist")
-                                .font(.caption)
+                                .font(WRhythmTypography.rowSubtitle)
                                 .foregroundColor(.secondary)
                         }
                     }

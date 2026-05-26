@@ -98,14 +98,14 @@ struct NowPlayingView: View {
 
                         if let artist = song.artist {
                             Text(artist)
-                                .font(.subheadline)
+                                .font(WRhythmTypography.subhead)
                                 .foregroundColor(.secondary)
                                 .lineLimit(1)
                         }
 
                         if let album = song.album {
                             Text(album)
-                                .font(.caption2)
+                                .font(WRhythmTypography.metadata)
                                 .foregroundColor(.secondary)
                                 .lineLimit(1)
                         }
@@ -254,13 +254,13 @@ struct NowPlayingView: View {
                     HStack(spacing: 8) {
                         if player.queue.count > 1 {
                             Text("Track \(player.currentIndex + 1) of \(player.queue.count)")
-                                .font(.caption2)
+                                .font(WRhythmTypography.metadata)
                                 .foregroundColor(.secondary)
                         }
 
                         Button(action: player.toggleShuffle) {
                             Image(systemName: player.isShuffled ? "shuffle.circle.fill" : "shuffle.circle")
-                                .font(.caption)
+                                .font(WRhythmTypography.rowSubtitle)
                                 .foregroundColor(player.isShuffled ? WRhythmTheme.accent : .secondary)
                         }
                         .buttonStyle(.plain)
@@ -268,7 +268,7 @@ struct NowPlayingView: View {
                         Button(action: player.toggleRepeat) {
                             Image(systemName: player.repeatMode == .off ? "repeat.circle" :
                                   player.repeatMode == .all ? "repeat.circle.fill" : "repeat.1.circle.fill")
-                                .font(.caption)
+                                .font(WRhythmTypography.rowSubtitle)
                                 .foregroundColor(player.repeatMode == .off ? .secondary : WRhythmTheme.accent)
                         }
                         .buttonStyle(.plain)
@@ -302,7 +302,7 @@ struct NowPlayingView: View {
                         .font(.largeTitle)
                         .foregroundColor(.secondary)
                     Text("No song playing")
-                        .font(.caption)
+                        .font(WRhythmTypography.rowSubtitle)
                         .foregroundColor(.secondary)
                 }
             }
@@ -740,7 +740,7 @@ private struct PhoneRemoteNowPlayingContent: View {
 
                 Button(action: deviceSyncManager.takeOverRemotePlayback) {
                     Label("Play Here", systemImage: "speaker.wave.2.fill")
-                        .font(.subheadline)
+                        .font(WRhythmTypography.subhead)
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
@@ -798,7 +798,7 @@ private struct PhonePlaybackTargetPicker: View {
                         .imageScale(.small)
                         .foregroundStyle(.secondary)
                 }
-                .font(.subheadline)
+                .font(WRhythmTypography.subhead)
                 .foregroundStyle(WRhythmTheme.accent)
                 .padding(.horizontal, WRhythmSpacing.sm)
                 .frame(height: 44)
@@ -839,7 +839,7 @@ private struct PhoneTrackSummary: View {
 
             if let artist {
                 Text(artist)
-                    .font(.subheadline)
+                    .font(WRhythmTypography.subhead)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -926,7 +926,7 @@ private struct PhoneNoSongContent: View {
                 .font(.largeTitle)
                 .foregroundStyle(.secondary)
             Text("No song playing")
-                .font(.subheadline)
+                .font(WRhythmTypography.subhead)
                 .foregroundStyle(.secondary)
             NowPlayingResyncButton(diameter: 44)
             Spacer(minLength: WRhythmSpacing.xl)
@@ -1031,7 +1031,7 @@ struct PlaybackTargetPicker: View {
                 .buttonStyle(.plain)
                 #endif
             }
-            .font(.caption)
+            .font(WRhythmTypography.rowSubtitle)
             .onAppear {
                 Task { @MainActor in
                     deviceSyncManager.validateSelectedPlaybackTarget()
@@ -1295,7 +1295,7 @@ private struct WatchVolumeControl: View {
     private func volumeButton(systemImage: String, accessibilityLabel: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.caption2.weight(.semibold))
+                .font(WRhythmTypography.metadataEmphasis)
                 .symbolRenderingMode(.hierarchical)
                 .frame(width: 24, height: 24)
                 .background(.regularMaterial, in: Circle())
@@ -1350,7 +1350,7 @@ struct VolumeControlView: View {
             ScrollView {
                 VStack(spacing: 20) {
                     Text("Volume")
-                        .font(.headline)
+                        .font(WRhythmTypography.featureTitle)
 
                     HStack {
                         Image(systemName: "speaker.fill")
@@ -1362,7 +1362,7 @@ struct VolumeControlView: View {
                     }
 
                     Text("\(Int(player.volume * 100))%")
-                        .font(.caption)
+                        .font(WRhythmTypography.rowSubtitle)
                         .foregroundColor(.secondary)
                 }
                 .padding()
@@ -1403,7 +1403,7 @@ struct AudioRouteView: View {
             ScrollView {
             VStack(spacing: WRhythmSpacing.md) {
                 Text("Audio Output")
-                    .font(.headline)
+                    .font(WRhythmTypography.featureTitle)
 
                 VStack(alignment: .leading, spacing: WRhythmSpacing.sm) {
                     if activeOutputs.isEmpty {
@@ -1413,10 +1413,10 @@ struct AudioRouteView: View {
                                 .font(.title2)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("No Output")
-                                    .font(.caption2)
+                                    .font(WRhythmTypography.metadata)
                                     .foregroundColor(.secondary)
                                 Text("Unable to detect audio output")
-                                    .font(.caption)
+                                    .font(WRhythmTypography.rowSubtitle)
                             }
                         }
                         .padding(8)
@@ -1425,7 +1425,7 @@ struct AudioRouteView: View {
                         .cornerRadius(8)
                     } else {
                         Text("Currently Active")
-                            .font(.caption2)
+                            .font(WRhythmTypography.metadata)
                             .foregroundColor(.secondary)
 
                         ForEach(Array(activeOutputs.enumerated()), id: \.element.name) { index, output in
@@ -1435,16 +1435,16 @@ struct AudioRouteView: View {
                                     .font(.title2)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(output.name)
-                                        .font(.caption)
+                                        .font(WRhythmTypography.rowSubtitle)
                                         .fontWeight(.medium)
                                     Text(output.type)
-                                        .font(.caption2)
+                                        .font(WRhythmTypography.metadata)
                                         .foregroundColor(.secondary)
                                 }
                                 Spacer()
                                 Image(systemName: "checkmark.circle.fill")
                                     .foregroundStyle(WRhythmTheme.success.gradient)
-                                    .font(.caption)
+                                    .font(WRhythmTypography.rowSubtitle)
                             }
                             .padding(8)
                             .background(WRhythmTheme.secondaryAccent.opacity(0.10))
@@ -1459,20 +1459,20 @@ struct AudioRouteView: View {
                             Image(systemName: "info.circle")
                                 .foregroundStyle(WRhythmTheme.secondaryAccent.gradient)
                             Text("How to Switch")
-                                .font(.caption)
+                                .font(WRhythmTypography.rowSubtitle)
                                 .fontWeight(.semibold)
                         }
 
                         Text("1. Swipe up from the watch face to open Control Center")
-                            .font(.caption2)
+                            .font(WRhythmTypography.metadata)
                             .foregroundColor(.secondary)
 
                         Text("2. Tap the AirPlay icon")
-                            .font(.caption2)
+                            .font(WRhythmTypography.metadata)
                             .foregroundColor(.secondary)
 
                         Text("3. Select your preferred audio output (AirPods, Speaker, etc.)")
-                            .font(.caption2)
+                            .font(WRhythmTypography.metadata)
                             .foregroundColor(.secondary)
                     }
                     .padding(8)
@@ -1480,7 +1480,7 @@ struct AudioRouteView: View {
                     .cornerRadius(8)
 
                     Text("watchOS doesn't allow apps to programmatically list or switch audio devices. The system manages this through Control Center.")
-                        .font(.caption2)
+                        .font(WRhythmTypography.metadata)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
                         .padding(.top, 4)
@@ -1578,7 +1578,7 @@ struct AudioRouteView: View {
                     .font(.largeTitle)
                     .foregroundColor(.secondary)
                 Text("Use the macOS audio menu to change output")
-                    .font(.caption)
+                    .font(WRhythmTypography.rowSubtitle)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
             }
@@ -1722,7 +1722,7 @@ private struct WatchNowPlayingView: View {
             HStack(spacing: WRhythmSpacing.xs) {
                 if player.queue.count > 1 {
                     Text("\(player.currentIndex + 1) of \(player.queue.count)")
-                        .font(.caption2)
+                        .font(WRhythmTypography.metadata)
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                 }
@@ -1743,7 +1743,7 @@ private struct WatchNowPlayingView: View {
                 .foregroundStyle(.secondary)
 
             Text("No song playing")
-                .font(.caption)
+                .font(WRhythmTypography.rowSubtitle)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
 
@@ -1822,7 +1822,7 @@ private struct WatchRemotePlaybackControls: View {
                 Image(systemName: platformIconName)
                     .foregroundStyle(WRhythmTheme.accent)
                 Text(playback.deviceName)
-                    .font(.caption)
+                    .font(WRhythmTypography.rowSubtitle)
                     .lineLimit(1)
                     .foregroundStyle(.secondary)
             }
@@ -1866,7 +1866,7 @@ private struct WatchRemotePlaybackControls: View {
                 ))
 
                 Button("Play Here", systemImage: "speaker.wave.2.fill", action: deviceSyncManager.takeOverRemotePlayback)
-                    .font(.caption)
+                    .font(WRhythmTypography.rowSubtitle)
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
             }
@@ -1916,7 +1916,7 @@ private struct WatchTrackTitleBlock: View {
     var body: some View {
         VStack(spacing: 2) {
             Text(song.title)
-                .font(.headline)
+                .font(WRhythmTypography.featureTitle)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
                 .minimumScaleFactor(0.72)
@@ -1924,7 +1924,7 @@ private struct WatchTrackTitleBlock: View {
 
             if let artist = song.artist, !artist.isEmpty {
                 Text(artist)
-                    .font(.caption2)
+                    .font(WRhythmTypography.metadata)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity)
@@ -1960,7 +1960,7 @@ private struct WatchProgressCard: View {
             Text("-" + watchFormatTime(max(0, safeDuration - displayedTime)))
                 .frame(width: 36, alignment: .trailing)
         }
-        .font(.caption2)
+        .font(WRhythmTypography.metadata)
         .monospacedDigit()
         .foregroundStyle(.secondary)
         .padding(.horizontal, 7)
@@ -2075,7 +2075,7 @@ private struct WatchResyncButton: View {
     var body: some View {
         Button(action: deviceSyncManager.searchForNearbyDevices) {
             Label("Reconnect", systemImage: "arrow.clockwise")
-                .font(.caption2.weight(.semibold))
+                .font(WRhythmTypography.metadataEmphasis)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 5)
@@ -2110,7 +2110,7 @@ private struct WatchNowPlayingActions: View {
             watchActionButton(isStarred ? "Unfavorite" : "Favorite", systemImage: isStarred ? "heart.fill" : "heart", action: toggleFavorite)
                 .disabled(isStarring)
         }
-        .font(.caption.weight(.semibold))
+        .font(WRhythmTypography.controlLabelEmphasis)
         .buttonStyle(.plain)
         .foregroundStyle(WRhythmTheme.accent)
     }

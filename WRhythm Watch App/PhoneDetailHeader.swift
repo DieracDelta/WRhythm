@@ -19,7 +19,7 @@ struct PhoneDetailHeader: View {
             HStack {
                 Button(action: { dismiss() }) {
                     Image(systemName: "chevron.left")
-                        .font(.title3.bold())
+                        .font(WRhythmTypography.heroTitle)
                         .symbolRenderingMode(.hierarchical)
                         .frame(width: 52, height: 52)
                         .background(.regularMaterial, in: Circle())

@@ -45,7 +45,7 @@ struct ActiveDownloadsView: View {
 
                             if downloadManager.downloadQueue.count > 20 {
                                 Text("+ \(downloadManager.downloadQueue.count - 20) more")
-                                    .font(.caption)
+                                    .font(WRhythmTypography.rowSubtitle)
                                     .foregroundColor(.secondary)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
@@ -85,7 +85,7 @@ private struct ActiveDownloadRow: View {
                 ) {
                     HStack(spacing: 8) {
                         Text("\(Int(progress * 100))%")
-                            .font(.caption.weight(.semibold))
+                            .font(WRhythmTypography.controlLabelEmphasis)
                             .foregroundColor(.secondary)
                             .monospacedDigit()
 
@@ -93,7 +93,7 @@ private struct ActiveDownloadRow: View {
                             downloadManager.retryDownload(songId)
                         }) {
                             Image(systemName: "arrow.clockwise")
-                                .font(.caption2)
+                                .font(WRhythmTypography.metadata)
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Retry download")
@@ -102,7 +102,7 @@ private struct ActiveDownloadRow: View {
                             downloadManager.cancelDownload(songId)
                         }) {
                             Image(systemName: "xmark")
-                                .font(.caption2)
+                                .font(WRhythmTypography.metadata)
                         }
                         .buttonStyle(.plain)
                         .foregroundColor(WRhythmTheme.danger)
@@ -134,14 +134,14 @@ private struct QueuedDownloadRow: View {
             ) {
                 HStack(spacing: 8) {
                     Image(systemName: "clock")
-                        .font(.caption2)
+                        .font(WRhythmTypography.metadata)
                         .foregroundColor(.secondary)
 
                     Button(action: {
                         downloadManager.cancelDownload(song.id)
                     }) {
                         Image(systemName: "xmark")
-                            .font(.caption2)
+                            .font(WRhythmTypography.metadata)
                     }
                     .buttonStyle(.plain)
                     .foregroundColor(WRhythmTheme.danger)

@@ -34,7 +34,7 @@ struct SpontaneousMusicView: View {
                 VStack(spacing: WRhythmSpacing.md) {
                     Button(action: shuffleAll) {
                         Label("Shuffle All", systemImage: "shuffle.circle.fill")
-                            .font(.headline)
+                            .font(WRhythmTypography.featureTitle)
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)

@@ -156,7 +156,7 @@ struct ArtistsView: View {
                             tint: WRhythmTheme.artist
                         ) {
                             Image(systemName: "arrow.down.circle.fill")
-                                .font(.caption2)
+                                .font(WRhythmTypography.metadata)
                                 .foregroundColor(WRhythmTheme.success)
                         }
                     }

@@ -13,7 +13,7 @@ struct PhoneDownloadsEmptyView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: WRhythmSpacing.xl) {
             Text("Downloads")
-                .font(.largeTitle.bold())
+                .font(WRhythmTypography.appTitle)
                 .lineLimit(1)
 
             VStack(spacing: WRhythmSpacing.md) {
@@ -26,12 +26,12 @@ struct PhoneDownloadsEmptyView: View {
 
                 VStack(spacing: WRhythmSpacing.xs) {
                     Text("No Downloads")
-                        .font(.headline)
+                        .font(WRhythmTypography.featureTitle)
                         .multilineTextAlignment(.center)
 
                     if let message {
                         Text(message)
-                            .font(.subheadline)
+                            .font(WRhythmTypography.subhead)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
                             .fixedSize(horizontal: false, vertical: true)

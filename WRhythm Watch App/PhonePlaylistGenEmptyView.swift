@@ -19,7 +19,7 @@ struct PhonePlaylistGenEmptyView: View {
                 .background(.thinMaterial, in: Circle())
 
             Text("No Playlist Gen")
-                .font(.headline)
+                .font(WRhythmTypography.featureTitle)
                 .multilineTextAlignment(.center)
         }
         .padding(.horizontal, WRhythmSpacing.lg)

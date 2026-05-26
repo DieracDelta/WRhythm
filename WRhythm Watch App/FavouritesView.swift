@@ -131,7 +131,7 @@ struct FavouritesView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             Text("Songs")
-                                .font(.headline)
+                                .font(WRhythmTypography.featureTitle)
                             Spacer()
                             if songsToShow.count > 1 {
                                 HStack(spacing: 8) {
@@ -139,13 +139,13 @@ struct FavouritesView: View {
                                         player.playQueue(songsToShow, startingAt: 0)
                                     }) {
                                         Image(systemName: "play.fill")
-                                            .font(.caption)
+                                            .font(WRhythmTypography.rowSubtitle)
                                     }
                                     Button(action: {
                                         player.playQueueShuffled(songsToShow)
                                     }) {
                                         Image(systemName: "shuffle")
-                                            .font(.caption)
+                                            .font(WRhythmTypography.rowSubtitle)
                                     }
                                 }
                             }
@@ -210,7 +210,7 @@ struct FavouritesView: View {
                             VStack(alignment: .leading, spacing: 8) {
                                 HStack {
                                     Text("Songs")
-                                        .font(.headline)
+                                        .font(WRhythmTypography.featureTitle)
                                     Spacer()
                                     HStack(spacing: 8) {
                                         if songsToShow.count > 1 {
@@ -218,13 +218,13 @@ struct FavouritesView: View {
                                                 player.playQueue(songsToShow, startingAt: 0)
                                             }) {
                                                 Image(systemName: "play.fill")
-                                                    .font(.caption)
+                                                    .font(WRhythmTypography.rowSubtitle)
                                             }
                                             Button(action: {
                                                 player.playQueueShuffled(songsToShow)
                                             }) {
                                                 Image(systemName: "shuffle")
-                                                    .font(.caption)
+                                                    .font(WRhythmTypography.rowSubtitle)
                                             }
                                         }
                                         if !offlineMode {
@@ -235,7 +235,7 @@ struct FavouritesView: View {
                                                 }
                                             }) {
                                                 Image(systemName: "arrow.down.circle")
-                                                    .font(.caption)
+                                                    .font(WRhythmTypography.rowSubtitle)
                                             }
                                         }
                                     }
@@ -255,7 +255,7 @@ struct FavouritesView: View {
                         if !albumsToShow.isEmpty {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("Albums")
-                                    .font(.headline)
+                                    .font(WRhythmTypography.featureTitle)
 
                                 ForEach(albumsToShow) { album in
                                     NavigationLink(destination: AlbumDetailView(albumId: album.id)) {
@@ -279,7 +279,7 @@ struct FavouritesView: View {
                         if !artistsToShow.isEmpty {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("Artists")
-                                    .font(.headline)
+                                    .font(WRhythmTypography.featureTitle)
 
                                 ForEach(artistsToShow) { artist in
                                     NavigationLink(destination: ArtistDetailView(artistId: artist.id, artistName: artist.name)) {
@@ -321,7 +321,7 @@ struct FavouritesView: View {
     private var inlineSearchField: some View {
         HStack(spacing: WRhythmSpacing.sm) {
             Image(systemName: "magnifyingglass")
-                .font(.body.weight(.semibold))
+                .font(WRhythmTypography.bodyEmphasis)
                 .foregroundStyle(WRhythmTheme.accent)
 
             TextField("Search favourites", text: $searchText)

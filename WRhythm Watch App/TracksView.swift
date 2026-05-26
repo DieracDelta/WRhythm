@@ -390,7 +390,7 @@ struct TracksView: View {
                             .scaleEffect(0.6)
                     } else if downloadManager.isDownloaded(song.id) {
                         Image(systemName: "arrow.down.circle.fill")
-                            .font(.caption2)
+                            .font(WRhythmTypography.metadata)
                             .foregroundColor(WRhythmTheme.success)
                     } else if !offlineMode {
                         WRhythmRowIconButton(
@@ -409,7 +409,7 @@ struct TracksView: View {
                             sourceType: .song
                         )) {
                             Image(systemName: "music.note.list")
-                                .font(.caption2)
+                                .font(WRhythmTypography.metadata)
                                 .foregroundColor(WRhythmTheme.accent)
                                 .frame(width: 30, height: 30)
                         }
@@ -470,7 +470,7 @@ struct TracksView: View {
     private var inlineSearchField: some View {
         HStack(spacing: WRhythmSpacing.sm) {
             Image(systemName: "magnifyingglass")
-                .font(.body.weight(.semibold))
+                .font(WRhythmTypography.bodyEmphasis)
                 .foregroundStyle(WRhythmTheme.accent)
 
             TextField(offlineMode ? "Search offline music" : "Search music", text: $searchText)

@@ -94,7 +94,7 @@ struct LoginView: View {
                     WRhythmCard {
                         VStack(alignment: .leading, spacing: WRhythmSpacing.sm) {
                             Text("Credential Entry Tips")
-                                .font(.headline)
+                                .font(WRhythmTypography.featureTitle)
 
                             Text("For easier credential entry on Apple Watch:")
                                 .font(WRhythmTypography.rowSubtitle)

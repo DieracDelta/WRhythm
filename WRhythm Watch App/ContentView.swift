@@ -429,18 +429,18 @@ private struct MacQueueRow: View {
                 HStack(spacing: WRhythmSpacing.xs) {
                     if isCurrent {
                         Image(systemName: isPlaying ? "speaker.wave.2.fill" : "speaker")
-                            .font(.caption2)
+                            .font(WRhythmTypography.metadata)
                             .foregroundColor(WRhythmTheme.accent)
                     }
 
                     Text(song.title)
-                        .font(.caption.weight(isCurrent ? .semibold : .regular))
+                        .font(WRhythmTypography.queueCompactTitle(isCurrent: isCurrent))
                         .lineLimit(1)
                 }
 
                 if let artist = song.artist {
                     Text(artist)
-                        .font(.caption2)
+                        .font(WRhythmTypography.metadata)
                         .foregroundColor(.secondary)
                         .lineLimit(1)
                 }
@@ -527,7 +527,7 @@ private struct MacPlaybackErrorBanner: View {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(WRhythmTheme.danger)
                 Text(error.title)
-                    .font(.caption.weight(.semibold))
+                    .font(WRhythmTypography.controlLabelEmphasis)
                 Spacer()
                 Button(action: dismiss) {
                     Image(systemName: "xmark")
@@ -537,16 +537,16 @@ private struct MacPlaybackErrorBanner: View {
             }
 
             Text(error.message)
-                .font(.caption2)
+                .font(WRhythmTypography.metadata)
                 .foregroundStyle(.secondary)
 
             Text(error.technicalDetails)
-                .font(.caption2.monospaced())
+                .font(WRhythmTypography.timer)
                 .foregroundStyle(.secondary)
                 .lineLimit(4)
 
             Text(error.recoverySuggestion)
-                .font(.caption2)
+                .font(WRhythmTypography.metadata)
                 .foregroundStyle(WRhythmTheme.accent)
         }
         .padding(WRhythmSpacing.sm)
@@ -708,20 +708,20 @@ struct MacMiniPlayerBar: View {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: WRhythmSpacing.xs) {
                         Text(title)
-                            .font(.headline)
+                            .font(WRhythmTypography.featureTitle)
                             .lineLimit(1)
                         Text(miniStatusText(
                             queuePosition: queuePosition,
                             isBuffering: isBuffering,
                             bufferStatusText: bufferStatusText
                         ))
-                            .font(.caption2)
+                            .font(WRhythmTypography.metadata)
                             .foregroundColor(.secondary)
                             .lineLimit(1)
                     }
                     if !subtitle.isEmpty {
                         Text(subtitle)
-                            .font(.caption)
+                            .font(WRhythmTypography.rowSubtitle)
                             .foregroundColor(.secondary)
                             .lineLimit(1)
                     }
@@ -739,7 +739,7 @@ struct MacMiniPlayerBar: View {
                                 ),
                                 systemImage: "arrow.down.circle"
                             )
-                                .font(.caption2)
+                                .font(WRhythmTypography.metadata)
                         }
                         .buttonStyle(.plain)
                         .foregroundColor(.secondary)
@@ -867,12 +867,12 @@ struct MiniPlayerProgressControl: View {
 
                 HStack {
                     Text(formatTime(displayedTime))
-                        .font(.caption2)
+                        .font(WRhythmTypography.metadata)
                         .monospacedDigit()
                         .foregroundColor(.secondary)
                     Spacer()
                     Text("-" + formatTime(max(0, safeDuration - displayedTime)))
-                        .font(.caption2)
+                        .font(WRhythmTypography.metadata)
                         .monospacedDigit()
                         .foregroundColor(.secondary)
                 }

@@ -160,7 +160,7 @@ struct RadioPlaylistsView: View {
                         HStack(spacing: WRhythmSpacing.sm) {
                             ProgressView()
                             Text("Checking server support")
-                                .font(.subheadline)
+                                .font(WRhythmTypography.subhead)
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -194,10 +194,10 @@ struct RadioPlaylistsView: View {
                     ProgressView()
                         .controlSize(.large)
                     Text("Generating Playlist")
-                        .font(.headline)
+                        .font(WRhythmTypography.featureTitle)
                     if let title = player.playlistGenGeneratingTitle {
                         Text(title)
-                            .font(.caption)
+                            .font(WRhythmTypography.rowSubtitle)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
@@ -217,11 +217,11 @@ struct RadioPlaylistsView: View {
     private func playlistGenerationErrorView(message: String, details: String?) -> some View {
         VStack(spacing: 3) {
             Text(message)
-                .font(.caption2.weight(.semibold))
+                .font(WRhythmTypography.metadataEmphasis)
                 .foregroundStyle(WRhythmTheme.danger)
             if let details {
                 Text(details)
-                    .font(.caption2)
+                    .font(WRhythmTypography.metadata)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
             }
@@ -381,7 +381,7 @@ private struct PlaylistGenModeToggle: View {
     var body: some View {
         Button(action: action) {
             Label(title, systemImage: systemImage)
-                .font(.subheadline.weight(.semibold))
+                .font(WRhythmTypography.rowTitle)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .buttonStyle(.bordered)
@@ -529,7 +529,7 @@ private struct SonicTrackSearchPicker: View {
     var body: some View {
         VStack(alignment: .leading, spacing: WRhythmSpacing.sm) {
             Text(title)
-                .font(.caption.weight(.semibold))
+                .font(WRhythmTypography.controlLabelEmphasis)
                 .foregroundStyle(.secondary)
 
             searchField
@@ -549,13 +549,13 @@ private struct SonicTrackSearchPicker: View {
                 HStack(spacing: WRhythmSpacing.sm) {
                     ProgressView()
                     Text("Searching")
-                        .font(.caption)
+                        .font(WRhythmTypography.rowSubtitle)
                         .foregroundStyle(.secondary)
                 }
                 .padding(.vertical, WRhythmSpacing.xs)
             } else if let errorMessage {
                 Text(errorMessage)
-                    .font(.caption)
+                    .font(WRhythmTypography.rowSubtitle)
                     .foregroundStyle(WRhythmTheme.danger)
             } else if !results.isEmpty {
                 VStack(spacing: WRhythmSpacing.xs) {
@@ -624,10 +624,10 @@ private struct SonicTrackSelectionRow: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(song.title)
-                        .font(.subheadline.weight(.semibold))
+                        .font(WRhythmTypography.rowTitle)
                         .lineLimit(1)
                     Text(song.artist ?? "Unknown Artist")
-                        .font(.caption)
+                        .font(WRhythmTypography.rowSubtitle)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }

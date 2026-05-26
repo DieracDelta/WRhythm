@@ -94,7 +94,7 @@ struct PlatformModalCloseButton: View {
     private var closeButton: some View {
         Button(action: action) {
             Image(systemName: "xmark")
-                .font(.body.weight(.semibold))
+                .font(WRhythmTypography.bodyEmphasis)
         }
     }
 }
@@ -189,13 +189,31 @@ enum WRhythmSpacing {
 }
 
 enum WRhythmTypography {
+    static let appTitle = Font.system(.largeTitle, design: .serif).weight(.bold)
+    static let screenTitle = Font.system(.title, design: .serif).weight(.bold)
     static let heroTitle = Font.system(.title3, design: .serif).weight(.semibold)
     static let featureTitle = Font.system(.headline, design: .serif).weight(.semibold)
-    static let sectionLabel = Font.caption.weight(.semibold)
-    static let rowTitle = Font.subheadline.weight(.semibold)
-    static let rowSubtitle = Font.caption
-    static let metadata = Font.caption2
-    static let controlLabel = Font.caption.weight(.medium)
+    static let sectionLabel = Font.system(.caption, design: .rounded).weight(.semibold)
+    static let body = Font.system(.body, design: .rounded)
+    static let bodyEmphasis = Font.system(.body, design: .rounded).weight(.semibold)
+    static let subhead = Font.system(.subheadline, design: .rounded)
+    static let subheadEmphasis = Font.system(.subheadline, design: .rounded).weight(.medium)
+    static let rowTitle = Font.system(.subheadline, design: .rounded).weight(.semibold)
+    static let rowSubtitle = Font.system(.caption, design: .rounded)
+    static let metadata = Font.system(.caption2, design: .rounded)
+    static let metadataEmphasis = Font.system(.caption2, design: .rounded).weight(.semibold)
+    static let controlLabel = Font.system(.caption, design: .rounded).weight(.medium)
+    static let controlLabelEmphasis = Font.system(.caption, design: .rounded).weight(.semibold)
+    static let numericValue = Font.system(.title3, design: .rounded).weight(.semibold)
+    static let timer = Font.system(.caption2, design: .monospaced)
+
+    static func queueTitle(isCurrent: Bool) -> Font {
+        Font.system(.subheadline, design: .rounded).weight(isCurrent ? .semibold : .medium)
+    }
+
+    static func queueCompactTitle(isCurrent: Bool) -> Font {
+        Font.system(.caption, design: .rounded).weight(isCurrent ? .semibold : .regular)
+    }
 }
 
 enum WRhythmVisual {
@@ -597,7 +615,7 @@ struct WRhythmSectionHeader<Actions: View>: View {
                     .font(WRhythmTypography.featureTitle)
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
-                        .font(.caption)
+                        .font(WRhythmTypography.rowSubtitle)
                         .foregroundColor(.secondary)
                 }
             }
@@ -729,7 +747,7 @@ struct WRhythmMediaRow<Trailing: View>: View {
                 HStack(spacing: WRhythmSpacing.xs) {
                     if isCurrent {
                         Image(systemName: isPlaying ? "speaker.wave.2.fill" : "speaker")
-                            .font(.caption2)
+                            .font(WRhythmTypography.metadata)
                             .foregroundColor(WRhythmTheme.accent)
                     }
                     Text(title)
@@ -862,11 +880,11 @@ struct WRhythmMetricRow: View {
     var body: some View {
         HStack(spacing: WRhythmSpacing.xs) {
             Text(title)
-                .font(.caption2)
+                .font(WRhythmTypography.metadata)
                 .foregroundColor(.secondary)
             Spacer(minLength: 8)
             Text(value)
-                .font(.caption.weight(.semibold))
+                .font(WRhythmTypography.controlLabelEmphasis)
                 .foregroundColor(valueColor)
                 .monospacedDigit()
         }
@@ -882,7 +900,7 @@ struct WRhythmRowIconButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.caption2.weight(.semibold))
+                .font(WRhythmTypography.metadataEmphasis)
                 .symbolRenderingMode(.hierarchical)
                 .foregroundColor(tint)
                 .frame(width: 32, height: 32)
@@ -1010,7 +1028,7 @@ struct WRhythmStatusPill: View {
             Text(text)
                 .lineLimit(1)
         }
-        .font(.caption2)
+        .font(WRhythmTypography.metadata)
         .fontWeight(.medium)
         .foregroundColor(tint)
         .padding(.horizontal, 9)
@@ -1113,7 +1131,7 @@ struct WRhythmEmptyState: View {
 
                 if let message {
                     Text(message)
-                        .font(.caption)
+                        .font(WRhythmTypography.rowSubtitle)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1165,7 +1183,7 @@ struct WRhythmLoadingState: View {
 
                 if let message, !message.isEmpty {
                     Text(message)
-                        .font(.caption)
+                        .font(WRhythmTypography.rowSubtitle)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
                         .lineLimit(2)
