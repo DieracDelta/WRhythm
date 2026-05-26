@@ -966,8 +966,13 @@ struct ConnectivityLossPlaybackPolicy: Sendable {
         disconnectedDeviceID: String,
         currentSession: PlaybackSession?,
         localDeviceID: String,
+        localIsPlaying: Bool = false,
         disconnectedAt: Date = Date()
     ) -> PlaybackSession? {
+        guard !localIsPlaying else {
+            return nil
+        }
+
         guard let currentSession,
               currentSession.outputDeviceID == disconnectedDeviceID,
               currentSession.isPlaying else {
@@ -2445,7 +2450,8 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         guard let pausedSession = ConnectivityLossPlaybackPolicy.sessionAfterDisconnectedOutput(
             disconnectedDeviceID: deviceID,
             currentSession: sharedSession,
-            localDeviceID: localDeviceID
+            localDeviceID: localDeviceID,
+            localIsPlaying: AudioPlayer.shared.isPlaying
         ) else { return }
 
         publishSharedSession(pausedSession, applyLocally: true)

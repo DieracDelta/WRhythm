@@ -1517,6 +1517,26 @@ struct PlaybackSyncPolicyTests {
         ) == nil)
     }
 
+    @Test func activeLocalPlaybackDoesNotCreateConnectivityPauseForDisconnectedRemoteOutput() {
+        let now = Date()
+        let remotePlayingBeforeDisconnect = makeSession(
+            outputDeviceID: "watch",
+            isPlaying: true,
+            position: 20,
+            revision: 7,
+            updatedAt: now.addingTimeInterval(-5),
+            updatedByDeviceID: "watch"
+        )
+
+        #expect(ConnectivityLossPlaybackPolicy.sessionAfterDisconnectedOutput(
+            disconnectedDeviceID: "watch",
+            currentSession: remotePlayingBeforeDisconnect,
+            localDeviceID: "ipad",
+            localIsPlaying: true,
+            disconnectedAt: now
+        ) == nil)
+    }
+
     @Test func reconnectedOwnerPlayingSessionOverwritesConnectivityPauseWhenNewer() throws {
         let now = Date()
         let ownerPlayingBeforeDisconnect = makeSession(
