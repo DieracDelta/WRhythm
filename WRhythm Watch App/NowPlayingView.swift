@@ -239,16 +239,13 @@ struct NowPlayingView: View {
                         }
                         .accessibilityLabel("Playlist Gen")
 
-                        Button(action: {
+                        WRhythmFavoriteButton(
+                            isFavorite: downloadManager.starredSongIds.contains(song.id),
+                            size: .action,
+                            isBusy: isStarring
+                        ) {
                             toggleFavorite(song: song)
-                        }) {
-                            Image(systemName: downloadManager.starredSongIds.contains(song.id) ? "heart.fill" : "heart")
-                                .font(.title3)
-                                .symbolVariant(.fill)
-                                .foregroundStyle(WRhythmTheme.favorite.gradient)
                         }
-                        .accessibilityLabel(downloadManager.starredSongIds.contains(song.id) ? "Unfavorite" : "Favorite")
-                        .disabled(isStarring)
                     }
 
                     HStack(spacing: 8) {
@@ -617,14 +614,13 @@ private struct PhoneLocalNowPlayingContent: View {
                 }
                 .accessibilityLabel("Playlist Gen")
 
-                Button(action: { toggleFavorite(song) }) {
-                    Image(systemName: downloadManager.starredSongIds.contains(song.id) ? "heart.fill" : "heart")
-                        .font(.title3)
-                        .symbolVariant(.fill)
-                        .foregroundStyle(WRhythmTheme.favorite.gradient)
+                WRhythmFavoriteButton(
+                    isFavorite: downloadManager.starredSongIds.contains(song.id),
+                    size: .action,
+                    isBusy: isStarring
+                ) {
+                    toggleFavorite(song)
                 }
-                .accessibilityLabel(downloadManager.starredSongIds.contains(song.id) ? "Unfavorite" : "Favorite")
-                .disabled(isStarring)
             }
 
             HStack(spacing: WRhythmSpacing.xs) {
@@ -2107,8 +2103,12 @@ private struct WatchNowPlayingActions: View {
             }
             .accessibilityLabel("Radio")
 
-            watchActionButton(isStarred ? "Unfavorite" : "Favorite", systemImage: isStarred ? "heart.fill" : "heart", action: toggleFavorite)
-                .disabled(isStarring)
+            WRhythmFavoriteButton(
+                isFavorite: isStarred,
+                size: .watch,
+                isBusy: isStarring,
+                action: toggleFavorite
+            )
         }
         .font(WRhythmTypography.controlLabelEmphasis)
         .buttonStyle(.plain)

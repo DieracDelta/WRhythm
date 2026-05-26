@@ -76,10 +76,9 @@ struct TrackRowView: View {
                     }
 
                     if !offlineMode {
-                        WRhythmRowIconButton(
-                            systemImage: isStarred ? "heart.fill" : "heart",
-                            tint: isStarred ? WRhythmTheme.favorite : .secondary,
-                            accessibilityLabel: isStarred ? "Unfavorite song" : "Favorite song",
+                        WRhythmFavoriteButton(
+                            isFavorite: isStarred,
+                            size: .row,
                             action: onToggleFavorite
                         )
                     }

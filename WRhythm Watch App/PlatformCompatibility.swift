@@ -991,6 +991,91 @@ struct WRhythmRowIconButton: View {
     }
 }
 
+enum WRhythmFavoriteButtonSize {
+    case row
+    case action
+    case watch
+
+    var diameter: CGFloat {
+        switch self {
+        case .row:
+            32
+        case .action:
+            36
+        case .watch:
+            28
+        }
+    }
+
+    var iconFont: Font {
+        switch self {
+        case .row, .watch:
+            WRhythmTypography.metadataEmphasis
+        case .action:
+            WRhythmTypography.featureTitle
+        }
+    }
+
+    var badgeDiameter: CGFloat {
+        switch self {
+        case .row, .watch:
+            10
+        case .action:
+            12
+        }
+    }
+}
+
+struct WRhythmFavoriteButton: View {
+    let isFavorite: Bool
+    var size: WRhythmFavoriteButtonSize = .action
+    var isBusy = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            ZStack(alignment: .bottomTrailing) {
+                Image(systemName: isFavorite ? "heart.fill" : "heart")
+                    .font(size.iconFont)
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(isFavorite ? WRhythmTheme.favorite : .secondary)
+                    .frame(width: size.diameter, height: size.diameter)
+                    .background(buttonBackground, in: Circle())
+                    .overlay {
+                        Circle()
+                            .strokeBorder(
+                                isFavorite ? WRhythmTheme.favorite.opacity(0.75) : Color.secondary.opacity(0.24),
+                                lineWidth: isFavorite ? 1.5 : 1
+                            )
+                    }
+
+                if isFavorite {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: size.badgeDiameter * 0.58, weight: .bold))
+                        .foregroundStyle(.black)
+                        .frame(width: size.badgeDiameter, height: size.badgeDiameter)
+                        .background(WRhythmTheme.favorite, in: Circle())
+                        .offset(x: 1, y: 1)
+                }
+            }
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(isBusy)
+        .opacity(isBusy ? 0.55 : 1)
+        .accessibilityLabel(isFavorite ? "Unfavorite" : "Favorite")
+        .accessibilityValue(isFavorite ? "Favorited" : "Not favorited")
+    }
+
+    private var buttonBackground: some ShapeStyle {
+        if isFavorite {
+            return AnyShapeStyle(WRhythmTheme.favorite.opacity(0.24))
+        } else {
+            return AnyShapeStyle(.regularMaterial)
+        }
+    }
+}
+
 extension View {
     @ViewBuilder
     func wrhythmPageBackground(coverArtId: String? = nil) -> some View {
