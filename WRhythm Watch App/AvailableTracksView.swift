@@ -38,13 +38,18 @@ struct AvailableTracksView: View {
 struct BufferedTracksListView: View {
     let songs: [Song]
     var downloadStatuses: [PrebufferDownloadStatus] = []
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
             BufferedTracksListContent(songs: songs, downloadStatuses: downloadStatuses)
                 .navigationTitle("Available Tracks")
                 .platformNavigationBarTitleDisplayModeInline()
+                .platformModalCloseToolbar {
+                    dismiss()
+                }
         }
+        .platformExplicitCloseModal()
     }
 }
 

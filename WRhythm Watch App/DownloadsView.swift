@@ -256,15 +256,12 @@ struct DownloadsView: View {
             }
             .navigationTitle("Confirm Delete")
             .platformNavigationBarTitleDisplayModeInline()
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        presentedSheet = nil
-                        deleteConfirmationText = ""
-                    }
-                }
+            .platformModalCloseToolbar {
+                presentedSheet = nil
+                deleteConfirmationText = ""
             }
         }
+        .platformExplicitCloseModal()
     }
 
     private var emptyDownloadsMessage: String? {

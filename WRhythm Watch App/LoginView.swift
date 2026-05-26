@@ -110,7 +110,11 @@ struct LoginView: View {
                 }
                 .navigationTitle("Help")
                 .platformNavigationBarTitleDisplayModeInline()
+                .platformModalCloseToolbar {
+                    presentedSheet = nil
+                }
             }
+            .platformExplicitCloseModal()
             }
         }
         .onAppear {

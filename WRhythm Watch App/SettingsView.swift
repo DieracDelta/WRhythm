@@ -143,15 +143,12 @@ struct SettingsView: View {
                     }
                     .navigationTitle("Confirm Logout")
                     .platformNavigationBarTitleDisplayModeInline()
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Cancel") {
-                                presentedSheet = nil
-                                logoutConfirmationText = ""
-                            }
-                        }
+                    .platformModalCloseToolbar {
+                        presentedSheet = nil
+                        logoutConfirmationText = ""
                     }
                 }
+                .platformExplicitCloseModal()
             }
         }
     }

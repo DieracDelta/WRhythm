@@ -61,6 +61,42 @@ extension View {
         self.textFieldStyle(.roundedBorder)
 #endif
     }
+
+    func platformExplicitCloseModal() -> some View {
+#if os(macOS)
+        self
+#else
+        self.interactiveDismissDisabled()
+#endif
+    }
+
+    func platformModalCloseToolbar(action: @escaping () -> Void) -> some View {
+        toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                PlatformModalCloseButton(action: action)
+            }
+        }
+    }
+}
+
+struct PlatformModalCloseButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        closeButton
+#if !os(watchOS)
+            .keyboardShortcut(.cancelAction)
+#endif
+            .accessibilityLabel("Close")
+            .accessibilityHint("Closes this popup")
+    }
+
+    private var closeButton: some View {
+        Button(action: action) {
+            Image(systemName: "xmark")
+                .font(.body.weight(.semibold))
+        }
+    }
 }
 
 struct PlatformSearchSheet<Content: View>: View {
@@ -77,32 +113,26 @@ struct PlatformSearchSheet<Content: View>: View {
     var body: some View {
 #if os(macOS)
         VStack(spacing: 0) {
+            HStack {
+                Spacer()
+                PlatformModalCloseButton(action: onCancel)
+                    .buttonStyle(.borderless)
+            }
+            .padding(.horizontal, WRhythmSpacing.md)
+            .padding(.top, WRhythmSpacing.sm)
+
             content
                 .padding(WRhythmSpacing.xl)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-
-            Divider()
-
-            HStack {
-                Spacer()
-                Button("Cancel", action: onCancel)
-                    .keyboardShortcut(.cancelAction)
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
         }
         .frame(width: 420, height: 220)
 #else
         NavigationStack {
             content
                 .navigationTitle(title)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel", action: onCancel)
-                    }
-                }
+                .platformModalCloseToolbar(action: onCancel)
         }
-        .interactiveDismissDisabled()
+        .platformExplicitCloseModal()
 #endif
     }
 }

@@ -1331,26 +1331,34 @@ struct VolumeControlView: View {
     @FocusState private var isFocused: Bool
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                Text("Volume")
-                    .font(.headline)
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 20) {
+                    Text("Volume")
+                        .font(.headline)
 
-                HStack {
-                    Image(systemName: "speaker.fill")
-                        .foregroundStyle(WRhythmTheme.secondaryAccent.gradient)
-                    Slider(value: $player.volume, in: 0...1)
-                        .tint(WRhythmTheme.secondaryAccent)
-                    Image(systemName: "speaker.wave.3.fill")
-                        .foregroundStyle(WRhythmTheme.secondaryAccent.gradient)
+                    HStack {
+                        Image(systemName: "speaker.fill")
+                            .foregroundStyle(WRhythmTheme.secondaryAccent.gradient)
+                        Slider(value: $player.volume, in: 0...1)
+                            .tint(WRhythmTheme.secondaryAccent)
+                        Image(systemName: "speaker.wave.3.fill")
+                            .foregroundStyle(WRhythmTheme.secondaryAccent.gradient)
+                    }
+
+                    Text("\(Int(player.volume * 100))%")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
-
-                Text("\(Int(player.volume * 100))%")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                .padding()
             }
-            .padding()
+            .navigationTitle("Volume")
+            .platformNavigationBarTitleDisplayModeInline()
+            .platformModalCloseToolbar {
+                dismiss()
+            }
         }
+        .platformExplicitCloseModal()
 #if os(watchOS)
         .focusable()
         .focused($isFocused)
@@ -1376,7 +1384,8 @@ struct AudioRouteView: View {
     @State private var activeOutputs: [(name: String, type: String, portType: AVAudioSession.Port)] = []
 
     var body: some View {
-        ScrollView {
+        NavigationStack {
+            ScrollView {
             VStack(spacing: WRhythmSpacing.md) {
                 Text("Audio Output")
                     .font(.headline)
@@ -1464,6 +1473,13 @@ struct AudioRouteView: View {
             }
             .padding()
         }
+        .navigationTitle("Audio Output")
+        .platformNavigationBarTitleDisplayModeInline()
+            .platformModalCloseToolbar {
+                dismiss()
+            }
+        }
+        .platformExplicitCloseModal()
         .onAppear {
             updateAudioRouteInfo()
             setupRouteChangeNotification()
@@ -1538,17 +1554,27 @@ struct AudioRouteView: View {
 }
 #else
 struct AudioRouteView: View {
+    @Environment(\.dismiss) private var dismiss
+
     var body: some View {
-        VStack(spacing: WRhythmSpacing.sm) {
-            Image(systemName: "airplayaudio")
-                .font(.largeTitle)
-                .foregroundColor(.secondary)
-            Text("Use the macOS audio menu to change output")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
+        NavigationStack {
+            VStack(spacing: WRhythmSpacing.sm) {
+                Image(systemName: "airplayaudio")
+                    .font(.largeTitle)
+                    .foregroundColor(.secondary)
+                Text("Use the macOS audio menu to change output")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .padding()
+            .navigationTitle("Audio Output")
+            .platformNavigationBarTitleDisplayModeInline()
+            .platformModalCloseToolbar {
+                dismiss()
+            }
         }
-        .padding()
+        .platformExplicitCloseModal()
     }
 }
 #endif
