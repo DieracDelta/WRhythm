@@ -8,6 +8,32 @@
 import SwiftUI
 import AVFoundation
 
+struct PlaybackProgressRefreshPolicy: Sendable {
+    static func shouldUseLiveTimeline(isPlaying: Bool) -> Bool {
+        isPlaying
+    }
+}
+
+struct PlaybackProgressTimeline<Content: View>: View {
+    let isLive: Bool
+    let content: () -> Content
+
+    init(isLive: Bool, @ViewBuilder content: @escaping () -> Content) {
+        self.isLive = isLive
+        self.content = content
+    }
+
+    var body: some View {
+        if PlaybackProgressRefreshPolicy.shouldUseLiveTimeline(isPlaying: isLive) {
+            TimelineView(.periodic(from: .now, by: 1)) { _ in
+                content()
+            }
+        } else {
+            content()
+        }
+    }
+}
+
 struct NowPlayingView: View {
     @ObservedObject var player = AudioPlayer.shared
     @ObservedObject var downloadManager = DownloadManager.shared
@@ -661,7 +687,7 @@ private struct PhoneRemoteNowPlayingContent: View {
                     showBufferedTracks: { presentedSheet = .bufferedTracks }
                 )
 
-                TimelineView(.periodic(from: .now, by: 1)) { _ in
+                PlaybackProgressTimeline(isLive: playback.isPlaying) {
                     PhoneProgressControl(
                         duration: playback.duration,
                         currentTime: playback.estimatedCurrentTime,
@@ -1098,7 +1124,7 @@ struct RemotePlaybackControls: View {
                     }
 
                     if !compact {
-                        TimelineView(.periodic(from: .now, by: 1)) { _ in
+                        PlaybackProgressTimeline(isLive: playback.isPlaying) {
                             let safeDuration = max(1, playback.duration.isFinite ? playback.duration : 1)
                             let liveTime = playback.estimatedCurrentTime
                             let currentTime = min(max(scrubTime ?? liveTime, 0), safeDuration)
@@ -1766,7 +1792,7 @@ private struct WatchRemotePlaybackControls: View {
                 NowPlayingArtwork(coverArtId: song.coverArt, maxSize: 50)
                     .equatable()
 
-                TimelineView(.periodic(from: .now, by: 1)) { _ in
+                PlaybackProgressTimeline(isLive: playback.isPlaying) {
                     WatchProgressCard(
                         currentTime: playback.estimatedCurrentTime,
                         duration: playback.duration,

@@ -580,6 +580,7 @@ struct MacMiniPlayerBar: View {
                     currentTime: { player.currentTime },
                     duration: player.duration,
                     seek: { player.seek(to: $0) },
+                    progressIsLive: isPlaying,
                     previousDisabled: player.currentIndex == 0 && player.currentTime < 3,
                     nextDisabled: player.currentIndex >= player.queue.count - 1
                 )
@@ -608,6 +609,7 @@ struct MacMiniPlayerBar: View {
                     currentTime: { remote.estimatedCurrentTime },
                     duration: remote.duration,
                     seek: { deviceSyncManager.sendSeek(to: $0, targetDeviceID: remote.id) },
+                    progressIsLive: remote.isPlaying,
                     previousDisabled: remote.currentIndex == 0 && remote.currentTime < 3,
                     nextDisabled: remote.currentIndex >= remote.queue.count - 1
                 )
@@ -677,6 +679,7 @@ struct MacMiniPlayerBar: View {
         currentTime: @escaping () -> TimeInterval,
         duration: TimeInterval,
         seek: @escaping (TimeInterval) -> Void,
+        progressIsLive: Bool,
         previousDisabled: Bool,
         nextDisabled: Bool
     ) -> some View {
@@ -749,7 +752,8 @@ struct MacMiniPlayerBar: View {
             MiniPlayerProgressControl(
                 currentTime: currentTime,
                 duration: duration,
-                seek: seek
+                seek: seek,
+                isLive: progressIsLive
             )
         }
         .padding(.horizontal, WRhythmSpacing.md)
@@ -820,10 +824,11 @@ struct MiniPlayerProgressControl: View {
     let currentTime: () -> TimeInterval
     let duration: TimeInterval
     let seek: (TimeInterval) -> Void
+    let isLive: Bool
     @State private var scrubTime: TimeInterval?
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { _ in
+        PlaybackProgressTimeline(isLive: isLive) {
             let liveTime = sanitizedTime(currentTime())
             let displayedTime = min(max(scrubTime ?? liveTime, 0), safeDuration)
 
