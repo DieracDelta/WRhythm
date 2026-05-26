@@ -14,7 +14,7 @@ struct TracksView: View {
     @State private var artistResults: [Artist] = []
     @State private var isSearching = false
     @State private var errorMessage = ""
-#if !os(iOS)
+#if os(watchOS)
     @State private var presentedSheet: TracksSheet?
 #endif
     @State private var searchTask: Task<Void, Never>?
@@ -111,7 +111,7 @@ struct TracksView: View {
         .toolbar(.hidden, for: .navigationBar)
 #endif
         .wrhythmPageBackground()
-#if !os(iOS)
+#if os(watchOS)
         .toolbar {
             ToolbarItem(placement: .platformTopBarTrailing) {
                 WRhythmSearchToolbarButton(
@@ -126,30 +126,30 @@ struct TracksView: View {
         .sheet(item: $presentedSheet) { sheet in
             switch sheet {
             case .search:
-            PlatformSearchSheet(offlineMode ? "Offline Search" : "Search", onCancel: {
-                presentedSheet = nil
-            }) {
-                VStack(spacing: WRhythmSpacing.md) {
-                    TextField(offlineMode ? "Search offline music" : "Search music", text: $searchText)
-                        .platformSearchTextFieldStyle()
-                        .frame(maxWidth: .infinity)
+                PlatformSearchSheet(offlineMode ? "Offline Search" : "Search", onCancel: {
+                    presentedSheet = nil
+                }) {
+                    VStack(spacing: WRhythmSpacing.md) {
+                        TextField(offlineMode ? "Search offline music" : "Search music", text: $searchText)
+                            .platformSearchTextFieldStyle()
+                            .frame(maxWidth: .infinity)
 
-                    Button("Search") {
-                        presentedSheet = nil
-                        if !offlineMode {
-                            performSearch(query: searchText)
+                        Button("Search") {
+                            presentedSheet = nil
+                            if !offlineMode {
+                                performSearch(query: searchText)
+                            }
                         }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(searchText.isEmpty)
+                        .buttonStyle(.borderedProminent)
+                        .disabled(searchText.isEmpty)
 
-                    Spacer()
+                        Spacer()
+                    }
+                    .frame(maxWidth: 420)
+                    .frame(maxWidth: .infinity, alignment: .top)
+                    .padding(.horizontal, WRhythmSpacing.md)
+                    .padding(.top, WRhythmSpacing.lg)
                 }
-                .frame(maxWidth: 420)
-                .frame(maxWidth: .infinity, alignment: .top)
-                .padding(.horizontal, WRhythmSpacing.md)
-                .padding(.top, WRhythmSpacing.lg)
-            }
             }
         }
 #endif
@@ -361,21 +361,12 @@ struct TracksView: View {
             }
             .buttonStyle(.plain)
         }
-#elseif os(iOS)
+#elseif os(iOS) || os(macOS)
         WRhythmEmptyState(
             systemImage: "magnifyingglass",
             title: title,
             message: message
         )
-#else
-        WRhythmEmptyState(
-            systemImage: "magnifyingglass",
-            title: title,
-            message: message,
-            actionTitle: "Search"
-        ) {
-            presentedSheet = .search
-        }
 #endif
     }
 
@@ -461,7 +452,7 @@ struct TracksView: View {
 
     @ViewBuilder
     private func searchScaffold<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-#if os(iOS)
+#if os(iOS) || os(macOS)
         VStack(spacing: 0) {
             inlineSearchField
                 .padding(.horizontal, WRhythmSpacing.md)
@@ -475,7 +466,7 @@ struct TracksView: View {
 #endif
     }
 
-#if os(iOS)
+#if os(iOS) || os(macOS)
     private var inlineSearchField: some View {
         HStack(spacing: WRhythmSpacing.sm) {
             Image(systemName: "magnifyingglass")
@@ -483,7 +474,8 @@ struct TracksView: View {
                 .foregroundStyle(WRhythmTheme.accent)
 
             TextField(offlineMode ? "Search offline music" : "Search music", text: $searchText)
-                .textInputAutocapitalization(.never)
+                .textFieldStyle(.plain)
+                .platformAutocapitalizationNever()
                 .submitLabel(.search)
                 .onSubmit {
                     if !offlineMode {
@@ -507,6 +499,7 @@ struct TracksView: View {
             RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous)
                 .strokeBorder(WRhythmTheme.accent.opacity(0.24), lineWidth: 1)
         }
+        .frame(maxWidth: 620, alignment: .leading)
     }
 #endif
 
@@ -581,11 +574,13 @@ struct TracksView: View {
     }
 }
 
+#if os(watchOS)
 private enum TracksSheet: String, Identifiable {
     case search
 
     var id: String { rawValue }
 }
+#endif
 
 #Preview {
     NavigationStack {

@@ -174,12 +174,10 @@ struct RadioPlaylistsView: View {
                     }
                     .listRowBackground(Color.clear)
                 } else {
-                    WRhythmEmptyState(
-                        systemImage: "waveform.path.ecg",
-                        title: "No Advanced Generators",
-                        message: experimentalAudioMuseFeaturesEnabled
-                            ? "This server does not advertise sonicSimilarity or expose AudioMuse Alchemy"
-                            : "Enable experimental AudioMuse-AI features in Settings to probe custom generators"
+                    AdvancedPlaylistGenUnavailableView(
+                        sonicSimilaritySupported: api.sonicSimilaritySupported == true,
+                        audioMuseExperimentsEnabled: experimentalAudioMuseFeaturesEnabled,
+                        audioMuseAlchemySupported: api.audioMuseAlchemySupported == true
                     )
                     .listRowBackground(Color.clear)
                 }
@@ -290,6 +288,88 @@ struct CurrentPlaylistGenSummary: View {
         }
 
         downloadManager.saveRadioPlaylist(sourceSong: sourceSong, songs: player.playlistGenQueue)
+    }
+}
+
+private struct AdvancedPlaylistGenUnavailableView: View {
+    let sonicSimilaritySupported: Bool
+    let audioMuseExperimentsEnabled: Bool
+    let audioMuseAlchemySupported: Bool
+
+    private var bodyText: String {
+        if audioMuseExperimentsEnabled {
+            return "No advanced generator is available from this server right now."
+        }
+        return "OpenSubsonic support was not found. AudioMuse-AI probing is off."
+    }
+
+    var body: some View {
+        WRhythmCard(padding: WRhythmSpacing.md, style: .glass) {
+            VStack(alignment: .leading, spacing: WRhythmSpacing.md) {
+                HStack(alignment: .center, spacing: WRhythmSpacing.sm) {
+                    WRhythmIconBadge(
+                        systemImage: "wand.and.stars",
+                        tint: WRhythmTheme.playlistGen,
+                        size: 38
+                    )
+
+                    VStack(alignment: .leading, spacing: WRhythmSpacing.xxs) {
+                        Text("Advanced generators")
+                            .font(WRhythmTypography.rowTitle)
+                            .lineLimit(1)
+
+                        Text(bodyText)
+                            .font(WRhythmTypography.rowSubtitle)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                VStack(spacing: WRhythmSpacing.xs) {
+                    AdvancedGeneratorStatusRow(
+                        title: "OpenSubsonic sonicSimilarity",
+                        isAvailable: sonicSimilaritySupported
+                    )
+
+                    AdvancedGeneratorStatusRow(
+                        title: "AudioMuse-AI Alchemy",
+                        isAvailable: audioMuseExperimentsEnabled && audioMuseAlchemySupported,
+                        note: audioMuseExperimentsEnabled ? nil : "Enable in Settings"
+                    )
+                }
+            }
+        }
+    }
+}
+
+private struct AdvancedGeneratorStatusRow: View {
+    let title: String
+    let isAvailable: Bool
+    var note: String?
+
+    var body: some View {
+        HStack(spacing: WRhythmSpacing.sm) {
+            Image(systemName: isAvailable ? "checkmark.circle.fill" : "minus.circle")
+                .foregroundStyle(isAvailable ? WRhythmTheme.success : .secondary)
+                .imageScale(.medium)
+
+            Text(title)
+                .font(WRhythmTypography.metadata)
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+
+            Spacer(minLength: WRhythmSpacing.sm)
+
+            if let note {
+                Text(note)
+                    .font(WRhythmTypography.metadata)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.horizontal, WRhythmSpacing.sm)
+        .padding(.vertical, WRhythmSpacing.xs)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius))
     }
 }
 
