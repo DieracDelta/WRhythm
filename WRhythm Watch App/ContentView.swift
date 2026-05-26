@@ -7,14 +7,13 @@
 
 import SwiftUI
 
-#if os(macOS)
 extension Notification.Name {
     static let wrhythmShowPlaylistGen = Notification.Name("wrhythmShowPlaylistGen")
 }
-#endif
 
 struct ContentView: View {
     @ObservedObject var api = NavidromeAPI.shared
+    @ObservedObject var player = AudioPlayer.shared
     @State private var hasPresentedInitialLoading = false
 #if os(macOS)
     @State private var selectedMacDestination: MacDestination? = .nowPlaying
@@ -63,6 +62,15 @@ struct ContentView: View {
 #if os(macOS)
         .onReceive(NotificationCenter.default.publisher(for: .wrhythmShowPlaylistGen)) { _ in
             selectedMacDestination = .playlistGen
+        }
+#endif
+#if os(iOS)
+        .safeAreaInset(edge: .bottom) {
+            if player.playlistGenIsGenerating {
+                PlaylistGenerationStatusBanner()
+                    .padding(.horizontal, WRhythmSpacing.md)
+                    .padding(.bottom, WRhythmSpacing.sm)
+            }
         }
 #endif
     }
@@ -159,6 +167,45 @@ struct ContentView: View {
 
 #Preview {
     ContentView()
+}
+
+private struct PlaylistGenerationStatusBanner: View {
+    @ObservedObject private var player = AudioPlayer.shared
+
+    var body: some View {
+        HStack(spacing: WRhythmSpacing.sm) {
+            ProgressView()
+                .controlSize(.small)
+                .tint(WRhythmTheme.playlistGen)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Generating Playlist")
+                    .font(WRhythmTypography.metadataEmphasis)
+                if let title = player.playlistGenGeneratingTitle {
+                    Text(title)
+                        .font(WRhythmTypography.metadata)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer(minLength: WRhythmSpacing.sm)
+
+            Button("Cancel", role: .cancel) {
+                player.cancelPlaylistGeneration()
+            }
+            .font(WRhythmTypography.metadataEmphasis)
+            .buttonStyle(.bordered)
+        }
+        .padding(.horizontal, WRhythmSpacing.md)
+        .padding(.vertical, WRhythmSpacing.sm)
+        .background(.regularMaterial, in: Capsule(style: .continuous))
+        .overlay {
+            Capsule(style: .continuous)
+                .strokeBorder(WRhythmTheme.playlistGen.opacity(0.32), lineWidth: 1)
+        }
+        .accessibilityElement(children: .combine)
+    }
 }
 
 #if os(macOS)

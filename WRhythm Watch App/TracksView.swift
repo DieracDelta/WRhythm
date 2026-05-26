@@ -137,7 +137,7 @@ struct TracksView: View {
                         Button("Search") {
                             presentedSheet = nil
                             if !offlineMode {
-                                performSearch(query: searchText)
+                                performSearch(query: searchText, debounce: false)
                             }
                         }
                         .buttonStyle(.borderedProminent)
@@ -479,9 +479,25 @@ struct TracksView: View {
                 .submitLabel(.search)
                 .onSubmit {
                     if !offlineMode {
-                        performSearch(query: searchText)
+                        performSearch(query: searchText, debounce: false)
                     }
                 }
+
+            if isSearching {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(WRhythmTheme.accent)
+                    .accessibilityLabel("Searching")
+            } else if !offlineMode && !searchText.isEmpty {
+                Button {
+                    performSearch(query: searchText, debounce: false)
+                } label: {
+                    Image(systemName: "magnifyingglass.circle.fill")
+                        .foregroundStyle(WRhythmTheme.accent)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Search now")
+            }
 
             if !searchText.isEmpty {
                 Button(action: clearSearch) {
@@ -519,9 +535,10 @@ struct TracksView: View {
         errorMessage = ""
     }
 
-    private func performSearch(query: String) {
+    private func performSearch(query: String, debounce: Bool = true) {
         searchTask?.cancel()
-        guard !query.isEmpty else {
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuery.isEmpty else {
             searchResults = []
             albumResults = []
             artistResults = []
@@ -529,24 +546,25 @@ struct TracksView: View {
             return
         }
 
-        // Debounce the search
+        isSearching = true
+        errorMessage = ""
+
         searchTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 300_000_000) // 300ms debounce
+            if debounce {
+                try? await Task.sleep(nanoseconds: 300_000_000) // 300ms debounce
+            }
 
             guard SearchResultOwnershipPolicy.shouldApply(
-                query: query,
-                currentQuery: searchText,
+                query: trimmedQuery,
+                currentQuery: searchText.trimmingCharacters(in: .whitespacesAndNewlines),
                 isCancelled: Task.isCancelled
             ) else { return } // Check if search text changed
 
-            isSearching = true
-            errorMessage = ""
-
             do {
-                let result = try await NavidromeAPI.shared.search(query: query)
+                let result = try await searchWithRetry(query: trimmedQuery)
                 guard SearchResultOwnershipPolicy.shouldApply(
-                    query: query,
-                    currentQuery: searchText,
+                    query: trimmedQuery,
+                    currentQuery: searchText.trimmingCharacters(in: .whitespacesAndNewlines),
                     isCancelled: Task.isCancelled
                 ) else { return }
                 self.artistResults = result.artist ?? []
@@ -557,15 +575,31 @@ struct TracksView: View {
                 print("🔍 Search results: \(self.artistResults.count) artists, \(self.albumResults.count) albums, \(self.searchResults.count) songs")
             } catch {
                 guard SearchResultOwnershipPolicy.shouldApply(
-                    query: query,
-                    currentQuery: searchText,
+                    query: trimmedQuery,
+                    currentQuery: searchText.trimmingCharacters(in: .whitespacesAndNewlines),
                     isCancelled: Task.isCancelled
                 ) else { return }
-                self.errorMessage = error.localizedDescription
+                self.errorMessage = searchErrorMessage(error)
                 self.isSearching = false
                 print("❌ Search error: \(error)")
             }
         }
+    }
+
+    private func searchWithRetry(query: String) async throws -> SearchResult {
+        do {
+            return try await NavidromeAPI.shared.search(query: query)
+        } catch {
+            guard SearchRetryPolicy.isRetryable(error), !Task.isCancelled else {
+                throw error
+            }
+            try await Task.sleep(nanoseconds: 700_000_000)
+            return try await NavidromeAPI.shared.search(query: query)
+        }
+    }
+
+    private func searchErrorMessage(_ error: Error) -> String {
+        SearchRetryPolicy.userMessage(for: error)
     }
 
     private func formatDuration(_ seconds: Int) -> String {

@@ -21,6 +21,25 @@ struct SearchResultOwnershipPolicy: Sendable {
     }
 }
 
+struct SearchRetryPolicy: Sendable {
+    static func isRetryable(_ error: Error) -> Bool {
+        guard let urlError = error as? URLError else { return false }
+        switch urlError.code {
+        case .timedOut, .networkConnectionLost, .notConnectedToInternet, .cannotConnectToHost, .cannotFindHost:
+            return true
+        default:
+            return false
+        }
+    }
+
+    static func userMessage(for error: Error) -> String {
+        if isRetryable(error) {
+            return "Search failed after retrying. Check the server connection and try again."
+        }
+        return error.localizedDescription
+    }
+}
+
 @MainActor
 final class LibraryDataManager: ObservableObject {
     // MARK: - Artists

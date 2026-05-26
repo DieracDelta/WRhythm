@@ -3119,6 +3119,20 @@ struct PlaybackSyncPolicyTests {
         #expect(queue.filter { $0.artist == "Cryoshell" }.count == 11)
     }
 
+    @Test func playlistGenerationWarnsWhenSimilarityReturnsOnlyOneAlbum() throws {
+        let warning = try #require(PlaylistGenerationPolicy.shortResultWarning(
+            similarCount: 11,
+            requestedCount: 130,
+            finalCount: 130,
+            fallbackCount: 119
+        ))
+
+        #expect(warning.message == "Only 11 similar songs found")
+        #expect(warning.details.contains("Requested 130"))
+        #expect(warning.details.contains("returned 11 similar songs"))
+        #expect(warning.details.contains("Added 119 fallback songs"))
+    }
+
     @Test func playlistGenerationCapsOverfullSimilarityResultsToRequestedCount() {
         let source = makeSong(id: "source")
         let similarSongs = (0..<160).map { makeSong(id: "similar-\($0)") }
@@ -3133,6 +3147,14 @@ struct PlaybackSyncPolicyTests {
         #expect(queue.count == 100)
         #expect(queue.first?.id == source.id)
         #expect(queue.last?.id == "similar-98")
+    }
+
+    @Test func searchRetryPolicyRetriesTransientTransportFailuresOnly() {
+        #expect(SearchRetryPolicy.isRetryable(URLError(.timedOut)))
+        #expect(SearchRetryPolicy.isRetryable(URLError(.networkConnectionLost)))
+        #expect(SearchRetryPolicy.isRetryable(URLError(.cannotConnectToHost)))
+        #expect(!SearchRetryPolicy.isRetryable(URLError(.badServerResponse)))
+        #expect(!SearchRetryPolicy.isRetryable(NavidromeError.authenticationFailed))
     }
 
     @Test(arguments: [0x1A2B3C4D, 0xBEEFF00D, 0xC0FFEE])

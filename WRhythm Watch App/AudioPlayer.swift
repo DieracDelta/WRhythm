@@ -51,7 +51,12 @@ struct PlaybackRetryPolicy: Sendable {
 }
 
 struct PlaylistGenerationPolicy: Sendable {
-    static func queue(
+    struct Warning: Sendable, Equatable {
+        let message: String
+        let details: String
+    }
+
+    nonisolated static func queue(
         sourceSong: Song,
         primarySongs: [Song],
         fallbackSongs: [Song],
@@ -78,8 +83,31 @@ struct PlaylistGenerationPolicy: Sendable {
         return queue
     }
 
-    static func needsFallback(currentCount: Int, requestedCount: Int) -> Bool {
+    nonisolated static func needsFallback(currentCount: Int, requestedCount: Int) -> Bool {
         currentCount < max(requestedCount, 1)
+    }
+
+    nonisolated static func shortResultWarning(
+        similarCount: Int,
+        requestedCount: Int,
+        finalCount: Int,
+        fallbackCount: Int
+    ) -> Warning? {
+        let targetCount = max(requestedCount, 1)
+        guard similarCount < targetCount else { return nil }
+
+        var details = "Requested \(targetCount). The server returned \(similarCount) similar songs."
+        if fallbackCount > 0 {
+            details += " Added \(fallbackCount) fallback songs."
+        }
+        if finalCount < targetCount {
+            details += " Generated \(finalCount) total."
+        }
+
+        return Warning(
+            message: "Only \(similarCount) similar songs found",
+            details: details
+        )
     }
 }
 
@@ -427,6 +455,8 @@ class AudioPlayer: NSObject, ObservableObject {
     @Published private(set) var playlistGenGeneratingTitle: String?
     @Published private(set) var playlistGenErrorMessage: String?
     @Published private(set) var playlistGenErrorDetails: String?
+    @Published private(set) var playlistGenWarningMessage: String?
+    @Published private(set) var playlistGenWarningDetails: String?
     @Published var isShuffled = false
     @Published var repeatMode: RepeatMode = .off
     @Published var volume: Double = 1.0 {
@@ -489,6 +519,18 @@ class AudioPlayer: NSObject, ObservableObject {
             case .noSongs:
                 return "No similar songs were returned by the server."
             }
+        }
+    }
+
+    private struct PlaylistGenerationResult: Sendable {
+        let songs: [Song]
+        let warning: PlaylistGenerationPolicy.Warning?
+
+        nonisolated static func songs(
+            _ songs: [Song],
+            warning: PlaylistGenerationPolicy.Warning? = nil
+        ) -> PlaylistGenerationResult {
+            PlaylistGenerationResult(songs: songs, warning: warning)
         }
     }
 
@@ -1085,7 +1127,13 @@ class AudioPlayer: NSObject, ObservableObject {
         )
     }
 
-    func playGeneratedPlaylist(sourceTitle: String, sourceArtist: String?, songs: [Song], startingAt index: Int = 0) {
+    func playGeneratedPlaylist(
+        sourceTitle: String,
+        sourceArtist: String?,
+        songs: [Song],
+        startingAt index: Int = 0,
+        warning: PlaylistGenerationPolicy.Warning? = nil
+    ) {
         guard !songs.isEmpty else { return }
         playlistGenTask?.cancel()
         playlistGenTask = nil
@@ -1094,6 +1142,8 @@ class AudioPlayer: NSObject, ObservableObject {
         playlistGenGeneratingTitle = nil
         playlistGenErrorMessage = nil
         playlistGenErrorDetails = nil
+        playlistGenWarningMessage = warning?.message
+        playlistGenWarningDetails = warning?.details
         playlistGenSourceTitle = sourceTitle
         playlistGenSourceArtist = sourceArtist
         playlistGenQueue = songs
@@ -1109,6 +1159,8 @@ class AudioPlayer: NSObject, ObservableObject {
         playlistGenQueue = []
         playlistGenSourceTitle = nil
         playlistGenSourceArtist = nil
+        playlistGenWarningMessage = nil
+        playlistGenWarningDetails = nil
     }
 
     func dismissPlaylistGenError() {
@@ -1153,7 +1205,13 @@ class AudioPlayer: NSObject, ObservableObject {
                 throw PlaylistGenerationError.noSongs
             }
 
-            return queue
+            let warning = PlaylistGenerationPolicy.shortResultWarning(
+                similarCount: primaryQueue.count,
+                requestedCount: requestedCount,
+                finalCount: queue.count,
+                fallbackCount: max(queue.count - primaryQueue.count, 0)
+            )
+            return .songs(queue, warning: warning)
         }
     }
 
@@ -1170,7 +1228,7 @@ class AudioPlayer: NSObject, ObservableObject {
             guard queue.count > 1 else {
                 throw PlaylistGenerationError.noSongs
             }
-            return queue
+            return .songs(queue)
         }
     }
 
@@ -1186,7 +1244,7 @@ class AudioPlayer: NSObject, ObservableObject {
             guard !songs.isEmpty else {
                 throw PlaylistGenerationError.noSongs
             }
-            return songs
+            return .songs(songs)
         }
     }
 
@@ -1206,14 +1264,14 @@ class AudioPlayer: NSObject, ObservableObject {
             guard queue.count > 1 else {
                 throw PlaylistGenerationError.noSongs
             }
-            return queue
+            return .songs(queue)
         }
     }
 
     private func startPlaylistGeneration(
         title: String,
         artist: String?,
-        generateSongs: @escaping @Sendable () async throws -> [Song]
+        generateSongs: @escaping @Sendable () async throws -> PlaylistGenerationResult
     ) {
         playlistGenTask?.cancel()
         playlistGenTask = nil
@@ -1234,6 +1292,8 @@ class AudioPlayer: NSObject, ObservableObject {
         playlistGenGeneratingTitle = title
         playlistGenErrorMessage = nil
         playlistGenErrorDetails = nil
+        playlistGenWarningMessage = nil
+        playlistGenWarningDetails = nil
         playlistGenQueue = []
         playlistGenSourceTitle = title
         playlistGenSourceArtist = artist
@@ -1246,13 +1306,18 @@ class AudioPlayer: NSObject, ObservableObject {
 
         playlistGenTask = Task { [weak self] in
             do {
-                let generatedQueue = try await generateSongs()
+                let generationResult = try await generateSongs()
                 try Task.checkCancellation()
 
                 await MainActor.run {
                     guard let self, self.playlistGenIsGenerating else { return }
                     self.playlistGenTask = nil
-                    self.playGeneratedPlaylist(sourceTitle: title, sourceArtist: artist, songs: generatedQueue)
+                    self.playGeneratedPlaylist(
+                        sourceTitle: title,
+                        sourceArtist: artist,
+                        songs: generationResult.songs,
+                        warning: generationResult.warning
+                    )
                 }
             } catch is CancellationError {
                 await MainActor.run {

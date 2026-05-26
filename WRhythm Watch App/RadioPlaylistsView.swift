@@ -253,6 +253,13 @@ struct CurrentPlaylistGenSummary: View {
                     tint: WRhythmTheme.playlistGen
                 )
 
+                if let warning = player.playlistGenWarningMessage {
+                    PlaylistGenWarningRow(
+                        message: warning,
+                        details: player.playlistGenWarningDetails
+                    )
+                }
+
                 HStack(spacing: 8) {
                     Button(action: playCurrentPlaylist) {
                         Label("Play", systemImage: "play.fill")
@@ -288,6 +295,38 @@ struct CurrentPlaylistGenSummary: View {
         }
 
         downloadManager.saveRadioPlaylist(sourceSong: sourceSong, songs: player.playlistGenQueue)
+    }
+}
+
+private struct PlaylistGenWarningRow: View {
+    let message: String
+    let details: String?
+
+    var body: some View {
+        HStack(alignment: .top, spacing: WRhythmSpacing.sm) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(WRhythmTheme.warning)
+                .imageScale(.medium)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(message)
+                    .font(WRhythmTypography.metadataEmphasis)
+                if let details {
+                    Text(details)
+                        .font(WRhythmTypography.metadata)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .padding(.horizontal, WRhythmSpacing.sm)
+        .padding(.vertical, WRhythmSpacing.xs)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(WRhythmTheme.warning.opacity(0.12), in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius))
+        .overlay {
+            RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius)
+                .strokeBorder(WRhythmTheme.warning.opacity(0.24), lineWidth: 1)
+        }
     }
 }
 
