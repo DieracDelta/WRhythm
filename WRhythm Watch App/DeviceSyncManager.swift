@@ -419,6 +419,21 @@ struct WatchConnectivityPayloadQueuePolicy: Sendable {
     }
 }
 
+struct WatchConnectivityCompanionPresencePolicy: Sendable {
+    nonisolated static func shouldExposeCompanion(
+        activationSucceeded: Bool,
+        hasUsableCompanion: Bool,
+        syncModeEnabled: Bool,
+        credentialSyncEnabled: Bool,
+        hasKnownWRhythmPeer: Bool
+    ) -> Bool {
+        activationSucceeded
+            && hasUsableCompanion
+            && (syncModeEnabled || credentialSyncEnabled)
+            && !hasKnownWRhythmPeer
+    }
+}
+
 struct WatchConnectivityCredentialBootstrapPolicy: Sendable {
     nonisolated static func shouldRequestCredentialsOnBootstrap(
         credentialSyncEnabled: Bool,
@@ -546,6 +561,8 @@ struct PlaybackCommandReceivePolicy: Sendable {
 }
 
 struct PlaybackControlTargetPolicy: Sendable {
+    static let watchConnectivityCompanionDeviceID = "watchconnectivity-companion"
+
     static func resolvedDefaultRemoteTargetID(
         selectedTargetID: String,
         localDeviceID: String,
@@ -557,6 +574,10 @@ struct PlaybackControlTargetPolicy: Sendable {
         }
 
         return selectedTargetID
+    }
+
+    static func envelopeTargetDeviceID(for selectedTargetID: String?) -> String? {
+        selectedTargetID == watchConnectivityCompanionDeviceID ? nil : selectedTargetID
     }
 }
 
@@ -1394,7 +1415,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             PlaybackTargetDevice(id: localDeviceID, name: localDeviceName, platform: platformName, isLocal: true)
         ]
 
-        let peers = peerInfos.values
+        let peers = selectablePeerInfos()
             .filter { $0.syncModeEnabled }
             .filter { isPeerSelectable($0) }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
@@ -1428,6 +1449,9 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         if deviceID == localDeviceID {
             return localPeerInfo()
         }
+        if deviceID == PlaybackControlTargetPolicy.watchConnectivityCompanionDeviceID {
+            return watchConnectivityCompanionPeerInfo()
+        }
         return peerInfos[deviceID]
     }
 
@@ -1456,6 +1480,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
     func requestPlaybackSyncRefresh() {
         guard syncModeEnabled || credentialSyncEnabled else { return }
         configureTransports()
+        updateConnectedDeviceNames()
         _ = sendEnvelope(.init(kind: .syncRequest, sender: localPeerInfo(), command: nil, credentials: nil, targetDeviceID: nil))
         sendCurrentSyncState(includeHello: true)
     }
@@ -2067,6 +2092,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         watchConnectivityActivationRetryAttempt = 0
         watchConnectivityActivationRetryTask?.cancel()
         watchConnectivityActivationRetryTask = nil
+        updateConnectedDeviceNames()
         sendCurrentSyncState(includeHello: true)
         maybeSendCredentialsToInterestedPeers()
         if WatchConnectivityCredentialBootstrapPolicy.shouldRequestCredentialsOnBootstrap(
@@ -2205,6 +2231,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             sharedSession = nil
         }
 #endif
+        updateConnectedDeviceNames()
     }
 
     private func localPeerInfo() -> SyncPeerInfo {
@@ -2216,6 +2243,25 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             credentialSyncEnabled: credentialSyncEnabled,
             hasCredentials: NavidromeAPI.shared.hasCredentials
         )
+    }
+
+    private func selectablePeerInfos() -> [SyncPeerInfo] {
+        var peers = Array(peerInfos.values)
+        if let companion = watchConnectivityCompanionPeerInfo() {
+            peers.append(companion)
+        }
+        return peers
+    }
+
+    private func updateConnectedDeviceNames() {
+        var names = Set(peerInfos.values.map(\.name))
+#if os(iOS) || os(macOS)
+        names.formUnion(peerDisplayNames.values)
+#endif
+        if let companion = watchConnectivityCompanionPeerInfo() {
+            names.insert(companion.name)
+        }
+        connectedDeviceNames = names.sorted()
     }
 
     private func refreshLocalSharedSessionIfNeeded() {
@@ -2326,7 +2372,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             selectedPlaybackTargetID = localDeviceID
         }
 
-        connectedDeviceNames = Array(Set(peerInfos.values.map(\.name))).sorted()
+        updateConnectedDeviceNames()
         pauseSharedPlaybackForDisconnectedOutput(deviceID)
     }
 
@@ -2423,8 +2469,9 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         guard syncModeEnabled else { return false }
         let command = command.withCommandID()
         let needsAcknowledgment = commandNeedsPlaybackAcknowledgment(command)
+        let envelopeTargetDeviceID = PlaybackControlTargetPolicy.envelopeTargetDeviceID(for: targetDeviceID)
 
-        if let targetDeviceID {
+        if let targetDeviceID, envelopeTargetDeviceID != nil {
             let key = pendingCommandKey(for: targetDeviceID, action: command.action)
             clearPendingCommands(for: targetDeviceID, invalidatedBy: command.action, preservingKey: key)
             if PendingPlaybackCommandPolicy.shouldReplacePendingCommand(
@@ -2440,9 +2487,9 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             )
         }
 
-        let sent = sendEnvelope(.init(kind: .playbackCommand, sender: localPeerInfo(), command: command, credentials: nil, targetDeviceID: targetDeviceID))
+        let sent = sendEnvelope(.init(kind: .playbackCommand, sender: localPeerInfo(), command: command, credentials: nil, targetDeviceID: envelopeTargetDeviceID))
 
-        if let targetDeviceID {
+        if let targetDeviceID, envelopeTargetDeviceID != nil {
             schedulePendingCommandRetry(for: targetDeviceID, action: command.action)
         }
         return sent
@@ -2541,7 +2588,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             deviceIDsByPeerDisplayName[peerDisplayName] = envelope.sender.id
         }
 #endif
-        connectedDeviceNames = Array(Set(peerInfos.values.map(\.name))).sorted()
+        updateConnectedDeviceNames()
         relayEnvelopeIfNeeded(envelope, receivedVia: receivedTransport)
 
         switch envelope.kind {
@@ -2937,6 +2984,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
 
     private func handleWatchConnectivityReachabilityChanged(isReachable: Bool) {
         if isReachable {
+            updateConnectedDeviceNames()
             sendCurrentSyncState(includeHello: true)
             maybeSendCredentialsToInterestedPeers()
             return
@@ -2944,6 +2992,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
 
         guard let peer = watchConnectivityPeerInfo() else { return }
         handlePeerUnavailable(deviceID: peer.id)
+        updateConnectedDeviceNames()
     }
 
     private func watchConnectivityPeerInfo() -> SyncPeerInfo? {
@@ -2962,6 +3011,62 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         return peerInfos.values.first {
             SyncPlatformKind(platformName: $0.platform) == remotePlatform
         }
+    }
+
+    private func watchConnectivityCompanionPeerInfo() -> SyncPeerInfo? {
+        let localPlatform = SyncPlatformKind(platformName: platformName)
+        let remotePlatform: SyncPlatformKind
+        let remoteName: String
+        let hasUsableCompanion: Bool
+        let activationSucceeded: Bool
+
+        switch localPlatform {
+#if os(iOS)
+        case .iPhone:
+            remotePlatform = .appleWatch
+            remoteName = "Apple Watch"
+            activationSucceeded = watchSession?.activationState == .activated
+            hasUsableCompanion = (watchSession?.isPaired ?? false) && (watchSession?.isWatchAppInstalled ?? false)
+#endif
+#if os(watchOS)
+        case .appleWatch:
+            remotePlatform = .iPhone
+            remoteName = "iPhone"
+            activationSucceeded = watchSession?.activationState == .activated
+            hasUsableCompanion = watchSession?.isReachable ?? false
+#endif
+        case .mac, .other:
+            return nil
+#if os(iOS)
+        case .appleWatch:
+            return nil
+#elseif os(watchOS)
+        case .iPhone:
+            return nil
+#endif
+        }
+
+        let hasKnownPeer = peerInfos.values.contains {
+            SyncPlatformKind(platformName: $0.platform) == remotePlatform
+        }
+        guard WatchConnectivityCompanionPresencePolicy.shouldExposeCompanion(
+            activationSucceeded: activationSucceeded,
+            hasUsableCompanion: hasUsableCompanion,
+            syncModeEnabled: syncModeEnabled,
+            credentialSyncEnabled: credentialSyncEnabled,
+            hasKnownWRhythmPeer: hasKnownPeer
+        ) else {
+            return nil
+        }
+
+        return SyncPeerInfo(
+            id: PlaybackControlTargetPolicy.watchConnectivityCompanionDeviceID,
+            name: remoteName,
+            platform: remotePlatform == .appleWatch ? "Apple Watch" : "iPhone",
+            syncModeEnabled: syncModeEnabled,
+            credentialSyncEnabled: credentialSyncEnabled,
+            hasCredentials: false
+        )
     }
 #endif
 
@@ -3116,7 +3221,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             handlePeerUnavailable(deviceID: deviceID)
         }
 
-        connectedDeviceNames = Array(Set(peerInfos.values.map(\.name))).sorted()
+        updateConnectedDeviceNames()
     }
 #endif
 }
@@ -3193,7 +3298,7 @@ extension DeviceSyncManager: MCSessionDelegate {
             case .connected:
                 manager.resetMultipeerBackoff(for: peerID)
                 manager.peerDisplayNames[peerID] = peerID.displayName
-                manager.connectedDeviceNames = Array(Set(manager.peerDisplayNames.values)).sorted()
+                manager.updateConnectedDeviceNames()
                 print("✅ Sync peer connected: \(peerID.displayName)")
                 manager.sendCurrentSyncState(includeHello: true)
                 manager.maybeSendCredentialsToInterestedPeers()

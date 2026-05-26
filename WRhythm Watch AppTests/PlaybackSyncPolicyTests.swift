@@ -1002,6 +1002,47 @@ struct PlaybackSyncPolicyTests {
         ) == false)
     }
 
+    @Test func pairedWatchCanBeShownBeforeWRhythmHelloArrives() {
+        #expect(WatchConnectivityCompanionPresencePolicy.shouldExposeCompanion(
+            activationSucceeded: true,
+            hasUsableCompanion: true,
+            syncModeEnabled: true,
+            credentialSyncEnabled: false,
+            hasKnownWRhythmPeer: false
+        ) == true)
+        #expect(WatchConnectivityCompanionPresencePolicy.shouldExposeCompanion(
+            activationSucceeded: true,
+            hasUsableCompanion: true,
+            syncModeEnabled: true,
+            credentialSyncEnabled: false,
+            hasKnownWRhythmPeer: true
+        ) == false)
+        #expect(WatchConnectivityCompanionPresencePolicy.shouldExposeCompanion(
+            activationSucceeded: true,
+            hasUsableCompanion: false,
+            syncModeEnabled: true,
+            credentialSyncEnabled: false,
+            hasKnownWRhythmPeer: false
+        ) == false)
+        #expect(WatchConnectivityCompanionPresencePolicy.shouldExposeCompanion(
+            activationSucceeded: false,
+            hasUsableCompanion: true,
+            syncModeEnabled: true,
+            credentialSyncEnabled: false,
+            hasKnownWRhythmPeer: false
+        ) == false)
+    }
+
+    @Test func watchConnectivityPlaceholderRoutesCommandsAsUntargetedDirectPeerCommands() {
+        #expect(PlaybackControlTargetPolicy.envelopeTargetDeviceID(for: PlaybackControlTargetPolicy.watchConnectivityCompanionDeviceID) == nil)
+        #expect(PlaybackControlTargetPolicy.envelopeTargetDeviceID(for: "real-watch-device-id") == "real-watch-device-id")
+        #expect(PlaybackCommandReceivePolicy.shouldApplyNormalCommand(
+            action: .pause,
+            targetDeviceID: nil,
+            localDeviceID: "watch"
+        ) == true)
+    }
+
     @Test func watchConnectivityQueuesDurablePayloadsAfterActivationWithoutReachability() {
         #expect(WatchConnectivityPayloadQueuePolicy.canQueueDurablePayload(activationSucceeded: true) == true)
         #expect(WatchConnectivityPayloadQueuePolicy.canQueueDurablePayload(activationSucceeded: false) == false)
