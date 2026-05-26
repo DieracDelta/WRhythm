@@ -238,13 +238,18 @@ enum WRhythmFont {
         guard !didRegister else { return }
         didRegister = true
 
+        var registeredNames = Set(CTFontManagerCopyAvailablePostScriptNames() as? [String] ?? [])
         for fileName in fileNames {
+            guard !registeredNames.contains(fileName) else { continue }
+
             let url = Bundle.main.url(forResource: fileName, withExtension: "ttf", subdirectory: "Resources/Fonts")
                 ?? Bundle.main.url(forResource: fileName, withExtension: "ttf")
             guard let url else { continue }
 
             var error: Unmanaged<CFError>?
-            CTFontManagerRegisterFontsForURL(url as CFURL, .process, &error)
+            if CTFontManagerRegisterFontsForURL(url as CFURL, .process, &error) {
+                registeredNames.insert(fileName)
+            }
         }
     }
 
