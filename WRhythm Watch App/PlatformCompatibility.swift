@@ -1138,6 +1138,7 @@ struct WRhythmEmptyState: View {
 }
 
 struct WRhythmLoadingState: View {
+    @Environment(\.colorScheme) private var colorScheme
     let title: String
     var message: String?
     var systemImage = "arrow.triangle.2.circlepath"
@@ -1149,11 +1150,61 @@ struct WRhythmLoadingState: View {
     }
 
     var body: some View {
-        WRhythmEmptyState(systemImage: systemImage, title: title, message: message)
-            .overlay {
-                ProgressView()
-                    .padding(.top, 96)
+        VStack(spacing: WRhythmSpacing.md) {
+            Image(systemName: systemImage)
+                .font(.system(size: 38, weight: .semibold))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundColor(.secondary)
+                .frame(width: 72, height: 72)
+                .background(.regularMaterial, in: Circle())
+
+            VStack(spacing: WRhythmSpacing.xs) {
+                Text(title)
+                    .font(WRhythmTypography.featureTitle)
+                    .multilineTextAlignment(.center)
+
+                if let message, !message.isEmpty {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                }
             }
+
+            ProgressView()
+                .tint(WRhythmTheme.accent)
+                .padding(.top, WRhythmSpacing.xs)
+        }
+        .padding(24)
+        .frame(maxWidth: 360)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.cornerRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: WRhythmVisual.cornerRadius, style: .continuous)
+                .strokeBorder(WRhythmTheme.surfaceStroke(for: colorScheme), lineWidth: 1)
+        }
+        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+struct WRhythmAppLoadingView: View {
+    var body: some View {
+        Image("WRhythmLogoYellow")
+            .resizable()
+            .scaledToFit()
+            .frame(width: logoSize, height: logoSize)
+            .accessibilityLabel("WRhythm")
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .wrhythmPageBackground()
+    }
+
+    private var logoSize: CGFloat {
+#if os(watchOS)
+        64
+#else
+        96
+#endif
     }
 }
 

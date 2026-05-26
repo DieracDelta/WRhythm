@@ -15,6 +15,7 @@ extension Notification.Name {
 
 struct ContentView: View {
     @ObservedObject var api = NavidromeAPI.shared
+    @State private var hasPresentedInitialLoading = false
 #if os(macOS)
     @State private var selectedMacDestination: MacDestination? = .nowPlaying
 #else
@@ -24,93 +25,18 @@ struct ContentView: View {
 
     var body: some View {
         Group {
-            if api.isAuthenticated {
-#if os(macOS)
-                MacContentLayout(selection: $selectedMacDestination)
-#elseif os(watchOS)
-                TabView(selection: $selectedTab) {
-                    NavigationStack {
-                        NowPlayingView()
-                    }
-                    .tag(0)
-
-                    NavigationStack {
-                        MenuView()
-                    }
-                    .tag(1)
-                }
-#else
-                TabView(selection: $selectedTab) {
-                    NavigationStack {
-                        MenuView()
-                    }
-#if os(iOS)
-                    .toolbar(.hidden, for: .navigationBar)
-                    .navigationBarHidden(true)
-#endif
-                        .tabItem {
-                            Label("Library", systemImage: "square.grid.2x2")
-                        }
-                        .tag(0)
-
-                    NavigationStack {
-                        TracksView()
-                    }
-#if os(iOS)
-                    .toolbar(.hidden, for: .navigationBar)
-                    .navigationBarHidden(true)
-#endif
-                    .tabItem {
-                        Label("Search", systemImage: "magnifyingglass")
-                    }
-                    .tag(1)
-
-                    NavigationStack {
-                        NowPlayingView()
-                    }
-#if os(iOS)
-                    .toolbar(.hidden, for: .navigationBar)
-                    .navigationBarHidden(true)
-#endif
-                    .tabItem {
-                        Label("Playing", systemImage: "play.circle.fill")
-                    }
-                    .tag(2)
-
-#if os(iOS)
-                    NavigationStack {
-                        PhoneQueueView()
-                    }
-                    .toolbar(.hidden, for: .navigationBar)
-                    .navigationBarHidden(true)
-                    .tabItem {
-                        Label("Queue", systemImage: "text.line.first.and.arrowtriangle.forward")
-                    }
-                    .tag(3)
-#endif
-
-                    NavigationStack {
-                        DownloadsView()
-                    }
-#if os(iOS)
-                    .toolbar(.hidden, for: .navigationBar)
-                    .navigationBarHidden(true)
-#endif
-                    .tabItem {
-                        Label("Downloads", systemImage: "arrow.down.circle")
-                    }
-                    .tag(4)
-                }
-#if os(iOS)
-                .toolbarBackground(.visible, for: .tabBar)
-                .toolbarBackground(.ultraThinMaterial, for: .tabBar)
-#endif
-#endif
+            if hasPresentedInitialLoading {
+                appContent
             } else {
-                LoginView()
+                WRhythmAppLoadingView()
             }
         }
         .wrhythmPageBackground()
+        .task {
+            guard !hasPresentedInitialLoading else { return }
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            hasPresentedInitialLoading = true
+        }
 #if os(macOS)
         .macSpacebarPlaybackShortcut()
 #endif
@@ -139,6 +65,95 @@ struct ContentView: View {
             selectedMacDestination = .playlistGen
         }
 #endif
+    }
+
+    @ViewBuilder
+    private var appContent: some View {
+        if api.isAuthenticated {
+#if os(macOS)
+            MacContentLayout(selection: $selectedMacDestination)
+#elseif os(watchOS)
+            TabView(selection: $selectedTab) {
+                NavigationStack {
+                    NowPlayingView()
+                }
+                .tag(0)
+
+                NavigationStack {
+                    MenuView()
+                }
+                .tag(1)
+            }
+#else
+            TabView(selection: $selectedTab) {
+                NavigationStack {
+                    MenuView()
+                }
+#if os(iOS)
+                .toolbar(.hidden, for: .navigationBar)
+                .navigationBarHidden(true)
+#endif
+                .tabItem {
+                    Label("Library", systemImage: "square.grid.2x2")
+                }
+                .tag(0)
+
+                NavigationStack {
+                    TracksView()
+                }
+#if os(iOS)
+                .toolbar(.hidden, for: .navigationBar)
+                .navigationBarHidden(true)
+#endif
+                .tabItem {
+                    Label("Search", systemImage: "magnifyingglass")
+                }
+                .tag(1)
+
+                NavigationStack {
+                    NowPlayingView()
+                }
+#if os(iOS)
+                .toolbar(.hidden, for: .navigationBar)
+                .navigationBarHidden(true)
+#endif
+                .tabItem {
+                    Label("Playing", systemImage: "play.circle.fill")
+                }
+                .tag(2)
+
+#if os(iOS)
+                NavigationStack {
+                    PhoneQueueView()
+                }
+                .toolbar(.hidden, for: .navigationBar)
+                .navigationBarHidden(true)
+                .tabItem {
+                    Label("Queue", systemImage: "text.line.first.and.arrowtriangle.forward")
+                }
+                .tag(3)
+#endif
+
+                NavigationStack {
+                    DownloadsView()
+                }
+#if os(iOS)
+                .toolbar(.hidden, for: .navigationBar)
+                .navigationBarHidden(true)
+#endif
+                .tabItem {
+                    Label("Downloads", systemImage: "arrow.down.circle")
+                }
+                .tag(4)
+            }
+#if os(iOS)
+            .toolbarBackground(.visible, for: .tabBar)
+            .toolbarBackground(.ultraThinMaterial, for: .tabBar)
+#endif
+#endif
+        } else {
+            LoginView()
+        }
     }
 }
 

@@ -17,7 +17,7 @@ struct PhoneSearchPromptView: View {
     var body: some View {
         GeometryReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: WRhythmSpacing.xl) {
+                VStack(alignment: .leading, spacing: WRhythmSpacing.lg) {
                     HStack(alignment: .center, spacing: WRhythmSpacing.md) {
                         Text(title)
                             .font(.largeTitle.bold())
@@ -37,8 +37,8 @@ struct PhoneSearchPromptView: View {
                         .accessibilityLabel(actionTitle)
                     }
 
-                    promptCard
-                        .frame(maxWidth: .infinity)
+                    searchButton
+                        .frame(maxWidth: searchButtonMaxWidth(for: proxy.size), alignment: .leading)
 
                     Spacer(minLength: 0)
                 }
@@ -52,44 +52,64 @@ struct PhoneSearchPromptView: View {
         }
     }
 
-    private var promptCard: some View {
-        VStack(spacing: WRhythmSpacing.lg) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 42, weight: .semibold))
-                .symbolRenderingMode(.hierarchical)
-                .foregroundColor(.secondary)
-                .frame(width: 86, height: 86)
-                .background(.thinMaterial, in: Circle())
+    private var searchButton: some View {
+        Button(action: action) {
+            HStack(spacing: WRhythmSpacing.md) {
+                searchGlyph
 
-            VStack(spacing: WRhythmSpacing.xs) {
-                Text(promptTitle)
-                    .font(.headline)
-                    .multilineTextAlignment(.center)
+                VStack(alignment: .leading, spacing: WRhythmSpacing.xxs) {
+                    Text(promptTitle)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
 
-                if let message {
-                    Text(message)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
+                    if let message {
+                        Text(message)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                 }
-            }
 
-            Button(actionTitle, action: action)
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
+                Spacer(minLength: WRhythmSpacing.sm)
+
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, WRhythmSpacing.md)
+            .frame(height: 64)
+            .contentShape(RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous))
         }
-        .padding(.horizontal, WRhythmSpacing.lg)
-        .padding(.vertical, WRhythmSpacing.xl)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.cornerRadius, style: .continuous))
+        .buttonStyle(.plain)
+        .background(WRhythmTheme.controlFill(for: colorScheme), in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: WRhythmVisual.cornerRadius, style: .continuous)
+            RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous)
                 .strokeBorder(WRhythmTheme.surfaceStroke(for: colorScheme), lineWidth: 1)
         }
+        .accessibilityLabel(actionTitle)
+        .accessibilityHint("Opens music search")
+    }
+
+    private var searchGlyph: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: WRhythmVisual.thumbnailCornerRadius, style: .continuous)
+                .fill(WRhythmTheme.accent.opacity(colorScheme == .dark ? 0.16 : 0.12))
+
+            Image(systemName: "magnifyingglass")
+                .font(.title3.weight(.semibold))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(WRhythmTheme.accent)
+        }
+        .frame(width: 42, height: 42)
     }
 
     private func usableHeight(for size: CGSize) -> CGFloat {
         max(0, size.height - WRhythmVisual.bottomNavigationClearance)
+    }
+
+    private func searchButtonMaxWidth(for size: CGSize) -> CGFloat {
+        min(size.width - (WRhythmSpacing.md * 2), 480)
     }
 }
 #endif

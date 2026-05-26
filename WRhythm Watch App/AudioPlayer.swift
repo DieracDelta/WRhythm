@@ -51,20 +51,30 @@ struct PlaybackRetryPolicy: Sendable {
 }
 
 struct PrebufferSchedulingPolicy: Sendable {
+    static func upcomingRange(queueCount: Int, currentIndex: Int, aheadCount: Int) -> Range<Int> {
+        guard aheadCount > 0, queueCount > 0 else { return 0..<0 }
+        let start = min(max(currentIndex + 1, 0), queueCount)
+        let end = min(queueCount, start + aheadCount)
+        return start..<end
+    }
+
+    static func previousRange(queueCount: Int, currentIndex: Int, keepCount: Int) -> Range<Int> {
+        guard keepCount > 0, currentIndex > 0, queueCount > 0 else { return 0..<0 }
+        let end = min(currentIndex, queueCount)
+        let start = max(0, end - keepCount)
+        return start..<end
+    }
+
     static func upcomingKeys(queueKeys: [String], currentIndex: Int, aheadCount: Int) -> [String] {
-        guard aheadCount > 0, !queueKeys.isEmpty else { return [] }
-        let start = min(max(currentIndex + 1, 0), queueKeys.count)
-        let end = min(queueKeys.count, start + aheadCount)
-        guard start < end else { return [] }
-        return Array(queueKeys[start..<end])
+        let range = upcomingRange(queueCount: queueKeys.count, currentIndex: currentIndex, aheadCount: aheadCount)
+        guard !range.isEmpty else { return [] }
+        return Array(queueKeys[range])
     }
 
     static func previousKeys(queueKeys: [String], currentIndex: Int, keepCount: Int) -> [String] {
-        guard keepCount > 0, currentIndex > 0, !queueKeys.isEmpty else { return [] }
-        let end = min(currentIndex, queueKeys.count)
-        let start = max(0, end - keepCount)
-        guard start < end else { return [] }
-        return Array(queueKeys[start..<end])
+        let range = previousRange(queueCount: queueKeys.count, currentIndex: currentIndex, keepCount: keepCount)
+        guard !range.isEmpty else { return [] }
+        return Array(queueKeys[range])
     }
 
     static func desiredKeys(currentKey: String?, upcomingKeys: [String]) -> Set<String> {
@@ -1708,21 +1718,27 @@ class AudioPlayer: NSObject, ObservableObject {
             return
         }
 
-        let start = currentIndex + 1
-        let end = min(queue.count, start + prebufferAheadCount)
         for (key, prebuffer) in preparedPrebuffers where !FileManager.default.fileExists(atPath: prebuffer.url.path) {
             preparedPrebuffers.removeValue(forKey: key)
             prebufferURLs.removeValue(forKey: key)
         }
-        let upcomingSlice = start < end ? queue[start..<end] : queue[start..<start]
+        let upcomingRange = PrebufferSchedulingPolicy.upcomingRange(
+            queueCount: queue.count,
+            currentIndex: currentIndex,
+            aheadCount: prebufferAheadCount
+        )
+        let upcomingSlice = queue[upcomingRange]
         let upcomingKeys = upcomingSlice.map(prebufferKey)
         let readySongs = upcomingSlice.filter { song in
             preparedPrebuffers[prebufferKey(for: song)] != nil
         }
         let currentSlice = queue.indices.contains(currentIndex) ? [queue[currentIndex]] : []
-        let previousEnd = min(max(currentIndex, 0), queue.count)
-        let previousStart = max(0, previousEnd - retainPreviousPrebufferCount)
-        let previousSlice = previousStart < previousEnd ? queue[previousStart..<previousEnd] : queue[previousEnd..<previousEnd]
+        let previousRange = PrebufferSchedulingPolicy.previousRange(
+            queueCount: queue.count,
+            currentIndex: currentIndex,
+            keepCount: retainPreviousPrebufferCount
+        )
+        let previousSlice = queue[previousRange]
         let readyPreviousSongs = previousSlice.filter { song in
             preparedPrebuffers[prebufferKey(for: song)] != nil
         }

@@ -205,7 +205,7 @@ struct TracksView: View {
                     performSearch(query: searchText)
                 }
             } else if searchText.isEmpty {
-                searchPrompt(title: "Search Music", message: "Find songs, albums, artists, and playlists")
+                searchPrompt(title: "Search Music", message: nil)
             } else if searchResults.isEmpty && albumResults.isEmpty && artistResults.isEmpty {
                 WRhythmEmptyState(
                     systemImage: "music.note",
@@ -302,7 +302,7 @@ struct TracksView: View {
             PlatformSearchSheet(offlineMode ? "Offline Search" : "Search", onCancel: {
                 presentedSheet = nil
             }) {
-                VStack(spacing: 16) {
+                VStack(spacing: WRhythmSpacing.md) {
                     TextField(offlineMode ? "Search offline music" : "Search music", text: $searchText)
                         .platformSearchTextFieldStyle()
                         .frame(maxWidth: .infinity)
@@ -319,6 +319,10 @@ struct TracksView: View {
 
                     Spacer()
                 }
+                .frame(maxWidth: 420)
+                .frame(maxWidth: .infinity, alignment: .top)
+                .padding(.horizontal, WRhythmSpacing.md)
+                .padding(.top, WRhythmSpacing.lg)
             }
             }
         }

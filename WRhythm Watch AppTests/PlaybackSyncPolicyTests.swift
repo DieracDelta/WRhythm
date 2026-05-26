@@ -1857,6 +1857,31 @@ struct PlaybackSyncPolicyTests {
         ).isEmpty)
     }
 
+    @Test func prebufferSchedulingClampsStaleIndexAfterQueueShrinks() {
+        let queueKeys = ["only-result"]
+
+        #expect(PrebufferSchedulingPolicy.upcomingRange(
+            queueCount: queueKeys.count,
+            currentIndex: 19,
+            aheadCount: 8
+        ) == 1..<1)
+        #expect(PrebufferSchedulingPolicy.upcomingKeys(
+            queueKeys: queueKeys,
+            currentIndex: 19,
+            aheadCount: 8
+        ).isEmpty)
+        #expect(PrebufferSchedulingPolicy.previousRange(
+            queueCount: queueKeys.count,
+            currentIndex: 19,
+            keepCount: 8
+        ) == 0..<1)
+        #expect(PrebufferSchedulingPolicy.previousKeys(
+            queueKeys: queueKeys,
+            currentIndex: 19,
+            keepCount: 8
+        ) == ["only-result"])
+    }
+
     @Test func prebufferSchedulingRetainsPreviousKeysWithoutAddingThemToForwardCandidates() {
         let queueKeys = ["a", "b", "c", "d", "e"]
         let previousKeys = PrebufferSchedulingPolicy.previousKeys(
