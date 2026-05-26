@@ -9,6 +9,7 @@ import SwiftUI
 
 struct FavouritesView: View {
     @EnvironmentObject var libraryDataManager: LibraryDataManager
+    @State private var searchText = ""
     @ObservedObject var downloadManager = DownloadManager.shared
     @ObservedObject var player = AudioPlayer.shared
     @AppStorage("offlineMode") private var offlineMode = false
@@ -23,28 +24,49 @@ struct FavouritesView: View {
     }
 
     private func filteredSongs(_ songs: [Song]) -> [Song] {
+        var filtered = songs
         if offlineMode {
-            return songs.filter { downloadManager.isDownloaded($0.id) }
+            filtered = filtered.filter { downloadManager.isDownloaded($0.id) }
         }
-        return songs
+        guard !searchText.isEmpty else {
+            return filtered
+        }
+        return filtered.filter { song in
+            song.title.localizedCaseInsensitiveContains(searchText) ||
+            (song.artist?.localizedCaseInsensitiveContains(searchText) ?? false) ||
+            (song.album?.localizedCaseInsensitiveContains(searchText) ?? false)
+        }
     }
 
     private func filteredAlbums(_ albums: [AlbumSummary]) -> [AlbumSummary] {
+        var filtered = albums
         if offlineMode {
-            return albums.filter { downloadManager.hasDownloadedSongsForAlbum($0.id) }
+            filtered = filtered.filter { downloadManager.hasDownloadedSongsForAlbum($0.id) }
         }
-        return albums
+        guard !searchText.isEmpty else {
+            return filtered
+        }
+        return filtered.filter { album in
+            album.name.localizedCaseInsensitiveContains(searchText) ||
+            (album.artist?.localizedCaseInsensitiveContains(searchText) ?? false)
+        }
     }
 
     private func filteredArtists(_ artists: [Artist]) -> [Artist] {
+        var filtered = artists
         if offlineMode {
-            return artists.filter { artist in
+            filtered = filtered.filter { artist in
                 downloadManager.downloadedSongs.values.contains { song in
                     song.artist == artist.name
                 }
             }
         }
-        return artists
+        guard !searchText.isEmpty else {
+            return filtered
+        }
+        return filtered.filter { artist in
+            artist.name.localizedCaseInsensitiveContains(searchText)
+        }
     }
 
     var body: some View {
@@ -55,6 +77,10 @@ struct FavouritesView: View {
                     .padding(.horizontal, WRhythmSpacing.md)
                     .padding(.top, WRhythmSpacing.xxl)
                     .padding(.bottom, WRhythmSpacing.xs)
+
+                inlineSearchField
+                    .padding(.horizontal, WRhythmSpacing.md)
+                    .padding(.bottom, WRhythmSpacing.sm)
 
                 content
             }
@@ -92,7 +118,14 @@ struct FavouritesView: View {
                 title: "No favourites available offline",
                 message: "Star and download songs while online to see them here"
             )
+        } else if filteredSongs(offlineStarredSongs).isEmpty {
+            WRhythmEmptyState(
+                systemImage: "magnifyingglass",
+                title: "No favourites found",
+                message: "Try a different search term"
+            )
         } else {
+            let songsToShow = filteredSongs(offlineStarredSongs)
             ScrollView {
                 VStack(spacing: 16) {
                     VStack(alignment: .leading, spacing: 8) {
@@ -100,16 +133,16 @@ struct FavouritesView: View {
                             Text("Songs")
                                 .font(.headline)
                             Spacer()
-                            if offlineStarredSongs.count > 1 {
+                            if songsToShow.count > 1 {
                                 HStack(spacing: 8) {
                                     Button(action: {
-                                        player.playQueue(offlineStarredSongs, startingAt: 0)
+                                        player.playQueue(songsToShow, startingAt: 0)
                                     }) {
                                         Image(systemName: "play.fill")
                                             .font(.caption)
                                     }
                                     Button(action: {
-                                        player.playQueueShuffled(offlineStarredSongs)
+                                        player.playQueueShuffled(songsToShow)
                                     }) {
                                         Image(systemName: "shuffle")
                                             .font(.caption)
@@ -118,9 +151,9 @@ struct FavouritesView: View {
                             }
                         }
 
-                        ForEach(Array(offlineStarredSongs.enumerated()), id: \.element.id) { index, song in
+                        ForEach(Array(songsToShow.enumerated()), id: \.element.id) { index, song in
                             TrackRowView(song: song, player: player, downloadManager: downloadManager, offlineMode: offlineMode) {
-                                player.playQueue(offlineStarredSongs, startingAt: index)
+                                player.playQueue(songsToShow, startingAt: index)
                             }
                         }
                     }
@@ -160,12 +193,20 @@ struct FavouritesView: View {
                     message: "Star items in Navidrome to see them here"
                 )
             } else {
+                let songsToShow = filteredSongs(starred.song ?? [])
+                let albumsToShow = filteredAlbums(starred.album ?? [])
+                let artistsToShow = filteredArtists(starred.artist ?? [])
+                if songsToShow.isEmpty && albumsToShow.isEmpty && artistsToShow.isEmpty {
+                    WRhythmEmptyState(
+                        systemImage: "magnifyingglass",
+                        title: "No favourites found",
+                        message: "Try a different search term"
+                    )
+                } else {
                 ScrollView {
                     VStack(spacing: 16) {
                         // Starred Songs
-                        if let songs = starred.song, !songs.isEmpty {
-                            let songsToShow = filteredSongs(songs)
-                            if !songsToShow.isEmpty {
+                        if !songsToShow.isEmpty {
                             VStack(alignment: .leading, spacing: 8) {
                                 HStack {
                                     Text("Songs")
@@ -208,13 +249,10 @@ struct FavouritesView: View {
                             }
 
                             Divider()
-                            }
                         }
 
                         // Starred Albums
-                        if let albums = starred.album, !albums.isEmpty {
-                            let albumsToShow = filteredAlbums(albums)
-                            if !albumsToShow.isEmpty {
+                        if !albumsToShow.isEmpty {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("Albums")
                                     .font(.headline)
@@ -235,13 +273,10 @@ struct FavouritesView: View {
                             }
 
                             Divider()
-                            }
                         }
 
                         // Starred Artists
-                        if let artists = starred.artist, !artists.isEmpty {
-                            let artistsToShow = filteredArtists(artists)
-                            if !artistsToShow.isEmpty {
+                        if !artistsToShow.isEmpty {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("Artists")
                                     .font(.headline)
@@ -259,7 +294,6 @@ struct FavouritesView: View {
                                     .wrhythmArtistActions(artistId: artist.id, artistName: artist.name)
                                 }
                             }
-                            }
                         }
                     }
                     .padding()
@@ -271,6 +305,7 @@ struct FavouritesView: View {
 #if os(iOS)
                 .scrollIndicators(.hidden)
 #endif
+                }
             }
         } else {
             // Fallback state - shouldn't normally reach here
@@ -281,6 +316,38 @@ struct FavouritesView: View {
             )
         }
     }
+
+#if os(iOS)
+    private var inlineSearchField: some View {
+        HStack(spacing: WRhythmSpacing.sm) {
+            Image(systemName: "magnifyingglass")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(WRhythmTheme.accent)
+
+            TextField("Search favourites", text: $searchText)
+                .textInputAutocapitalization(.never)
+                .submitLabel(.search)
+
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear favourites search")
+            }
+        }
+        .padding(.horizontal, WRhythmSpacing.md)
+        .frame(minHeight: 46)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous)
+                .strokeBorder(WRhythmTheme.accent.opacity(0.24), lineWidth: 1)
+        }
+    }
+#endif
 }
 
 #Preview {

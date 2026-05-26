@@ -297,6 +297,7 @@ enum SyncTransportKind: Sendable {
 
 enum SyncPlatformKind: String, Sendable {
     case iPhone
+    case iPad
     case mac
     case appleWatch
     case other
@@ -305,6 +306,8 @@ enum SyncPlatformKind: String, Sendable {
         switch platformName {
         case "iPhone":
             self = .iPhone
+        case "iPad":
+            self = .iPad
         case "Mac":
             self = .mac
         case "Apple Watch":
@@ -321,7 +324,7 @@ struct SyncTransportAvailabilityPolicy: Sendable {
     }
 
     static func canUseMultipeer(_ platform: SyncPlatformKind) -> Bool {
-        platform == .iPhone || platform == .mac
+        platform == .iPhone || platform == .iPad || platform == .mac
     }
 
     static func canDirectlyDiscover(local: SyncPlatformKind, remote: SyncPlatformKind) -> Bool {
@@ -1078,6 +1081,7 @@ struct PlaybackTargetDevice: Identifiable, Equatable, Sendable {
         switch platform {
         case "Mac": return "desktopcomputer"
         case "iPhone": return "iphone"
+        case "iPad": return "ipad"
         case "Apple Watch": return "applewatch"
         default: return "speaker.wave.2"
         }
@@ -1308,7 +1312,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         let defaultPlatformName = "Apple Watch"
 #elseif os(iOS)
         let defaultLocalDeviceName = UIDevice.current.name
-        let defaultPlatformName = "iPhone"
+        let defaultPlatformName = UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
 #elseif os(macOS)
         let defaultLocalDeviceName = Host.current().localizedName ?? "WRhythm"
         let defaultPlatformName = "Mac"
@@ -3075,7 +3079,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             remotePlatform = .appleWatch
         case .appleWatch:
             remotePlatform = .iPhone
-        case .mac, .other:
+        case .iPad, .mac, .other:
             return nil
         }
 
@@ -3106,7 +3110,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             activationSucceeded = watchSession?.activationState == .activated
             hasUsableCompanion = watchSession?.isReachable ?? false
 #endif
-        case .mac, .other:
+        case .iPad, .mac, .other:
             return nil
 #if os(iOS)
         case .appleWatch:

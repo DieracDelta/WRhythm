@@ -873,6 +873,18 @@ struct PlaybackSyncPolicyTests {
         ) == true)
     }
 
+    @Test func iPadIsDistinctFromIPhoneAndUsesMultipeerSync() {
+        #expect(SyncPlatformKind(platformName: "iPad") == .iPad)
+        #expect(SyncTransportAvailabilityPolicy.canUseMultipeer(.iPad) == true)
+        #expect(SyncTransportAvailabilityPolicy.canDirectlyDiscover(local: .iPad, remote: .mac) == true)
+        #expect(SyncTransportAvailabilityPolicy.canDirectlyDiscover(local: .iPad, remote: .iPhone) == true)
+        #expect(SyncTransportAvailabilityPolicy.canUseWatchConnectivity(local: .iPad, remote: .appleWatch) == false)
+
+        let target = PlaybackTargetDevice(id: "ipad", name: "Justin's iPad", platform: "iPad", isLocal: true)
+        #expect(target.displayName == "This iPad")
+        #expect(target.iconName == "ipad")
+    }
+
     @Test func macCanDisplayRelayedWatchPlaybackWithoutWatchControlTarget() throws {
         let now = Date()
         let watchSession = makeSession(

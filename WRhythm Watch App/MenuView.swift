@@ -24,7 +24,7 @@ struct MenuView: View {
                 menuLink("Artists", systemImage: "person.2", destination: ArtistsView())
                 menuLink("Albums", systemImage: "square.stack", destination: AlbumsView())
                 menuLink("Playlists", systemImage: "music.note.list", destination: PlaylistsView())
-                menuLink("Tracks", systemImage: "magnifyingglass", destination: TracksView())
+                menuLink("Search", systemImage: "magnifyingglass", destination: TracksView())
             }
 
             menuGroup("Playback") {

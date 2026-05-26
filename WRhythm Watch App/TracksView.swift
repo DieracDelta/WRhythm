@@ -14,7 +14,9 @@ struct TracksView: View {
     @State private var artistResults: [Artist] = []
     @State private var isSearching = false
     @State private var errorMessage = ""
+#if !os(iOS)
     @State private var presentedSheet: TracksSheet?
+#endif
     @State private var searchTask: Task<Void, Never>?
     @ObservedObject var downloadManager = DownloadManager.shared
     @ObservedObject var player = AudioPlayer.shared
@@ -100,6 +102,72 @@ struct TracksView: View {
     }
 
     var body: some View {
+        searchScaffold {
+            searchContent
+        }
+        .navigationTitle(navigationTitleText)
+#if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .navigationBar)
+#endif
+        .wrhythmPageBackground()
+#if !os(iOS)
+        .toolbar {
+            ToolbarItem(placement: .platformTopBarTrailing) {
+                WRhythmSearchToolbarButton(
+                    hasQuery: !searchText.isEmpty,
+                    clear: clearSearch,
+                    search: {
+                        presentedSheet = .search
+                    }
+                )
+            }
+        }
+        .sheet(item: $presentedSheet) { sheet in
+            switch sheet {
+            case .search:
+            PlatformSearchSheet(offlineMode ? "Offline Search" : "Search", onCancel: {
+                presentedSheet = nil
+            }) {
+                VStack(spacing: WRhythmSpacing.md) {
+                    TextField(offlineMode ? "Search offline music" : "Search music", text: $searchText)
+                        .platformSearchTextFieldStyle()
+                        .frame(maxWidth: .infinity)
+
+                    Button("Search") {
+                        presentedSheet = nil
+                        if !offlineMode {
+                            performSearch(query: searchText)
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(searchText.isEmpty)
+
+                    Spacer()
+                }
+                .frame(maxWidth: 420)
+                .frame(maxWidth: .infinity, alignment: .top)
+                .padding(.horizontal, WRhythmSpacing.md)
+                .padding(.top, WRhythmSpacing.lg)
+            }
+            }
+        }
+#endif
+        .onChange(of: searchText) { _, newValue in
+            guard !offlineMode else { return }
+            if newValue.isEmpty {
+                clearOnlineSearchResults()
+            } else {
+                performSearch(query: newValue)
+            }
+        }
+        .onDisappear {
+            searchTask?.cancel()
+        }
+    }
+
+    @ViewBuilder
+    private var searchContent: some View {
         Group {
             if offlineMode {
                 // Offline mode: search through downloaded content
@@ -270,65 +338,6 @@ struct TracksView: View {
                 .wrhythmListSurface()
             }
         }
-        .navigationTitle(navigationTitleText)
-#if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar(showsPhoneSearchPrompt ? .hidden : .visible, for: .navigationBar)
-#endif
-        .wrhythmPageBackground()
-        .toolbar {
-            ToolbarItem(placement: .platformTopBarTrailing) {
-                WRhythmSearchToolbarButton(
-                    hasQuery: !searchText.isEmpty,
-                    clear: {
-                        searchText = ""
-                        searchTask?.cancel()
-                        if !offlineMode {
-                            searchResults = []
-                            albumResults = []
-                            artistResults = []
-                            isSearching = false
-                        }
-                    },
-                    search: {
-                        presentedSheet = .search
-                    }
-                )
-            }
-        }
-        .sheet(item: $presentedSheet) { sheet in
-            switch sheet {
-            case .search:
-            PlatformSearchSheet(offlineMode ? "Offline Search" : "Search", onCancel: {
-                presentedSheet = nil
-            }) {
-                VStack(spacing: WRhythmSpacing.md) {
-                    TextField(offlineMode ? "Search offline music" : "Search music", text: $searchText)
-                        .platformSearchTextFieldStyle()
-                        .frame(maxWidth: .infinity)
-
-                    Button("Search") {
-                        presentedSheet = nil
-                        if !offlineMode {
-                            performSearch(query: searchText)
-                        }
-                        // In offline mode, the view automatically updates via computed properties
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(searchText.isEmpty)
-
-                    Spacer()
-                }
-                .frame(maxWidth: 420)
-                .frame(maxWidth: .infinity, alignment: .top)
-                .padding(.horizontal, WRhythmSpacing.md)
-                .padding(.top, WRhythmSpacing.lg)
-            }
-            }
-        }
-        .onDisappear {
-            searchTask?.cancel()
-        }
     }
 
     @ViewBuilder
@@ -353,14 +362,11 @@ struct TracksView: View {
             .buttonStyle(.plain)
         }
 #elseif os(iOS)
-        PhoneSearchPromptView(
-            title: offlineMode ? "Offline Search" : "Search",
-            promptTitle: title,
-            message: message,
-            actionTitle: "Search"
-        ) {
-            presentedSheet = .search
-        }
+        WRhythmEmptyState(
+            systemImage: "magnifyingglass",
+            title: title,
+            message: message
+        )
 #else
         WRhythmEmptyState(
             systemImage: "magnifyingglass",
@@ -439,7 +445,7 @@ struct TracksView: View {
 
     private var navigationTitleText: String {
 #if os(iOS)
-        showsPhoneSearchPrompt ? "" : (offlineMode ? "Offline Search" : "Search")
+        offlineMode ? "Offline Search" : "Search"
 #else
         offlineMode ? "Offline Search" : "Search"
 #endif
@@ -451,6 +457,73 @@ struct TracksView: View {
 #else
         false
 #endif
+    }
+
+    @ViewBuilder
+    private func searchScaffold<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+#if os(iOS)
+        VStack(spacing: 0) {
+            inlineSearchField
+                .padding(.horizontal, WRhythmSpacing.md)
+                .padding(.top, WRhythmSpacing.md)
+                .padding(.bottom, WRhythmSpacing.sm)
+
+            content()
+        }
+#else
+        content()
+#endif
+    }
+
+#if os(iOS)
+    private var inlineSearchField: some View {
+        HStack(spacing: WRhythmSpacing.sm) {
+            Image(systemName: "magnifyingglass")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(WRhythmTheme.accent)
+
+            TextField(offlineMode ? "Search offline music" : "Search music", text: $searchText)
+                .textInputAutocapitalization(.never)
+                .submitLabel(.search)
+                .onSubmit {
+                    if !offlineMode {
+                        performSearch(query: searchText)
+                    }
+                }
+
+            if !searchText.isEmpty {
+                Button(action: clearSearch) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
+            }
+        }
+        .padding(.horizontal, WRhythmSpacing.md)
+        .frame(minHeight: 48)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous)
+                .strokeBorder(WRhythmTheme.accent.opacity(0.24), lineWidth: 1)
+        }
+    }
+#endif
+
+    private func clearSearch() {
+        searchText = ""
+        searchTask?.cancel()
+        if !offlineMode {
+            clearOnlineSearchResults()
+        }
+    }
+
+    private func clearOnlineSearchResults() {
+        searchResults = []
+        albumResults = []
+        artistResults = []
+        isSearching = false
+        errorMessage = ""
     }
 
     private func performSearch(query: String) {

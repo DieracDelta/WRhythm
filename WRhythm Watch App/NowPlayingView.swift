@@ -1082,7 +1082,7 @@ struct RemotePlaybackControls: View {
         WRhythmCard(padding: compact ? WRhythmSpacing.xs : WRhythmSpacing.md, style: compact ? .grouped : .glass) {
             VStack(spacing: compact ? WRhythmSpacing.xs : WRhythmSpacing.sm) {
                 HStack(spacing: WRhythmSpacing.xs) {
-                    Image(systemName: playback.platform == "Mac" ? "desktopcomputer" : playback.platform == "iPhone" ? "iphone" : "applewatch")
+                    Image(systemName: platformIconName)
                         .foregroundColor(WRhythmTheme.accent)
                     Text(playback.deviceName)
                         .font(WRhythmTypography.rowSubtitle)
@@ -1222,6 +1222,21 @@ struct RemotePlaybackControls: View {
     private var displayedVolume: Double {
         let volume = pendingVolume ?? playback.volume ?? player.volume
         return min(max(volume.isFinite ? volume : 1, 0), 1)
+    }
+
+    private var platformIconName: String {
+        switch playback.platform {
+        case "Mac":
+            return "desktopcomputer"
+        case "iPhone":
+            return "iphone"
+        case "iPad":
+            return "ipad"
+        case "Apple Watch":
+            return "applewatch"
+        default:
+            return "speaker.wave.2"
+        }
     }
 
     private func seekRemote(by delta: TimeInterval) {
@@ -1879,8 +1894,12 @@ private struct WatchRemotePlaybackControls: View {
             return "desktopcomputer"
         case "iPhone":
             return "iphone"
-        default:
+        case "iPad":
+            return "ipad"
+        case "Apple Watch":
             return "applewatch"
+        default:
+            return "speaker.wave.2"
         }
     }
 

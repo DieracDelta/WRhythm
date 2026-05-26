@@ -182,7 +182,7 @@ enum MacDestination: String, Hashable, CaseIterable {
         case .playlists: return "Playlists"
         case .favorites: return "Favorites"
         case .playlistGen: return "Playlist Gen"
-        case .tracks: return "Tracks"
+        case .tracks: return "Search"
         case .spontaneous: return "Spontaneous"
         case .albums: return "Albums"
         case .availableTracks: return "Available Tracks"
