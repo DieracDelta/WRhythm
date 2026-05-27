@@ -2077,7 +2077,7 @@ struct PlaybackSyncPolicyTests {
         ) == ["only-result"])
     }
 
-    @Test func prebufferSchedulingRetainsPreviousKeysWithoutAddingThemToForwardCandidates() {
+    @Test func prebufferSchedulingBackfillsPreviousKeysAfterCurrentAndUpcomingCandidates() {
         let queueKeys = ["a", "b", "c", "d", "e"]
         let previousKeys = PrebufferSchedulingPolicy.previousKeys(
             queueKeys: queueKeys,
@@ -2091,17 +2091,16 @@ struct PlaybackSyncPolicyTests {
         )
         let candidates = PrebufferSchedulingPolicy.orderedCandidateKeys(
             currentKey: queueKeys[3],
-            upcomingKeys: upcomingKeys
+            upcomingKeys: upcomingKeys,
+            previousKeys: previousKeys
         )
 
         #expect(previousKeys == ["b", "c"])
         #expect(upcomingKeys == ["e"])
-        #expect(candidates == ["d", "e"])
-        #expect(candidates.contains("b") == false)
-        #expect(candidates.contains("c") == false)
+        #expect(candidates == ["d", "e", "b", "c"])
     }
 
-    @Test func prebufferSchedulingRetainsPreviousPreparedTracksButDoesNotScheduleThem() {
+    @Test func prebufferSchedulingRetainsAndSchedulesPreviousTracksAsBackfill() {
         let queueKeys = (0..<8).map { "song-\($0)" }
         let currentKey = queueKeys[4]
         let previousKeys = PrebufferSchedulingPolicy.previousKeys(
@@ -2114,13 +2113,29 @@ struct PlaybackSyncPolicyTests {
             currentIndex: 4,
             aheadCount: 2
         )
-        let desiredKeys = PrebufferSchedulingPolicy.desiredKeys(currentKey: currentKey, upcomingKeys: upcomingKeys)
+        let desiredKeys = PrebufferSchedulingPolicy.desiredKeys(
+            currentKey: currentKey,
+            upcomingKeys: upcomingKeys,
+            previousKeys: previousKeys
+        )
         let retainedKeys = desiredKeys.union(previousKeys)
-        let candidates = PrebufferSchedulingPolicy.orderedCandidateKeys(currentKey: currentKey, upcomingKeys: upcomingKeys)
+        let candidates = PrebufferSchedulingPolicy.orderedCandidateKeys(
+            currentKey: currentKey,
+            upcomingKeys: upcomingKeys,
+            previousKeys: previousKeys
+        )
+        let scheduled = PrebufferSchedulingPolicy.keysToSchedule(
+            candidateKeys: candidates,
+            activeKeys: ["song-5"],
+            preparedKeys: ["song-4", "song-6"],
+            failedKeys: [],
+            maxConcurrentTasks: 4
+        )
 
         #expect(previousKeys == ["song-1", "song-2", "song-3"])
         #expect(retainedKeys == Set(["song-1", "song-2", "song-3", "song-4", "song-5", "song-6"]))
-        #expect(candidates == ["song-4", "song-5", "song-6"])
+        #expect(candidates == ["song-4", "song-5", "song-6", "song-1", "song-2", "song-3"])
+        #expect(scheduled == ["song-1", "song-2", "song-3"])
     }
 
     @Test func prebufferCachePruningKeepsActiveTemporaryDownloads() {
@@ -3331,7 +3346,8 @@ struct PlaybackSyncPolicyTests {
             )
             let candidates = PrebufferSchedulingPolicy.orderedCandidateKeys(
                 currentKey: currentKey,
-                upcomingKeys: upcomingKeys
+                upcomingKeys: upcomingKeys,
+                previousKeys: previousKeys
             )
             let scheduled = PrebufferSchedulingPolicy.keysToSchedule(
                 candidateKeys: candidates,
@@ -3347,10 +3363,16 @@ struct PlaybackSyncPolicyTests {
             #expect(Set(scheduled).isDisjoint(with: preparedKeys))
             #expect(Set(scheduled).isDisjoint(with: failedKeys))
             #expect(scheduled.count <= availableSlots)
-            #expect(previousKeys.allSatisfy { candidates.contains($0) == false })
+            #expect(previousKeys.allSatisfy { candidates.contains($0) })
             #expect(upcomingKeys.count <= aheadCount)
             #expect(previousKeys.count <= keepPreviousCount)
-            #expect(PrebufferSchedulingPolicy.desiredKeys(currentKey: currentKey, upcomingKeys: upcomingKeys).isSuperset(of: Set(upcomingKeys)))
+            let desiredKeys = PrebufferSchedulingPolicy.desiredKeys(
+                currentKey: currentKey,
+                upcomingKeys: upcomingKeys,
+                previousKeys: previousKeys
+            )
+            #expect(desiredKeys.isSuperset(of: Set(upcomingKeys)))
+            #expect(desiredKeys.isSuperset(of: Set(previousKeys)))
         }
     }
 

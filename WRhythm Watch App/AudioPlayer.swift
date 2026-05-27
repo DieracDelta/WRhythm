@@ -139,18 +139,27 @@ struct PrebufferSchedulingPolicy: Sendable {
         return Array(queueKeys[range])
     }
 
-    static func desiredKeys(currentKey: String?, upcomingKeys: [String]) -> Set<String> {
+    static func desiredKeys(
+        currentKey: String?,
+        upcomingKeys: [String],
+        previousKeys: [String] = []
+    ) -> Set<String> {
         var keys = Set(upcomingKeys)
+        keys.formUnion(previousKeys)
         if let currentKey {
             keys.insert(currentKey)
         }
         return keys
     }
 
-    static func orderedCandidateKeys(currentKey: String?, upcomingKeys: [String]) -> [String] {
+    static func orderedCandidateKeys(
+        currentKey: String?,
+        upcomingKeys: [String],
+        previousKeys: [String] = []
+    ) -> [String] {
         var seen = Set<String>()
         var keys: [String] = []
-        for key in ([currentKey].compactMap { $0 } + upcomingKeys) where !seen.contains(key) {
+        for key in ([currentKey].compactMap { $0 } + upcomingKeys + previousKeys) where !seen.contains(key) {
             seen.insert(key)
             keys.append(key)
         }
@@ -1898,19 +1907,35 @@ class AudioPlayer: NSObject, ObservableObject {
             currentIndex: currentIndex,
             aheadCount: prebufferAheadCount
         )
-        let retainedPreviousKeys = Set(PrebufferSchedulingPolicy.previousKeys(
+        let previousKeys = PrebufferSchedulingPolicy.previousKeys(
             queueKeys: queueKeys,
             currentIndex: currentIndex,
             keepCount: retainPreviousPrebufferCount
-        ))
-        let desiredKeys = PrebufferSchedulingPolicy.desiredKeys(currentKey: currentKey, upcomingKeys: upcomingKeys)
+        )
+        let retainedPreviousKeys = Set(previousKeys)
+        let desiredKeys = PrebufferSchedulingPolicy.desiredKeys(
+            currentKey: currentKey,
+            upcomingKeys: upcomingKeys,
+            previousKeys: previousKeys
+        )
         let retainedKeys = desiredKeys.union(retainedPreviousKeys)
-        let candidateKeys = PrebufferSchedulingPolicy.orderedCandidateKeys(currentKey: currentKey, upcomingKeys: upcomingKeys)
+        let candidateKeys = PrebufferSchedulingPolicy.orderedCandidateKeys(
+            currentKey: currentKey,
+            upcomingKeys: upcomingKeys,
+            previousKeys: previousKeys
+        )
         var songsByKey: [String: Song] = [:]
         if let currentQueueSong, let currentKey {
             songsByKey[currentKey] = currentQueueSong
         }
         for song in upcomingSongs {
+            songsByKey[prebufferKey(for: song)] = song
+        }
+        for song in queue[PrebufferSchedulingPolicy.previousRange(
+            queueCount: queue.count,
+            currentIndex: currentIndex,
+            keepCount: retainPreviousPrebufferCount
+        )] {
             songsByKey[prebufferKey(for: song)] = song
         }
 
@@ -2082,7 +2107,16 @@ class AudioPlayer: NSObject, ObservableObject {
             currentIndex: currentIndex,
             aheadCount: prebufferAheadCount
         )
-        return PrebufferSchedulingPolicy.desiredKeys(currentKey: currentKey, upcomingKeys: upcomingKeys)
+        let previousKeys = PrebufferSchedulingPolicy.previousKeys(
+            queueKeys: queue.map(prebufferKey),
+            currentIndex: currentIndex,
+            keepCount: retainPreviousPrebufferCount
+        )
+        return PrebufferSchedulingPolicy.desiredKeys(
+            currentKey: currentKey,
+            upcomingKeys: upcomingKeys,
+            previousKeys: previousKeys
+        )
     }
 
     private func schedulePrebufferRetry(for song: Song, key: String) {
