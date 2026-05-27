@@ -375,6 +375,42 @@ struct PrebufferProgressPolicy: Sendable {
     }
 }
 
+struct PrebufferQualityPresentationPolicy: Sendable {
+    static func downloadedQualityLabel(downloadedBitRate: Int) -> String {
+        downloadedBitRate == AudioQuality.original.downloadedBitRate ? "Original" : "\(downloadedBitRate) kbps"
+    }
+
+    static func streamingQualityLabel(streamingQuality: StreamingQuality, transcodesToMP3: Bool) -> String {
+        if transcodesToMP3 {
+            let bitRate = streamingQuality.maxBitRate ?? StreamingQuality.max.rawValue
+            return "\(bitRate) kbps"
+        }
+        return "Original"
+    }
+}
+
+struct PrebufferAvailabilityPresentationPolicy: Sendable {
+    static func orderedAvailableSongs(queuedSongs: [Song], preparedSongs: [Song]) -> [Song] {
+        var seen = Set<String>()
+        var songs: [Song] = []
+        for song in queuedSongs {
+            guard preparedSongs.contains(where: { $0.id == song.id }), !seen.contains(song.id) else { continue }
+            seen.insert(song.id)
+            songs.append(song)
+        }
+        let lingeringSongs = preparedSongs
+            .filter { !seen.contains($0.id) }
+            .sorted { lhs, rhs in
+                lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+            }
+        for song in lingeringSongs where !seen.contains(song.id) {
+            seen.insert(song.id)
+            songs.append(song)
+        }
+        return songs
+    }
+}
+
 struct PrebufferDownloadStatus: Identifiable, Equatable, Sendable {
     let song: Song
     let progressPercent: Int?
@@ -389,12 +425,12 @@ struct PrebufferDownloadStatus: Identifiable, Equatable, Sendable {
 struct PrebufferPublicationPolicy: Sendable {
     static func shouldPublishPreparedBuffer(
         key: String,
-        desiredKeys: Set<String>,
+        desiredKeys _: Set<String>,
         activeTaskKeys: Set<String>,
         capturedToken: String,
         activeToken: String?
     ) -> Bool {
-        desiredKeys.contains(key) && activeTaskKeys.contains(key) && activeToken == capturedToken
+        activeTaskKeys.contains(key) && activeToken == capturedToken
     }
 }
 
@@ -455,6 +491,7 @@ class AudioPlayer: NSObject, ObservableObject {
     @Published private(set) var prebufferedSongs: [Song] = []
     @Published private(set) var retainedPrebufferedSongs: [Song] = []
     @Published private(set) var availablePrebufferedSongs: [Song] = []
+    @Published private(set) var availablePrebufferedTrackQualityLabels: [String: String] = [:]
     @Published private(set) var prebufferDownloadStatuses: [PrebufferDownloadStatus] = []
     @Published private(set) var prebufferingTrackCount = 0
     @Published private(set) var prebufferingProgressPercent: Int?
@@ -504,8 +541,10 @@ class AudioPlayer: NSObject, ObservableObject {
     }
 
     private struct PreparedPrebuffer: @unchecked Sendable {
+        let song: Song
         let url: URL
         let asset: AVURLAsset
+        let qualityLabel: String
     }
 
     private struct PlaylistGenRestoreState {
@@ -1722,6 +1761,18 @@ class AudioPlayer: NSObject, ObservableObject {
         return NavidromeAPI.shared.getStreamURL(id: song.id)
     }
 
+    private func prebufferQualityLabel(for song: Song) -> String {
+        PrebufferQualityPresentationPolicy.streamingQualityLabel(
+            streamingQuality: StreamingQuality.current,
+            transcodesToMP3: shouldTranscodeForPlayback(song)
+        )
+    }
+
+    private func downloadedQualityLabel(for song: Song) -> String? {
+        guard let downloadedSong = DownloadManager.shared.downloadedSongs[song.id] else { return nil }
+        return PrebufferQualityPresentationPolicy.downloadedQualityLabel(downloadedBitRate: downloadedSong.downloadedBitRate)
+    }
+
     private func prebufferKey(for song: Song) -> String {
         "\(song.id)|q\(StreamingQuality.current.rawValue)"
     }
@@ -1808,12 +1859,12 @@ class AudioPlayer: NSObject, ObservableObject {
         AVURLAsset(url: url, options: playbackAssetOptions(for: song, url: url))
     }
 
-    private nonisolated static func preparePrebufferAsset(for song: Song, url: URL) async throws -> PreparedPrebuffer {
+    private nonisolated static func preparePrebufferAsset(for song: Song, url: URL, qualityLabel: String) async throws -> PreparedPrebuffer {
         let asset = AVURLAsset(url: url, options: playbackAssetOptions(contentType: song.contentType, url: url))
         let isPlayable = try await asset.load(.isPlayable)
         _ = try? await asset.load(.duration)
         guard isPlayable else { throw PrebufferPreparationError.notPlayable }
-        return PreparedPrebuffer(url: url, asset: asset)
+        return PreparedPrebuffer(song: song, url: url, asset: asset, qualityLabel: qualityLabel)
     }
 
     private nonisolated static func downloadPrebufferFile(
@@ -1880,7 +1931,6 @@ class AudioPlayer: NSObject, ObservableObject {
             prebufferTasks.removeAll()
             prebufferTaskTokens.removeAll()
             prebufferProgressByKey.removeAll()
-            preparedPrebuffers.removeAll()
             clearPrebufferRetryState()
             updatePrebufferedTrackCount()
             return
@@ -1954,11 +2004,11 @@ class AudioPlayer: NSObject, ObservableObject {
         for key in keysToSchedule {
             guard let song = songsByKey[key] else { continue }
             if let downloadedURL = DownloadManager.shared.getLocalURL(song.id) {
-                preparePrebufferedFile(song, key: key, url: downloadedURL)
+                preparePrebufferedFile(song, key: key, url: downloadedURL, qualityLabel: downloadedQualityLabel(for: song) ?? "Downloaded")
                 continue
             }
             if let existingURL = existingPrebufferURL(for: song) {
-                preparePrebufferedFile(song, key: key, url: existingURL)
+                preparePrebufferedFile(song, key: key, url: existingURL, qualityLabel: prebufferQualityLabel(for: song))
                 continue
             }
             startPrebuffering(song, key: key)
@@ -1967,6 +2017,7 @@ class AudioPlayer: NSObject, ObservableObject {
 
     private func startPrebuffering(_ song: Song, key: String) {
         guard let url = streamURLForPlayback(song) else { return }
+        let qualityLabel = prebufferQualityLabel(for: song)
         let destinationURL = prebufferURL(for: song)
         let taskToken = UUID().uuidString
         prebufferTaskTokens[key] = taskToken
@@ -1989,7 +2040,7 @@ class AudioPlayer: NSObject, ObservableObject {
                 }
                 try Task.checkCancellation()
 
-                await self?.prepareDownloadedPrebuffer(song, key: key, url: destinationURL, taskToken: taskToken)
+                await self?.prepareDownloadedPrebuffer(song, key: key, url: destinationURL, taskToken: taskToken, qualityLabel: qualityLabel)
             } catch is CancellationError {
                 await MainActor.run { [weak self] in
                     guard let player = self else { return }
@@ -2014,17 +2065,17 @@ class AudioPlayer: NSObject, ObservableObject {
         }
     }
 
-    private func preparePrebufferedFile(_ song: Song, key: String, url: URL) {
+    private func preparePrebufferedFile(_ song: Song, key: String, url: URL, qualityLabel: String) {
         let taskToken = UUID().uuidString
         prebufferTaskTokens[key] = taskToken
         prebufferTasks[key] = Task { [weak self] in
-            await self?.prepareDownloadedPrebuffer(song, key: key, url: url, taskToken: taskToken)
+            await self?.prepareDownloadedPrebuffer(song, key: key, url: url, taskToken: taskToken, qualityLabel: qualityLabel)
         }
     }
 
-    private func prepareDownloadedPrebuffer(_ song: Song, key: String, url: URL, taskToken: String) async {
+    private func prepareDownloadedPrebuffer(_ song: Song, key: String, url: URL, taskToken: String, qualityLabel: String) async {
         do {
-            let prebuffer = try await Self.preparePrebufferAsset(for: song, url: url)
+            let prebuffer = try await Self.preparePrebufferAsset(for: song, url: url, qualityLabel: qualityLabel)
             try Task.checkCancellation()
 
             await MainActor.run { [weak self] in
@@ -2211,18 +2262,17 @@ class AudioPlayer: NSObject, ObservableObject {
             prebufferingProgressPercent = activePercent
         }
 
+        for (key, prebuffer) in preparedPrebuffers where !FileManager.default.fileExists(atPath: prebuffer.url.path) {
+            preparedPrebuffers.removeValue(forKey: key)
+            prebufferURLs.removeValue(forKey: key)
+        }
         guard !queue.isEmpty else {
             prebufferedTrackCount = 0
             prebufferedSongs = []
             retainedPrebufferedSongs = []
-            availablePrebufferedSongs = []
+            publishAvailablePreparedPrebuffers(queuedSongs: [])
             prebufferDownloadStatuses = []
             return
-        }
-
-        for (key, prebuffer) in preparedPrebuffers where !FileManager.default.fileExists(atPath: prebuffer.url.path) {
-            preparedPrebuffers.removeValue(forKey: key)
-            prebufferURLs.removeValue(forKey: key)
         }
         let upcomingRange = PrebufferSchedulingPolicy.upcomingRange(
             queueCount: queue.count,
@@ -2256,11 +2306,18 @@ class AudioPlayer: NSObject, ObservableObject {
         if retainedPrebufferedSongs.map(\.id) != readyPreviousSongs.map(\.id) {
             retainedPrebufferedSongs = readyPreviousSongs
         }
-        let availableSongs = queue.filter { song in
-            preparedPrebuffers[prebufferKey(for: song)] != nil
+        let availableSongs = availablePreparedSongs(queuedSongs: queue)
+        var qualityLabels: [String: String] = [:]
+        for song in availableSongs {
+            if let qualityLabel = preparedQualityLabel(for: song) {
+                qualityLabels[song.id] = qualityLabel
+            }
         }
         if availablePrebufferedSongs.map(\.id) != availableSongs.map(\.id) {
             availablePrebufferedSongs = availableSongs
+        }
+        if availablePrebufferedTrackQualityLabels != qualityLabels {
+            availablePrebufferedTrackQualityLabels = qualityLabels
         }
         let downloadStatuses = PrebufferProgressPolicy.downloadStatuses(
             for: Array(previousSlice) + Array(upcomingSlice),
@@ -2271,6 +2328,36 @@ class AudioPlayer: NSObject, ObservableObject {
         if prebufferDownloadStatuses != downloadStatuses {
             prebufferDownloadStatuses = downloadStatuses
         }
+    }
+
+    private func publishAvailablePreparedPrebuffers(queuedSongs: [Song]) {
+        let availableSongs = availablePreparedSongs(queuedSongs: queuedSongs)
+        var qualityLabels: [String: String] = [:]
+        for song in availableSongs {
+            if let qualityLabel = preparedQualityLabel(for: song) {
+                qualityLabels[song.id] = qualityLabel
+            }
+        }
+        if availablePrebufferedSongs.map(\.id) != availableSongs.map(\.id) {
+            availablePrebufferedSongs = availableSongs
+        }
+        if availablePrebufferedTrackQualityLabels != qualityLabels {
+            availablePrebufferedTrackQualityLabels = qualityLabels
+        }
+    }
+
+    private func availablePreparedSongs(queuedSongs: [Song]) -> [Song] {
+        PrebufferAvailabilityPresentationPolicy.orderedAvailableSongs(
+            queuedSongs: queuedSongs,
+            preparedSongs: preparedPrebuffers.values.map(\.song)
+        )
+    }
+
+    private func preparedQualityLabel(for song: Song) -> String? {
+        if let qualityLabel = preparedPrebuffers[prebufferKey(for: song)]?.qualityLabel {
+            return qualityLabel
+        }
+        return preparedPrebuffers.first { $0.value.song.id == song.id }?.value.qualityLabel
     }
 
     private func prunePrebufferCache(keeping keepKeys: Set<String>) {

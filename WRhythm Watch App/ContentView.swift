@@ -637,6 +637,7 @@ struct MacMiniPlayerBar: View {
                     isBuffering: player.isBuffering,
                     bufferStatusText: player.queueBufferStatusSummary,
                     availableBufferedSongs: player.availablePrebufferedSongs,
+                    availableQualityLabels: player.availablePrebufferedTrackQualityLabels,
                     previousBufferedSongs: player.retainedPrebufferedSongs,
                     nextBufferedSongs: player.prebufferedSongs,
                     downloadStatuses: player.prebufferDownloadStatuses,
@@ -668,6 +669,7 @@ struct MacMiniPlayerBar: View {
                     isBuffering: remote.isBuffering == true,
                     bufferStatusText: nil,
                     availableBufferedSongs: bufferedSongs(for: remote),
+                    availableQualityLabels: [:],
                     previousBufferedSongs: [],
                     nextBufferedSongs: bufferedSongs(for: remote),
                     downloadStatuses: [],
@@ -698,7 +700,8 @@ struct MacMiniPlayerBar: View {
                 availableSongs: sheet.availableSongs,
                 previousSongs: sheet.previousSongs,
                 nextSongs: sheet.nextSongs,
-                downloadStatuses: sheet.downloadStatuses
+                downloadStatuses: sheet.downloadStatuses,
+                qualityLabels: sheet.qualityLabels
             )
         }
     }
@@ -745,6 +748,7 @@ struct MacMiniPlayerBar: View {
         isBuffering: Bool,
         bufferStatusText: String?,
         availableBufferedSongs: [Song],
+        availableQualityLabels: [String: String],
         previousBufferedSongs: [Song],
         nextBufferedSongs: [Song],
         downloadStatuses: [PrebufferDownloadStatus],
@@ -791,7 +795,8 @@ struct MacMiniPlayerBar: View {
                                 availableSongs: availableSongs,
                                 previousSongs: previousBufferedSongs,
                                 nextSongs: nextBufferedSongs,
-                                downloadStatuses: downloadStatuses
+                                downloadStatuses: downloadStatuses,
+                                qualityLabels: availableQualityLabels
                             )
                         }) {
                             Label(
@@ -873,6 +878,7 @@ private struct BufferedTracksSheetPayload: Identifiable {
     let previousSongs: [Song]
     let nextSongs: [Song]
     var downloadStatuses: [PrebufferDownloadStatus] = []
+    var qualityLabels: [String: String] = [:]
 }
 
 private struct MiniPlayerArtwork: View {

@@ -1285,7 +1285,7 @@ struct PlaybackSyncPolicyTests {
         ) == true)
     }
 
-    @Test func stalePrebufferCompletionsDoNotPublish() {
+    @Test func activePrebufferCompletionsPublishEvenAfterQueueWindowMoves() {
         #expect(PrebufferPublicationPolicy.shouldPublishPreparedBuffer(
             key: "song-1|flac",
             desiredKeys: ["song-1|flac"],
@@ -1299,7 +1299,10 @@ struct PlaybackSyncPolicyTests {
             activeTaskKeys: ["song-1|flac"],
             capturedToken: "token-1",
             activeToken: "token-1"
-        ) == false)
+        ) == true)
+    }
+
+    @Test func stalePrebufferCompletionsDoNotPublish() {
         #expect(PrebufferPublicationPolicy.shouldPublishPreparedBuffer(
             key: "song-1|flac",
             desiredKeys: ["song-1|flac"],
@@ -1314,6 +1317,24 @@ struct PlaybackSyncPolicyTests {
             capturedToken: "token-1",
             activeToken: "token-2"
         ) == false)
+    }
+
+    @Test func completedPrebufferStillPublishesWhenTrackMovedOutOfQueueBeforeCompletion() {
+        #expect(PrebufferPublicationPolicy.shouldPublishPreparedBuffer(
+            key: "song-1|flac",
+            desiredKeys: ["song-2|flac", "song-3|flac"],
+            activeTaskKeys: ["song-1|flac"],
+            capturedToken: "token-1",
+            activeToken: "token-1"
+        ) == true)
+
+        #expect(PrebufferPublicationPolicy.shouldPublishPreparedBuffer(
+            key: "song-1|flac",
+            desiredKeys: ["song-2|flac", "song-3|flac"],
+            activeTaskKeys: ["song-1|flac"],
+            capturedToken: "token-1",
+            activeToken: "token-1"
+        ) == true)
     }
 
     @Test func asyncTaskOwnershipRequiresMatchingToken() {

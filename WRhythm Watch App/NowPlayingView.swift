@@ -69,7 +69,8 @@ struct NowPlayingView: View {
                     availableSongs: player.availablePrebufferedSongs,
                     previousSongs: player.retainedPrebufferedSongs,
                     nextSongs: player.prebufferedSongs,
-                    downloadStatuses: player.prebufferDownloadStatuses
+                    downloadStatuses: player.prebufferDownloadStatuses,
+                    qualityLabels: player.availablePrebufferedTrackQualityLabels
                 )
             }
         }
@@ -314,7 +315,8 @@ struct NowPlayingView: View {
                     availableSongs: player.availablePrebufferedSongs,
                     previousSongs: player.retainedPrebufferedSongs,
                     nextSongs: player.prebufferedSongs,
-                    downloadStatuses: player.prebufferDownloadStatuses
+                    downloadStatuses: player.prebufferDownloadStatuses,
+                    qualityLabels: player.availablePrebufferedTrackQualityLabels
                 )
             }
         }
@@ -1639,7 +1641,8 @@ private struct WatchNowPlayingView: View {
                     availableSongs: player.availablePrebufferedSongs,
                     previousSongs: player.retainedPrebufferedSongs,
                     nextSongs: player.prebufferedSongs,
-                    downloadStatuses: player.prebufferDownloadStatuses
+                    downloadStatuses: player.prebufferDownloadStatuses,
+                    qualityLabels: player.availablePrebufferedTrackQualityLabels
                 )
             }
         }

@@ -46,10 +46,60 @@ struct AudioQualityPolicyTests {
         #expect(AudioQuality.original.localFileExtension(for: song) == "audio")
     }
 
+    @Test func prebufferQualityLabelsUseDownloadedBitRateMetadata() {
+        #expect(PrebufferQualityPresentationPolicy.downloadedQualityLabel(downloadedBitRate: 0) == "Original")
+        #expect(PrebufferQualityPresentationPolicy.downloadedQualityLabel(downloadedBitRate: 192) == "192 kbps")
+    }
+
+    @Test func prebufferQualityLabelsReflectPlaybackTranscoding() {
+        #expect(PrebufferQualityPresentationPolicy.streamingQualityLabel(
+            streamingQuality: .original,
+            transcodesToMP3: false
+        ) == "Original")
+        #expect(PrebufferQualityPresentationPolicy.streamingQualityLabel(
+            streamingQuality: .high,
+            transcodesToMP3: true
+        ) == "192 kbps")
+        #expect(PrebufferQualityPresentationPolicy.streamingQualityLabel(
+            streamingQuality: .original,
+            transcodesToMP3: true
+        ) == "320 kbps")
+    }
+
+    @Test func availablePrebufferPresentationIncludesPreparedTracksOutsideQueue() {
+        let queuedReady = makeSong(id: "queued-ready", title: "Queued Ready")
+        let queuedMissing = makeSong(id: "queued-missing", title: "Queued Missing")
+        let lingeringB = makeSong(id: "lingering-b", title: "Zulu")
+        let lingeringA = makeSong(id: "lingering-a", title: "Alpha")
+
+        let songs = PrebufferAvailabilityPresentationPolicy.orderedAvailableSongs(
+            queuedSongs: [queuedReady, queuedMissing],
+            preparedSongs: [lingeringB, queuedReady, lingeringA]
+        )
+
+        #expect(songs.map(\.id) == ["queued-ready", "lingering-a", "lingering-b"])
+    }
+
+    @Test func availablePrebufferPresentationDeduplicatesRepeatedPreparedTracks() {
+        let first = makeSong(id: "same", title: "Same")
+        let second = makeSong(id: "same", title: "Same Again")
+
+        let songs = PrebufferAvailabilityPresentationPolicy.orderedAvailableSongs(
+            queuedSongs: [],
+            preparedSongs: [first, second]
+        )
+
+        #expect(songs.map(\.id) == ["same"])
+    }
+
     private func makeSong(id: String, suffix: String?) -> Song {
+        makeSong(id: id, title: "Track", suffix: suffix)
+    }
+
+    private func makeSong(id: String, title: String, suffix: String? = nil) -> Song {
         Song(
             id: id,
-            title: "Track",
+            title: title,
             album: "Album",
             albumId: "album",
             artist: "Artist",

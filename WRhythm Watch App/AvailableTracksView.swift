@@ -29,7 +29,8 @@ struct AvailableTracksView: View {
             availableSongs: player.availablePrebufferedSongs,
             previousSongs: player.retainedPrebufferedSongs,
             nextSongs: player.prebufferedSongs,
-            downloadStatuses: player.prebufferDownloadStatuses
+            downloadStatuses: player.prebufferDownloadStatuses,
+            qualityLabels: player.availablePrebufferedTrackQualityLabels
         )
         .navigationTitle("Available Tracks")
         .platformNavigationBarTitleDisplayModeInline()
@@ -41,24 +42,28 @@ struct BufferedTracksListView: View {
     var previousSongs: [Song] = []
     var nextSongs: [Song] = []
     var downloadStatuses: [PrebufferDownloadStatus] = []
+    var qualityLabels: [String: String] = [:]
     @Environment(\.dismiss) private var dismiss
 
     init(
         availableSongs: [Song] = [],
         previousSongs: [Song] = [],
         nextSongs: [Song] = [],
-        downloadStatuses: [PrebufferDownloadStatus] = []
+        downloadStatuses: [PrebufferDownloadStatus] = [],
+        qualityLabels: [String: String] = [:]
     ) {
         self.availableSongs = availableSongs
         self.previousSongs = previousSongs
         self.nextSongs = nextSongs
         self.downloadStatuses = downloadStatuses
+        self.qualityLabels = qualityLabels
     }
 
-    init(songs: [Song], downloadStatuses: [PrebufferDownloadStatus] = []) {
+    init(songs: [Song], downloadStatuses: [PrebufferDownloadStatus] = [], qualityLabels: [String: String] = [:]) {
         self.previousSongs = []
         self.nextSongs = songs
         self.downloadStatuses = downloadStatuses
+        self.qualityLabels = qualityLabels
     }
 
     var body: some View {
@@ -67,7 +72,8 @@ struct BufferedTracksListView: View {
                 availableSongs: availableSongs,
                 previousSongs: previousSongs,
                 nextSongs: nextSongs,
-                downloadStatuses: downloadStatuses
+                downloadStatuses: downloadStatuses,
+                qualityLabels: qualityLabels
             )
                 .navigationTitle("Available Tracks")
                 .platformNavigationBarTitleDisplayModeInline()
@@ -85,6 +91,7 @@ private struct BufferedTracksListContent: View {
     let previousSongs: [Song]
     let nextSongs: [Song]
     var downloadStatuses: [PrebufferDownloadStatus]
+    var qualityLabels: [String: String]
 
     private var readySongs: [Song] {
         availableSongs.isEmpty ? previousSongs + nextSongs : availableSongs
@@ -170,9 +177,14 @@ private struct BufferedTracksListContent: View {
                                 coverArtId: song.coverArt,
                                 artworkSize: 42
                             ) {
-                                Image(systemName: "play.fill")
-                                    .font(WRhythmTypography.metadata.weight(.semibold))
-                                    .foregroundStyle(WRhythmTheme.accent)
+                                VStack(alignment: .trailing, spacing: 6) {
+                                    if let qualityLabel = qualityLabels[song.id] {
+                                        AvailableTrackQualityBadge(label: qualityLabel)
+                                    }
+                                    Image(systemName: "play.fill")
+                                        .font(WRhythmTypography.metadata.weight(.semibold))
+                                        .foregroundStyle(WRhythmTheme.accent)
+                                }
                             }
                         }
                         .buttonStyle(.plain)
@@ -189,5 +201,33 @@ private struct BufferedTracksListContent: View {
 
     private func availableIndex(for song: Song, fallback: Int) -> Int {
         readySongs.firstIndex(where: { $0.id == song.id }) ?? fallback
+    }
+}
+
+private struct AvailableTrackQualityBadge: View {
+    let label: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "waveform")
+                .imageScale(.small)
+            Text(label)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .monospacedDigit()
+        }
+        .font(WRhythmTypography.metadata.weight(.semibold))
+        .foregroundStyle(WRhythmTheme.accent)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background {
+            Capsule(style: .continuous)
+                .fill(WRhythmTheme.accent.opacity(0.14))
+                .overlay {
+                    Capsule(style: .continuous)
+                        .strokeBorder(WRhythmTheme.accent.opacity(0.34), lineWidth: 1)
+                }
+        }
+        .accessibilityLabel("Cached quality \(label)")
     }
 }
