@@ -92,6 +92,15 @@ struct AudioQualityPolicyTests {
         #expect(songs.map(\.id) == ["same"])
     }
 
+    @Test func storedAlbumArtworkPolicyBuildsFilesystemSafeNames() {
+        let fileName = StoredAlbumArtworkPolicy.fileName(for: "artist/album+cover==")
+
+        #expect(fileName.hasSuffix(".img"))
+        #expect(!fileName.contains("/"))
+        #expect(!fileName.contains("+"))
+        #expect(!fileName.contains("="))
+    }
+
     private func makeSong(id: String, suffix: String?) -> Song {
         makeSong(id: id, title: "Track", suffix: suffix)
     }

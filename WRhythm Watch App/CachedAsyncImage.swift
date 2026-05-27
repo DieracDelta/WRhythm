@@ -37,6 +37,86 @@ private extension NSImage {
 }
 #endif
 
+struct StoredAlbumArtworkPolicy: Sendable {
+    static let enabledUserDefaultsKey = "storeAlbumArtwork"
+
+    static func fileName(for coverArtId: String) -> String {
+        let encoded = Data(coverArtId.utf8)
+            .base64EncodedString()
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "=", with: "")
+        return "\(encoded).img"
+    }
+}
+
+enum StoredAlbumArtworkCache {
+    static var isEnabled: Bool {
+        UserDefaults.standard.bool(forKey: StoredAlbumArtworkPolicy.enabledUserDefaultsKey)
+    }
+
+    static func localURLIfExists(for coverArtId: String) -> URL? {
+        let url = localURL(for: coverArtId)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    static func persistIfEnabled(coverArtId: String?, size: Int = 300) async {
+        guard isEnabled, let coverArtId, localURLIfExists(for: coverArtId) == nil else { return }
+        guard let remoteURL = await MainActor.run(body: {
+            NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: size)
+        }) else { return }
+
+        do {
+            let (data, response) = try await URLSession.shared.data(from: remoteURL)
+            guard !data.isEmpty else { return }
+            guard let image = PlatformImage(data: data) else {
+                if let httpResponse = response as? HTTPURLResponse {
+                    print("⚠️ Stored album art response was not decodable: \(httpResponse.statusCode)")
+                }
+                return
+            }
+
+            let localURL = localURL(for: coverArtId)
+            try ensureDirectory()
+            try data.write(to: localURL, options: .atomic)
+
+            await MainActor.run {
+                ImageCache.shared.cacheImage(image, for: remoteURL)
+                ImageCache.shared.cacheImage(image, for: localURL)
+            }
+        } catch {
+            print("⚠️ Failed to store album art: \(WRhythmLogRedactor.errorSummary(error))")
+        }
+    }
+
+    static func removeAllStoredArtwork() {
+        let directory = artworkDirectory
+        guard FileManager.default.fileExists(atPath: directory.path) else { return }
+        try? FileManager.default.removeItem(at: directory)
+    }
+
+    private static func localURL(for coverArtId: String) -> URL {
+        artworkDirectory.appendingPathComponent(StoredAlbumArtworkPolicy.fileName(for: coverArtId))
+    }
+
+    private static var artworkDirectory: URL {
+#if os(macOS)
+        FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("WRhythm", isDirectory: true)
+            .appendingPathComponent("AlbumArtwork", isDirectory: true)
+#else
+        FileManager.default
+            .urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("AlbumArtwork", isDirectory: true)
+#endif
+    }
+
+    private static func ensureDirectory() throws {
+        try FileManager.default.createDirectory(at: artworkDirectory, withIntermediateDirectories: true)
+    }
+}
+
 // Image cache manager using decoded memory cache plus URLCache for persistence.
 @MainActor
 final class ImageCache {
@@ -73,6 +153,13 @@ final class ImageCache {
     func getImage(for url: URL) -> PlatformImage? {
         let cacheKey = cacheKey(for: url)
         if let image = decodedCache.object(forKey: cacheKey) {
+            return image
+        }
+
+        if url.isFileURL,
+           let data = try? Data(contentsOf: url),
+           let image = PlatformImage(data: data) {
+            decodedCache.setObject(image, forKey: cacheKey)
             return image
         }
 

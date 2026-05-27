@@ -1275,6 +1275,9 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
             // songMetadata.removeValue(forKey: song.id)
             saveMetadata()
             saveSongMetadata()
+            Task {
+                await StoredAlbumArtworkCache.persistIfEnabled(coverArtId: song.coverArt)
+            }
 
             let timestamp = Date.now.formatted(.iso8601)
             print("✅ [\(timestamp)] Downloaded: \(song.title) (\(formatBytes(fileSize)))")
@@ -1580,6 +1583,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
                 print("❌ Error deleting \(metadataFile.lastPathComponent): \(error)")
             }
         }
+        StoredAlbumArtworkCache.removeAllStoredArtwork()
 
         // 4. Clear all in-memory caches
         print("🗑️ Clearing in-memory caches...")
@@ -1656,6 +1660,16 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
 
     func getTotalDownloaded() -> Int {
         return downloadedSongs.count
+    }
+
+    func cacheArtworkForDownloadedSongs() async {
+        let coverArtIds = Set(
+            Array(songMetadata.values.compactMap(\.coverArt)) +
+            Array(downloadedSongs.values.compactMap(\.coverArt))
+        )
+        for coverArtId in coverArtIds {
+            await StoredAlbumArtworkCache.persistIfEnabled(coverArtId: coverArtId)
+        }
     }
 
     func getTotalSize() -> Int64 {

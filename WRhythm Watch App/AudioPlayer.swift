@@ -2107,6 +2107,9 @@ class AudioPlayer: NSObject, ObservableObject {
                 player.prebufferTaskTokens.removeValue(forKey: key)
                 player.prebufferProgressByKey.removeValue(forKey: key)
                 player.updatePrebufferedTrackCount()
+                Task {
+                    await StoredAlbumArtworkCache.persistIfEnabled(coverArtId: song.coverArt)
+                }
                 print("✅ Prebuffered and prepared next queue item: \(song.title)")
                 player.scheduleQueuePrebuffer()
             }
@@ -2358,6 +2361,18 @@ class AudioPlayer: NSObject, ObservableObject {
             return qualityLabel
         }
         return preparedPrebuffers.first { $0.value.song.id == song.id }?.value.qualityLabel
+    }
+
+    @MainActor
+    func cacheArtworkForAvailableTracks() async {
+        let coverArtIds = Set(
+            Array(availablePrebufferedSongs.compactMap(\.coverArt)) +
+            Array(prebufferedSongs.compactMap(\.coverArt)) +
+            Array(retainedPrebufferedSongs.compactMap(\.coverArt))
+        )
+        for coverArtId in coverArtIds {
+            await StoredAlbumArtworkCache.persistIfEnabled(coverArtId: coverArtId)
+        }
     }
 
     private func prunePrebufferCache(keeping keepKeys: Set<String>) {

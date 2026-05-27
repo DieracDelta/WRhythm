@@ -1245,9 +1245,8 @@ struct WRhythmArtworkThumbnail: View {
             RoundedRectangle(cornerRadius: WRhythmVisual.thumbnailCornerRadius, style: .continuous)
                 .fill(.thinMaterial)
 
-            if let coverArtId,
-               let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: Int(size * 3)) {
-                CachedAsyncImage(url: coverURL) { image in
+            if let artworkURL {
+                CachedAsyncImage(url: artworkURL) { image in
                     image
                         .resizable()
                         .aspectRatio(contentMode: .fill)
@@ -1274,6 +1273,14 @@ struct WRhythmArtworkThumbnail: View {
             RoundedRectangle(cornerRadius: WRhythmVisual.thumbnailCornerRadius, style: .continuous)
                 .strokeBorder(WRhythmTheme.surfaceStroke(for: colorScheme), lineWidth: 1)
         }
+    }
+
+    private var artworkURL: URL? {
+        guard let coverArtId else { return nil }
+        if let localURL = StoredAlbumArtworkCache.localURLIfExists(for: coverArtId) {
+            return localURL
+        }
+        return NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: Int(size * 3))
     }
 }
 

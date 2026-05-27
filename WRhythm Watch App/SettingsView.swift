@@ -22,6 +22,7 @@ struct SettingsView: View {
     @AppStorage("prebufferAheadCount") private var prebufferAheadCount = 8
     @AppStorage("retainPreviousPrebufferCount") private var retainPreviousPrebufferCount = 3
     @AppStorage("experimentalAudioMuseFeaturesEnabled") private var experimentalAudioMuseFeaturesEnabled = false
+    @AppStorage(StoredAlbumArtworkPolicy.enabledUserDefaultsKey) private var storeAlbumArtwork = false
 
     private var streamingQuality: Binding<StreamingQuality> {
         Binding {
@@ -358,6 +359,20 @@ struct SettingsView: View {
             range: 1...17,
             step: 1
         )
+
+        Toggle(isOn: $storeAlbumArtwork) {
+            SettingsToggleLabel(
+                title: "Store Album Art",
+                subtitle: "Save cover images with downloaded and available tracks"
+            )
+        }
+        .onChange(of: storeAlbumArtwork) { _, enabled in
+            guard enabled else { return }
+            Task {
+                await downloadManager.cacheArtworkForDownloadedSongs()
+                await AudioPlayer.shared.cacheArtworkForAvailableTracks()
+            }
+        }
 
         Button(action: {
             Task {
