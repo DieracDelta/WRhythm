@@ -1897,8 +1897,6 @@ class AudioPlayer: NSObject, ObservableObject {
         }
 
         let queueKeys = queue.map(prebufferKey)
-        let currentQueueSong = queue.indices.contains(currentIndex) ? queue[currentIndex] : currentSong
-        let currentKey = currentQueueSong.map(prebufferKey)
         let start = min(max(currentIndex + 1, 0), queue.count)
         let end = min(queue.count, start + prebufferAheadCount)
         let upcomingSongs = start < end ? Array(queue[start..<end]) : []
@@ -1912,22 +1910,17 @@ class AudioPlayer: NSObject, ObservableObject {
             currentIndex: currentIndex,
             keepCount: retainPreviousPrebufferCount
         )
-        let retainedPreviousKeys = Set(previousKeys)
-        let desiredKeys = PrebufferSchedulingPolicy.desiredKeys(
-            currentKey: currentKey,
+        let desiredDownloadKeys = PrebufferSchedulingPolicy.desiredKeys(
+            currentKey: nil,
             upcomingKeys: upcomingKeys,
             previousKeys: previousKeys
         )
-        let retainedKeys = desiredKeys.union(retainedPreviousKeys)
         let candidateKeys = PrebufferSchedulingPolicy.orderedCandidateKeys(
-            currentKey: currentKey,
+            currentKey: nil,
             upcomingKeys: upcomingKeys,
             previousKeys: previousKeys
         )
         var songsByKey: [String: Song] = [:]
-        if let currentQueueSong, let currentKey {
-            songsByKey[currentKey] = currentQueueSong
-        }
         for song in upcomingSongs {
             songsByKey[prebufferKey(for: song)] = song
         }
@@ -1939,7 +1932,7 @@ class AudioPlayer: NSObject, ObservableObject {
             songsByKey[prebufferKey(for: song)] = song
         }
 
-        let staleKeys = prebufferTasks.keys.filter { !desiredKeys.contains($0) }
+        let staleKeys = prebufferTasks.keys.filter { !desiredDownloadKeys.contains($0) }
         for key in staleKeys {
             prebufferTasks[key]?.cancel()
             prebufferTasks.removeValue(forKey: key)
@@ -1947,12 +1940,7 @@ class AudioPlayer: NSObject, ObservableObject {
             prebufferProgressByKey.removeValue(forKey: key)
         }
 
-        for key in Array(preparedPrebuffers.keys) where !retainedKeys.contains(key) {
-            preparedPrebuffers.removeValue(forKey: key)
-        }
-        prunePrebufferRetryState(keeping: desiredKeys)
-
-        prunePrebufferCache(keeping: retainedKeys)
+        prunePrebufferRetryState(keeping: desiredDownloadKeys)
         updatePrebufferedTrackCount()
 
         let keysToSchedule = PrebufferSchedulingPolicy.keysToSchedule(
@@ -2101,7 +2089,6 @@ class AudioPlayer: NSObject, ObservableObject {
 
     private func desiredPrebufferKeys() -> Set<String> {
         guard !queue.isEmpty else { return [] }
-        let currentKey = queue.indices.contains(currentIndex) ? prebufferKey(for: queue[currentIndex]) : currentSong.map(prebufferKey)
         let upcomingKeys = PrebufferSchedulingPolicy.upcomingKeys(
             queueKeys: queue.map(prebufferKey),
             currentIndex: currentIndex,
@@ -2113,7 +2100,7 @@ class AudioPlayer: NSObject, ObservableObject {
             keepCount: retainPreviousPrebufferCount
         )
         return PrebufferSchedulingPolicy.desiredKeys(
-            currentKey: currentKey,
+            currentKey: nil,
             upcomingKeys: upcomingKeys,
             previousKeys: previousKeys
         )
@@ -2247,7 +2234,6 @@ class AudioPlayer: NSObject, ObservableObject {
         let readySongs = upcomingSlice.filter { song in
             preparedPrebuffers[prebufferKey(for: song)] != nil
         }
-        let currentSlice = queue.indices.contains(currentIndex) ? [queue[currentIndex]] : []
         let previousRange = PrebufferSchedulingPolicy.previousRange(
             queueCount: queue.count,
             currentIndex: currentIndex,
@@ -2270,12 +2256,14 @@ class AudioPlayer: NSObject, ObservableObject {
         if retainedPrebufferedSongs.map(\.id) != readyPreviousSongs.map(\.id) {
             retainedPrebufferedSongs = readyPreviousSongs
         }
-        let availableSongs = readyPreviousSongs + readySongs
+        let availableSongs = queue.filter { song in
+            preparedPrebuffers[prebufferKey(for: song)] != nil
+        }
         if availablePrebufferedSongs.map(\.id) != availableSongs.map(\.id) {
             availablePrebufferedSongs = availableSongs
         }
         let downloadStatuses = PrebufferProgressPolicy.downloadStatuses(
-            for: Array(previousSlice) + currentSlice + Array(upcomingSlice),
+            for: Array(previousSlice) + Array(upcomingSlice),
             activeKeys: Set(prebufferTasks.keys),
             progressByKey: prebufferProgressByKey,
             keyForSong: { prebufferKey(for: $0) }

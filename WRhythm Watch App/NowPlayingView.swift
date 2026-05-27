@@ -66,6 +66,7 @@ struct NowPlayingView: View {
                 AudioRouteView()
             case .bufferedTracks:
                 BufferedTracksListView(
+                    availableSongs: player.availablePrebufferedSongs,
                     previousSongs: player.retainedPrebufferedSongs,
                     nextSongs: player.prebufferedSongs,
                     downloadStatuses: player.prebufferDownloadStatuses
@@ -310,6 +311,7 @@ struct NowPlayingView: View {
                 AudioRouteView()
             case .bufferedTracks:
                 BufferedTracksListView(
+                    availableSongs: player.availablePrebufferedSongs,
                     previousSongs: player.retainedPrebufferedSongs,
                     nextSongs: player.prebufferedSongs,
                     downloadStatuses: player.prebufferDownloadStatuses
@@ -1634,6 +1636,7 @@ private struct WatchNowPlayingView: View {
                 AudioRouteView()
             case .bufferedTracks:
                 BufferedTracksListView(
+                    availableSongs: player.availablePrebufferedSongs,
                     previousSongs: player.retainedPrebufferedSongs,
                     nextSongs: player.prebufferedSongs,
                     downloadStatuses: player.prebufferDownloadStatuses

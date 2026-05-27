@@ -26,6 +26,7 @@ struct AvailableTracksView: View {
 
     var body: some View {
         BufferedTracksListContent(
+            availableSongs: player.availablePrebufferedSongs,
             previousSongs: player.retainedPrebufferedSongs,
             nextSongs: player.prebufferedSongs,
             downloadStatuses: player.prebufferDownloadStatuses
@@ -36,16 +37,19 @@ struct AvailableTracksView: View {
 }
 
 struct BufferedTracksListView: View {
+    var availableSongs: [Song] = []
     var previousSongs: [Song] = []
     var nextSongs: [Song] = []
     var downloadStatuses: [PrebufferDownloadStatus] = []
     @Environment(\.dismiss) private var dismiss
 
     init(
+        availableSongs: [Song] = [],
         previousSongs: [Song] = [],
         nextSongs: [Song] = [],
         downloadStatuses: [PrebufferDownloadStatus] = []
     ) {
+        self.availableSongs = availableSongs
         self.previousSongs = previousSongs
         self.nextSongs = nextSongs
         self.downloadStatuses = downloadStatuses
@@ -60,6 +64,7 @@ struct BufferedTracksListView: View {
     var body: some View {
         NavigationStack {
             BufferedTracksListContent(
+                availableSongs: availableSongs,
                 previousSongs: previousSongs,
                 nextSongs: nextSongs,
                 downloadStatuses: downloadStatuses
@@ -76,17 +81,18 @@ struct BufferedTracksListView: View {
 
 private struct BufferedTracksListContent: View {
     @ObservedObject private var player = AudioPlayer.shared
+    let availableSongs: [Song]
     let previousSongs: [Song]
     let nextSongs: [Song]
     var downloadStatuses: [PrebufferDownloadStatus]
 
-    private var availableSongs: [Song] {
-        previousSongs + nextSongs
+    private var readySongs: [Song] {
+        availableSongs.isEmpty ? previousSongs + nextSongs : availableSongs
     }
 
     var body: some View {
         WRhythmScreen(contentMaxWidth: 920) {
-            if availableSongs.isEmpty && downloadStatuses.isEmpty {
+            if readySongs.isEmpty && downloadStatuses.isEmpty {
                 WRhythmEmptyState(
                     systemImage: "arrow.down.circle",
                     title: "No Available Tracks",
@@ -96,8 +102,7 @@ private struct BufferedTracksListContent: View {
                 VStack(spacing: WRhythmSpacing.md) {
                     restoreSection
                     downloadingSection
-                    availableSection(title: "Previous", songs: previousSongs)
-                    availableSection(title: "Next", songs: nextSongs)
+                    availableSection(title: "Available", songs: readySongs)
                 }
             }
         }
@@ -156,7 +161,7 @@ private struct BufferedTracksListContent: View {
                     WRhythmSectionHeader(title: title)
                     ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
                         Button {
-                            player.playAvailableTracksQueue(availableSongs, startingAt: availableIndex(for: song, fallback: index))
+                            player.playAvailableTracksQueue(readySongs, startingAt: availableIndex(for: song, fallback: index))
                         } label: {
                             WRhythmMediaRow(
                                 title: song.title,
@@ -183,6 +188,6 @@ private struct BufferedTracksListContent: View {
     }
 
     private func availableIndex(for song: Song, fallback: Int) -> Int {
-        availableSongs.firstIndex(where: { $0.id == song.id }) ?? fallback
+        readySongs.firstIndex(where: { $0.id == song.id }) ?? fallback
     }
 }

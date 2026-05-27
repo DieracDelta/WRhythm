@@ -636,6 +636,7 @@ struct MacMiniPlayerBar: View {
                     isPlaying: isPlaying,
                     isBuffering: player.isBuffering,
                     bufferStatusText: player.queueBufferStatusSummary,
+                    availableBufferedSongs: player.availablePrebufferedSongs,
                     previousBufferedSongs: player.retainedPrebufferedSongs,
                     nextBufferedSongs: player.prebufferedSongs,
                     downloadStatuses: player.prebufferDownloadStatuses,
@@ -666,6 +667,7 @@ struct MacMiniPlayerBar: View {
                     isPlaying: remote.isPlaying,
                     isBuffering: remote.isBuffering == true,
                     bufferStatusText: nil,
+                    availableBufferedSongs: bufferedSongs(for: remote),
                     previousBufferedSongs: [],
                     nextBufferedSongs: bufferedSongs(for: remote),
                     downloadStatuses: [],
@@ -693,6 +695,7 @@ struct MacMiniPlayerBar: View {
         .background(.bar)
         .sheet(item: $bufferedTracksSheet) { sheet in
             BufferedTracksListView(
+                availableSongs: sheet.availableSongs,
                 previousSongs: sheet.previousSongs,
                 nextSongs: sheet.nextSongs,
                 downloadStatuses: sheet.downloadStatuses
@@ -741,6 +744,7 @@ struct MacMiniPlayerBar: View {
         isPlaying: Bool,
         isBuffering: Bool,
         bufferStatusText: String?,
+        availableBufferedSongs: [Song],
         previousBufferedSongs: [Song],
         nextBufferedSongs: [Song],
         downloadStatuses: [PrebufferDownloadStatus],
@@ -755,7 +759,7 @@ struct MacMiniPlayerBar: View {
         previousDisabled: Bool,
         nextDisabled: Bool
     ) -> some View {
-        let availableSongs = previousBufferedSongs + nextBufferedSongs
+        let availableSongs = availableBufferedSongs.isEmpty ? previousBufferedSongs + nextBufferedSongs : availableBufferedSongs
 
         return VStack(spacing: WRhythmSpacing.xs) {
             HStack(spacing: WRhythmSpacing.sm) {
@@ -784,6 +788,7 @@ struct MacMiniPlayerBar: View {
                     if !availableSongs.isEmpty || !downloadStatuses.isEmpty {
                         Button(action: {
                             bufferedTracksSheet = BufferedTracksSheetPayload(
+                                availableSongs: availableSongs,
                                 previousSongs: previousBufferedSongs,
                                 nextSongs: nextBufferedSongs,
                                 downloadStatuses: downloadStatuses
@@ -864,6 +869,7 @@ struct MacMiniPlayerBar: View {
 
 private struct BufferedTracksSheetPayload: Identifiable {
     let id = UUID()
+    let availableSongs: [Song]
     let previousSongs: [Song]
     let nextSongs: [Song]
     var downloadStatuses: [PrebufferDownloadStatus] = []

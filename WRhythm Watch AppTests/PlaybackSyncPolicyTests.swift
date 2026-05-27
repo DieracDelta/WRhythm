@@ -2120,7 +2120,7 @@ struct PlaybackSyncPolicyTests {
         )
         let retainedKeys = desiredKeys.union(previousKeys)
         let candidates = PrebufferSchedulingPolicy.orderedCandidateKeys(
-            currentKey: currentKey,
+            currentKey: nil,
             upcomingKeys: upcomingKeys,
             previousKeys: previousKeys
         )
@@ -2134,8 +2134,37 @@ struct PlaybackSyncPolicyTests {
 
         #expect(previousKeys == ["song-1", "song-2", "song-3"])
         #expect(retainedKeys == Set(["song-1", "song-2", "song-3", "song-4", "song-5", "song-6"]))
-        #expect(candidates == ["song-4", "song-5", "song-6", "song-1", "song-2", "song-3"])
+        #expect(candidates == ["song-5", "song-6", "song-1", "song-2", "song-3"])
         #expect(scheduled == ["song-1", "song-2", "song-3"])
+    }
+
+    @Test func prebufferSchedulingCanRetainCurrentWithoutSchedulingCurrentDownload() {
+        let queueKeys = (0..<6).map { "song-\($0)" }
+        let currentKey = queueKeys[2]
+        let upcomingKeys = PrebufferSchedulingPolicy.upcomingKeys(
+            queueKeys: queueKeys,
+            currentIndex: 2,
+            aheadCount: 2
+        )
+        let previousKeys = PrebufferSchedulingPolicy.previousKeys(
+            queueKeys: queueKeys,
+            currentIndex: 2,
+            keepCount: 2
+        )
+        let retainedKeys = PrebufferSchedulingPolicy.desiredKeys(
+            currentKey: currentKey,
+            upcomingKeys: upcomingKeys,
+            previousKeys: previousKeys
+        )
+        let downloadCandidates = PrebufferSchedulingPolicy.orderedCandidateKeys(
+            currentKey: nil,
+            upcomingKeys: upcomingKeys,
+            previousKeys: previousKeys
+        )
+
+        #expect(retainedKeys.contains(currentKey))
+        #expect(downloadCandidates == ["song-3", "song-4", "song-0", "song-1"])
+        #expect(downloadCandidates.contains(currentKey) == false)
     }
 
     @Test func prebufferCachePruningKeepsActiveTemporaryDownloads() {
@@ -2397,10 +2426,9 @@ struct PlaybackSyncPolicyTests {
         #expect(statuses.map(\.progressPercent) == [42, 1])
     }
 
-    @Test func prebufferProgressRowsIncludePreviousCurrentAndUpcomingDownloadsOnce() {
+    @Test func prebufferProgressRowsIncludePreviousAndUpcomingDownloadsOnce() {
         let songs = [
             makeSong(id: "previous"),
-            makeSong(id: "current"),
             makeSong(id: "next"),
             makeSong(id: "next")
         ]
@@ -2415,8 +2443,8 @@ struct PlaybackSyncPolicyTests {
             keyForSong: { "\($0.id)-key" }
         )
 
-        #expect(statuses.map { $0.song.id } == ["previous", "current", "next"])
-        #expect(statuses.map(\.progressPercent) == [20, 50, 80])
+        #expect(statuses.map { $0.song.id } == ["previous", "next"])
+        #expect(statuses.map(\.progressPercent) == [20, 80])
     }
 
     @Test func nowPlayingArtworkPolicyAvoidsDuplicateLoadsForCachedOrInFlightSongs() {
