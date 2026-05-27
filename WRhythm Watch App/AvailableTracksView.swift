@@ -8,17 +8,16 @@
 import SwiftUI
 
 struct AvailableTracksPresentationPolicy: Sendable {
-    static func summary(readyCount: Int, downloadingCount: Int) -> String {
-        if readyCount > 0, downloadingCount > 0 {
-            return "\(readyCount) ready, \(downloadingCount) downloading"
-        }
-        if readyCount > 0 {
-            return "\(readyCount) ready"
+    static func summary(previousReadyCount: Int, nextReadyCount: Int, downloadingCount: Int) -> String {
+        var parts: [String] = []
+        if previousReadyCount > 0 || nextReadyCount > 0 {
+            parts.append("\(previousReadyCount) prev avail")
+            parts.append("\(nextReadyCount) next avail")
         }
         if downloadingCount > 0 {
-            return "\(downloadingCount) downloading"
+            parts.append("\(downloadingCount) downloading")
         }
-        return "No tracks ready"
+        return parts.isEmpty ? "No tracks ready" : parts.joined(separator: " | ")
     }
 }
 
@@ -27,7 +26,8 @@ struct AvailableTracksView: View {
 
     var body: some View {
         BufferedTracksListContent(
-            songs: player.availablePrebufferedSongs,
+            previousSongs: player.retainedPrebufferedSongs,
+            nextSongs: player.prebufferedSongs,
             downloadStatuses: player.prebufferDownloadStatuses
         )
         .navigationTitle("Available Tracks")
@@ -36,13 +36,34 @@ struct AvailableTracksView: View {
 }
 
 struct BufferedTracksListView: View {
-    let songs: [Song]
+    var previousSongs: [Song] = []
+    var nextSongs: [Song] = []
     var downloadStatuses: [PrebufferDownloadStatus] = []
     @Environment(\.dismiss) private var dismiss
 
+    init(
+        previousSongs: [Song] = [],
+        nextSongs: [Song] = [],
+        downloadStatuses: [PrebufferDownloadStatus] = []
+    ) {
+        self.previousSongs = previousSongs
+        self.nextSongs = nextSongs
+        self.downloadStatuses = downloadStatuses
+    }
+
+    init(songs: [Song], downloadStatuses: [PrebufferDownloadStatus] = []) {
+        self.previousSongs = []
+        self.nextSongs = songs
+        self.downloadStatuses = downloadStatuses
+    }
+
     var body: some View {
         NavigationStack {
-            BufferedTracksListContent(songs: songs, downloadStatuses: downloadStatuses)
+            BufferedTracksListContent(
+                previousSongs: previousSongs,
+                nextSongs: nextSongs,
+                downloadStatuses: downloadStatuses
+            )
                 .navigationTitle("Available Tracks")
                 .platformNavigationBarTitleDisplayModeInline()
                 .platformModalCloseToolbar {
@@ -54,12 +75,18 @@ struct BufferedTracksListView: View {
 }
 
 private struct BufferedTracksListContent: View {
-    let songs: [Song]
+    @ObservedObject private var player = AudioPlayer.shared
+    let previousSongs: [Song]
+    let nextSongs: [Song]
     var downloadStatuses: [PrebufferDownloadStatus]
+
+    private var availableSongs: [Song] {
+        previousSongs + nextSongs
+    }
 
     var body: some View {
         WRhythmScreen(contentMaxWidth: 920) {
-            if songs.isEmpty && downloadStatuses.isEmpty {
+            if availableSongs.isEmpty && downloadStatuses.isEmpty {
                 WRhythmEmptyState(
                     systemImage: "arrow.down.circle",
                     title: "No Available Tracks",
@@ -67,10 +94,27 @@ private struct BufferedTracksListContent: View {
                 )
             } else {
                 VStack(spacing: WRhythmSpacing.md) {
+                    restoreSection
                     downloadingSection
-                    availableSection
+                    availableSection(title: "Previous", songs: previousSongs)
+                    availableSection(title: "Next", songs: nextSongs)
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var restoreSection: some View {
+        if player.availableTracksQueueRestoreAvailable {
+            Button {
+                player.restoreQueueBeforeAvailableTracks()
+            } label: {
+                Label("Restore Previous Queue", systemImage: "arrow.uturn.backward")
+                    .font(WRhythmTypography.rowTitle)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(WRhythmTheme.accent)
         }
     }
 
@@ -105,23 +149,28 @@ private struct BufferedTracksListContent: View {
     }
 
     @ViewBuilder
-    private var availableSection: some View {
+    private func availableSection(title: String, songs: [Song]) -> some View {
         if !songs.isEmpty {
             WRhythmCard {
                 VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
-                    WRhythmSectionHeader(title: "Available")
-                    ForEach(songs) { song in
-                        WRhythmMediaRow(
-                            title: song.title,
-                            subtitle: song.artist,
-                            detail: song.album,
-                            coverArtId: song.coverArt,
-                            artworkSize: 42
-                        ) {
-                            Text("Ready")
-                                .font(WRhythmTypography.metadata.weight(.semibold))
-                                .foregroundStyle(WRhythmTheme.success)
+                    WRhythmSectionHeader(title: title)
+                    ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
+                        Button {
+                            player.playAvailableTracksQueue(availableSongs, startingAt: availableIndex(for: song, fallback: index))
+                        } label: {
+                            WRhythmMediaRow(
+                                title: song.title,
+                                subtitle: song.artist,
+                                detail: song.album,
+                                coverArtId: song.coverArt,
+                                artworkSize: 42
+                            ) {
+                                Image(systemName: "play.fill")
+                                    .font(WRhythmTypography.metadata.weight(.semibold))
+                                    .foregroundStyle(WRhythmTheme.accent)
+                            }
                         }
+                        .buttonStyle(.plain)
 
                         if song.id != songs.last?.id {
                             Divider()
@@ -131,5 +180,9 @@ private struct BufferedTracksListContent: View {
                 }
             }
         }
+    }
+
+    private func availableIndex(for song: Song, fallback: Int) -> Int {
+        availableSongs.firstIndex(where: { $0.id == song.id }) ?? fallback
     }
 }

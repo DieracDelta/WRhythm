@@ -336,15 +336,17 @@ struct PrebufferProgressPolicy: Sendable {
     }
 
     static func statusSummary(
-        readyCount: Int,
+        previousReadyCount: Int,
+        nextReadyCount: Int,
         activeCount: Int,
         activePercent: Int?,
         playerIsBuffering: Bool,
         playerBufferPercent: Int?
     ) -> String? {
         var parts: [String] = []
-        if readyCount > 0 {
-            parts.append("\(readyCount) available")
+        if previousReadyCount > 0 || nextReadyCount > 0 {
+            parts.append("\(previousReadyCount) prev available")
+            parts.append("\(nextReadyCount) next available")
         }
         if activeCount > 0 {
             if let activePercent {
@@ -447,6 +449,7 @@ class AudioPlayer: NSObject, ObservableObject {
     @Published private(set) var prebufferDownloadStatuses: [PrebufferDownloadStatus] = []
     @Published private(set) var prebufferingTrackCount = 0
     @Published private(set) var prebufferingProgressPercent: Int?
+    @Published private(set) var availableTracksQueueRestoreAvailable = false
     @Published var queue: [Song] = []
     @Published var currentIndex: Int = 0
     @Published var playlistGenQueue: [Song] = []
@@ -503,6 +506,21 @@ class AudioPlayer: NSObject, ObservableObject {
         let currentTime: TimeInterval
         let duration: TimeInterval
         let wasPlaying: Bool
+        let playlistGenQueue: [Song]
+        let playlistGenSourceTitle: String?
+        let playlistGenSourceArtist: String?
+    }
+
+    private struct AvailableTracksQueueRestoreState {
+        let queue: [Song]
+        let currentIndex: Int
+        let currentSong: Song?
+        let currentTime: TimeInterval
+        let duration: TimeInterval
+        let wasPlaying: Bool
+        let isShuffled: Bool
+        let originalQueue: [Song]
+        let originalIndex: Int
         let playlistGenQueue: [Song]
         let playlistGenSourceTitle: String?
         let playlistGenSourceArtist: String?
@@ -571,6 +589,11 @@ class AudioPlayer: NSObject, ObservableObject {
     private var playbackIntentRevision = 0
     private var playlistGenTask: Task<Void, Never>?
     private var playlistGenRestoreState: PlaylistGenRestoreState?
+    private var availableTracksQueueRestoreState: AvailableTracksQueueRestoreState? {
+        didSet {
+            availableTracksQueueRestoreAvailable = availableTracksQueueRestoreState != nil
+        }
+    }
     private var scrobbleTracker = ScrobbleProgressTracker()
     private let maxPlaybackRetryAttempts = 4
     private let maxPlaybackRetryBackoff: TimeInterval = 30
@@ -628,7 +651,8 @@ class AudioPlayer: NSObject, ObservableObject {
 
     var queueBufferStatusSummary: String? {
         PrebufferProgressPolicy.statusSummary(
-            readyCount: availablePrebufferedSongs.count,
+            previousReadyCount: retainedPrebufferedSongs.count,
+            nextReadyCount: prebufferedSongs.count,
             activeCount: prebufferingTrackCount,
             activePercent: prebufferingProgressPercent,
             playerIsBuffering: isBuffering,
@@ -1091,6 +1115,7 @@ class AudioPlayer: NSObject, ObservableObject {
 
     func playSong(_ song: Song) {
         clearPlaylistGen()
+        availableTracksQueueRestoreState = nil
         if DeviceSyncManager.shared.routePlaybackRequestToConnectedDevice([song], startingAt: 0) {
             return
         }
@@ -1103,6 +1128,7 @@ class AudioPlayer: NSObject, ObservableObject {
 
     func playQueue(_ songs: [Song], startingAt index: Int = 0, startTime: TimeInterval = 0, clearGeneratedPlaylist: Bool = true) {
         guard !songs.isEmpty, index < songs.count else { return }
+        availableTracksQueueRestoreState = nil
         if clearGeneratedPlaylist {
             clearPlaylistGen()
         }
@@ -1117,6 +1143,64 @@ class AudioPlayer: NSObject, ObservableObject {
         self.currentIndex = index
         startPlayback(songs[index], startTime: startTime)
         DeviceSyncManager.shared.broadcastLocalQueueAsShared(intendedIsPlaying: true)
+    }
+
+    func playAvailableTracksQueue(_ songs: [Song], startingAt index: Int = 0) {
+        guard !songs.isEmpty, songs.indices.contains(index) else { return }
+        if availableTracksQueueRestoreState == nil {
+            availableTracksQueueRestoreState = AvailableTracksQueueRestoreState(
+                queue: queue,
+                currentIndex: currentIndex,
+                currentSong: currentSong,
+                currentTime: liveCurrentTime,
+                duration: duration,
+                wasPlaying: isPlaying,
+                isShuffled: isShuffled,
+                originalQueue: originalQueue,
+                originalIndex: originalIndex,
+                playlistGenQueue: playlistGenQueue,
+                playlistGenSourceTitle: playlistGenSourceTitle,
+                playlistGenSourceArtist: playlistGenSourceArtist
+            )
+        }
+
+        recordQueueIntentChange()
+        isShuffled = false
+        originalQueue = []
+        originalIndex = 0
+        queue = songs
+        currentIndex = index
+        queueFinished = false
+        startPlayback(songs[index])
+        DeviceSyncManager.shared.broadcastLocalQueueAsShared(intendedIsPlaying: true)
+    }
+
+    func restoreQueueBeforeAvailableTracks() {
+        guard let state = availableTracksQueueRestoreState else { return }
+        availableTracksQueueRestoreState = nil
+
+        recordQueueIntentChange()
+        queue = state.queue
+        currentIndex = min(max(state.currentIndex, 0), max(state.queue.count - 1, 0))
+        currentSong = state.currentSong
+        currentTime = state.currentTime
+        duration = state.duration
+        isShuffled = state.isShuffled
+        originalQueue = state.originalQueue
+        originalIndex = state.originalIndex
+        playlistGenQueue = state.playlistGenQueue
+        playlistGenSourceTitle = state.playlistGenSourceTitle
+        playlistGenSourceArtist = state.playlistGenSourceArtist
+        queueFinished = false
+
+        guard let song = state.currentSong else {
+            pause()
+            DeviceSyncManager.shared.broadcastLocalQueueAsShared(intendedIsPlaying: false)
+            return
+        }
+
+        startPlayback(song, startTime: state.currentTime, autoplay: state.wasPlaying)
+        DeviceSyncManager.shared.broadcastLocalQueueAsShared(intendedIsPlaying: state.wasPlaying)
     }
 
     func playGeneratedPlaylist(sourceSong: Song, songs: [Song], startingAt index: Int = 0) {
@@ -1449,6 +1533,7 @@ class AudioPlayer: NSObject, ObservableObject {
         }
 
         clearPlaylistGen()
+        availableTracksQueueRestoreState = nil
         print("🔀 playQueueShuffled called with \(songs.count) songs")
         if DeviceSyncManager.shared.routePlaybackRequestToConnectedDevice(songs, startingAt: 0, shuffled: true) {
             return

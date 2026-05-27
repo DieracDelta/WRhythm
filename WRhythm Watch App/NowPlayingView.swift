@@ -66,7 +66,8 @@ struct NowPlayingView: View {
                 AudioRouteView()
             case .bufferedTracks:
                 BufferedTracksListView(
-                    songs: player.availablePrebufferedSongs,
+                    previousSongs: player.retainedPrebufferedSongs,
+                    nextSongs: player.prebufferedSongs,
                     downloadStatuses: player.prebufferDownloadStatuses
                 )
             }
@@ -111,11 +112,6 @@ struct NowPlayingView: View {
                         }
 
                         HStack(spacing: 8) {
-                            WRhythmStatusPill(
-                                text: localIsPlaying ? "Playing" : "Paused",
-                                systemImage: localIsPlaying ? "waveform" : "pause.fill",
-                                tint: localIsPlaying ? WRhythmTheme.accent : .secondary
-                            )
                             if player.isBuffering {
                                 WRhythmStatusPill(
                                     text: player.currentBufferPercent.map { "Buffering \($0)%" } ?? "Buffering",
@@ -125,7 +121,8 @@ struct NowPlayingView: View {
                             }
                             if !player.availablePrebufferedSongs.isEmpty || !player.prebufferDownloadStatuses.isEmpty {
                                 BufferedTracksButton(
-                                    count: player.availablePrebufferedSongs.count,
+                                    previousCount: player.retainedPrebufferedSongs.count,
+                                    nextCount: player.prebufferedSongs.count,
                                     downloadingCount: player.prebufferDownloadStatuses.count
                                 ) {
                                     presentedSheet = .bufferedTracks
@@ -313,7 +310,8 @@ struct NowPlayingView: View {
                 AudioRouteView()
             case .bufferedTracks:
                 BufferedTracksListView(
-                    songs: player.availablePrebufferedSongs,
+                    previousSongs: player.retainedPrebufferedSongs,
+                    nextSongs: player.prebufferedSongs,
                     downloadStatuses: player.prebufferDownloadStatuses
                 )
             }
@@ -419,14 +417,20 @@ struct NowPlayingView: View {
     }
 }
 
-private func bufferedTrackLabel(_ count: Int, downloadingCount: Int = 0) -> String {
-    if count > 0, downloadingCount > 0 {
-        return "\(count) available, \(downloadingCount) downloading"
+private func bufferedTrackLabel(
+    previousCount: Int,
+    nextCount: Int,
+    downloadingCount: Int = 0
+) -> String {
+    var parts: [String] = []
+    if previousCount > 0 || nextCount > 0 {
+        parts.append("\(previousCount) prev avail")
+        parts.append("\(nextCount) next avail")
     }
     if downloadingCount > 0 {
-        return "\(downloadingCount) downloading"
+        parts.append("\(downloadingCount) downloading")
     }
-    return "\(count) available"
+    return parts.isEmpty ? "No tracks ready" : parts.joined(separator: " | ")
 }
 
 private enum NowPlayingSheet: String, Identifiable {
@@ -535,9 +539,9 @@ private struct PhoneLocalNowPlayingContent: View {
                 title: song.title,
                 artist: song.artist,
                 album: song.album,
-                isPlaying: localIsPlaying,
                 isBuffering: player.isBuffering,
-                bufferedCount: player.availablePrebufferedSongs.count,
+                previousBufferedCount: player.retainedPrebufferedSongs.count,
+                nextBufferedCount: player.prebufferedSongs.count,
                 downloadingCount: player.prebufferDownloadStatuses.count,
                 showBufferedTracks: { presentedSheet = .bufferedTracks }
             )
@@ -676,9 +680,9 @@ private struct PhoneRemoteNowPlayingContent: View {
                     title: song.title,
                     artist: song.artist,
                     album: song.album,
-                    isPlaying: playback.isPlaying,
                     isBuffering: playback.isBuffering == true,
-                    bufferedCount: playback.prebufferedTrackCount ?? 0,
+                    previousBufferedCount: 0,
+                    nextBufferedCount: playback.prebufferedTrackCount ?? 0,
                     downloadingCount: 0,
                     showBufferedTracks: { presentedSheet = .bufferedTracks }
                 )
@@ -819,9 +823,9 @@ private struct PhoneTrackSummary: View {
     let title: String
     let artist: String?
     let album: String?
-    let isPlaying: Bool
     let isBuffering: Bool
-    let bufferedCount: Int
+    let previousBufferedCount: Int
+    let nextBufferedCount: Int
     let downloadingCount: Int
     let showBufferedTracks: () -> Void
 
@@ -848,19 +852,14 @@ private struct PhoneTrackSummary: View {
             }
 
             HStack(spacing: WRhythmSpacing.xs) {
-                WRhythmStatusPill(
-                    text: isPlaying ? "Playing" : "Paused",
-                    systemImage: isPlaying ? "waveform" : "pause.fill",
-                    tint: isPlaying ? WRhythmTheme.accent : .secondary
-                )
-
                 if isBuffering {
                     WRhythmStatusPill(text: "Buffering", systemImage: "hourglass", tint: WRhythmTheme.warning)
                 }
 
-                if bufferedCount > 0 || downloadingCount > 0 {
+                if previousBufferedCount > 0 || nextBufferedCount > 0 || downloadingCount > 0 {
                     BufferedTracksButton(
-                        count: bufferedCount,
+                        previousCount: previousBufferedCount,
+                        nextCount: nextBufferedCount,
                         downloadingCount: downloadingCount,
                         action: showBufferedTracks
                     )
@@ -941,20 +940,29 @@ private func formatPhonePlaybackTime(_ seconds: TimeInterval) -> String {
 #endif
 
 private struct BufferedTracksButton: View {
-    let count: Int
+    let previousCount: Int
+    let nextCount: Int
     var downloadingCount = 0
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             WRhythmStatusPill(
-                text: bufferedTrackLabel(count, downloadingCount: downloadingCount),
+                text: bufferedTrackLabel(
+                    previousCount: previousCount,
+                    nextCount: nextCount,
+                    downloadingCount: downloadingCount
+                ),
                 systemImage: "arrow.down.circle",
                 tint: .secondary
             )
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(bufferedTrackLabel(count, downloadingCount: downloadingCount))
+        .accessibilityLabel(bufferedTrackLabel(
+            previousCount: previousCount,
+            nextCount: nextCount,
+            downloadingCount: downloadingCount
+        ))
     }
 }
 
@@ -1084,18 +1092,16 @@ struct RemotePlaybackControls: View {
                         .font(WRhythmTypography.rowSubtitle)
                         .foregroundColor(.secondary)
                     Spacer()
-                    WRhythmStatusPill(
-                        text: playback.isPlaying ? "Playing" : "Paused",
-                        systemImage: playback.isPlaying ? "waveform" : "pause.fill",
-                        tint: playback.isPlaying ? WRhythmTheme.accent : .secondary
-                    )
                     if playback.isBuffering == true {
                         WRhythmStatusPill(text: "Buffering", systemImage: "hourglass", tint: WRhythmTheme.warning)
                     }
                     if let bufferedCount = playback.prebufferedTrackCount,
                        !playback.queue.isEmpty,
                        playback.currentIndex < playback.queue.count - 1 {
-                        WRhythmStatusPill(text: "\(bufferedCount) available", systemImage: "arrow.down.circle")
+                        WRhythmStatusPill(
+                            text: bufferedTrackLabel(previousCount: 0, nextCount: bufferedCount),
+                            systemImage: "arrow.down.circle"
+                        )
                     }
                 }
 
@@ -1628,7 +1634,8 @@ private struct WatchNowPlayingView: View {
                 AudioRouteView()
             case .bufferedTracks:
                 BufferedTracksListView(
-                    songs: player.availablePrebufferedSongs,
+                    previousSongs: player.retainedPrebufferedSongs,
+                    nextSongs: player.prebufferedSongs,
                     downloadStatuses: player.prebufferDownloadStatuses
                 )
             }

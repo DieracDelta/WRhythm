@@ -2329,19 +2329,21 @@ struct PlaybackSyncPolicyTests {
 
     @Test func prebufferProgressSummaryShowsActiveDownloadPercent() {
         let summary = PrebufferProgressPolicy.statusSummary(
-            readyCount: 7,
+            previousReadyCount: 2,
+            nextReadyCount: 5,
             activeCount: 1,
             activePercent: 80,
             playerIsBuffering: false,
             playerBufferPercent: nil
         )
 
-        #expect(summary == "7 available • 1 downloading 80%")
+        #expect(summary == "2 prev available • 5 next available • 1 downloading 80%")
     }
 
     @Test func prebufferProgressSummaryUsesBufferingOnlyForCurrentPlayback() {
         let summary = PrebufferProgressPolicy.statusSummary(
-            readyCount: 0,
+            previousReadyCount: 0,
+            nextReadyCount: 0,
             activeCount: 0,
             activePercent: nil,
             playerIsBuffering: true,
@@ -2353,14 +2355,15 @@ struct PlaybackSyncPolicyTests {
 
     @Test func prebufferProgressSummaryKeepsCurrentBufferingSeparateFromDownloads() {
         let summary = PrebufferProgressPolicy.statusSummary(
-            readyCount: 2,
+            previousReadyCount: 1,
+            nextReadyCount: 1,
             activeCount: 1,
             activePercent: 35,
             playerIsBuffering: true,
             playerBufferPercent: 12
         )
 
-        #expect(summary == "2 available • 1 downloading 35% • buffering 12%")
+        #expect(summary == "1 prev available • 1 next available • 1 downloading 35% • buffering 12%")
     }
 
     @Test func prebufferProgressBuildsDownloadingRowsForActiveQueueItems() {
@@ -3034,10 +3037,26 @@ struct PlaybackSyncPolicyTests {
     }
 
     @Test func availableTracksSummaryCoversEmptyReadyDownloadingAndMixedStates() {
-        #expect(AvailableTracksPresentationPolicy.summary(readyCount: 0, downloadingCount: 0) == "No tracks ready")
-        #expect(AvailableTracksPresentationPolicy.summary(readyCount: 3, downloadingCount: 0) == "3 ready")
-        #expect(AvailableTracksPresentationPolicy.summary(readyCount: 0, downloadingCount: 2) == "2 downloading")
-        #expect(AvailableTracksPresentationPolicy.summary(readyCount: 7, downloadingCount: 1) == "7 ready, 1 downloading")
+        #expect(AvailableTracksPresentationPolicy.summary(
+            previousReadyCount: 0,
+            nextReadyCount: 0,
+            downloadingCount: 0
+        ) == "No tracks ready")
+        #expect(AvailableTracksPresentationPolicy.summary(
+            previousReadyCount: 3,
+            nextReadyCount: 0,
+            downloadingCount: 0
+        ) == "3 prev avail | 0 next avail")
+        #expect(AvailableTracksPresentationPolicy.summary(
+            previousReadyCount: 0,
+            nextReadyCount: 4,
+            downloadingCount: 2
+        ) == "0 prev avail | 4 next avail | 2 downloading")
+        #expect(AvailableTracksPresentationPolicy.summary(
+            previousReadyCount: 7,
+            nextReadyCount: 1,
+            downloadingCount: 1
+        ) == "7 prev avail | 1 next avail | 1 downloading")
     }
 
     @Test func queuePresentationProtectsCurrentTrackAndRejectsInvalidIndexes() {

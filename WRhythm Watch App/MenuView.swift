@@ -124,7 +124,8 @@ struct MenuView: View {
 #if os(iOS)
     private var availableTracksSummary: String {
         AvailableTracksPresentationPolicy.summary(
-            readyCount: player.availablePrebufferedSongs.count,
+            previousReadyCount: player.retainedPrebufferedSongs.count,
+            nextReadyCount: player.prebufferedSongs.count,
             downloadingCount: player.prebufferDownloadStatuses.count
         )
     }

@@ -636,7 +636,8 @@ struct MacMiniPlayerBar: View {
                     isPlaying: isPlaying,
                     isBuffering: player.isBuffering,
                     bufferStatusText: player.queueBufferStatusSummary,
-                    bufferedSongs: player.availablePrebufferedSongs,
+                    previousBufferedSongs: player.retainedPrebufferedSongs,
+                    nextBufferedSongs: player.prebufferedSongs,
                     downloadStatuses: player.prebufferDownloadStatuses,
                     queuePosition: player.queue.count > 1 ? "\(localLabel): \(player.currentIndex + 1) of \(player.queue.count)" : localLabel,
                     previous: player.previous,
@@ -665,7 +666,8 @@ struct MacMiniPlayerBar: View {
                     isPlaying: remote.isPlaying,
                     isBuffering: remote.isBuffering == true,
                     bufferStatusText: nil,
-                    bufferedSongs: bufferedSongs(for: remote),
+                    previousBufferedSongs: [],
+                    nextBufferedSongs: bufferedSongs(for: remote),
                     downloadStatuses: [],
                     queuePosition: remote.queue.count > 1 ? "\(remote.deviceName): \(remote.currentIndex + 1) of \(remote.queue.count)" : remote.deviceName,
                     previous: { deviceSyncManager.sendPrevious(targetDeviceID: remote.id) },
@@ -690,7 +692,11 @@ struct MacMiniPlayerBar: View {
         }
         .background(.bar)
         .sheet(item: $bufferedTracksSheet) { sheet in
-            BufferedTracksListView(songs: sheet.songs, downloadStatuses: sheet.downloadStatuses)
+            BufferedTracksListView(
+                previousSongs: sheet.previousSongs,
+                nextSongs: sheet.nextSongs,
+                downloadStatuses: sheet.downloadStatuses
+            )
         }
     }
 
@@ -735,7 +741,8 @@ struct MacMiniPlayerBar: View {
         isPlaying: Bool,
         isBuffering: Bool,
         bufferStatusText: String?,
-        bufferedSongs: [Song],
+        previousBufferedSongs: [Song],
+        nextBufferedSongs: [Song],
         downloadStatuses: [PrebufferDownloadStatus],
         queuePosition: String,
         previous: @escaping () -> Void,
@@ -748,7 +755,9 @@ struct MacMiniPlayerBar: View {
         previousDisabled: Bool,
         nextDisabled: Bool
     ) -> some View {
-        VStack(spacing: WRhythmSpacing.xs) {
+        let availableSongs = previousBufferedSongs + nextBufferedSongs
+
+        return VStack(spacing: WRhythmSpacing.xs) {
             HStack(spacing: WRhythmSpacing.sm) {
                 MiniPlayerArtwork(coverArtId: coverArtId)
 
@@ -772,16 +781,18 @@ struct MacMiniPlayerBar: View {
                             .foregroundColor(.secondary)
                             .lineLimit(1)
                     }
-                    if !bufferedSongs.isEmpty || !downloadStatuses.isEmpty {
+                    if !availableSongs.isEmpty || !downloadStatuses.isEmpty {
                         Button(action: {
                             bufferedTracksSheet = BufferedTracksSheetPayload(
-                                songs: bufferedSongs,
+                                previousSongs: previousBufferedSongs,
+                                nextSongs: nextBufferedSongs,
                                 downloadStatuses: downloadStatuses
                             )
                         }) {
                             Label(
                                 availableTracksSummary(
-                                    available: bufferedSongs.count,
+                                    previous: previousBufferedSongs.count,
+                                    next: nextBufferedSongs.count,
                                     downloading: downloadStatuses.count
                                 ),
                                 systemImage: "arrow.down.circle"
@@ -838,20 +849,23 @@ struct MacMiniPlayerBar: View {
         return parts.joined(separator: " • ")
     }
 
-    private func availableTracksSummary(available: Int, downloading: Int) -> String {
-        if available > 0, downloading > 0 {
-            return "\(available) available, \(downloading) downloading"
+    private func availableTracksSummary(previous: Int, next: Int, downloading: Int) -> String {
+        var parts: [String] = []
+        if previous > 0 || next > 0 {
+            parts.append("\(previous) prev avail")
+            parts.append("\(next) next avail")
         }
         if downloading > 0 {
-            return "\(downloading) downloading"
+            parts.append("\(downloading) downloading")
         }
-        return "\(available) available"
+        return parts.isEmpty ? "No tracks ready" : parts.joined(separator: " | ")
     }
 }
 
 private struct BufferedTracksSheetPayload: Identifiable {
     let id = UUID()
-    let songs: [Song]
+    let previousSongs: [Song]
+    let nextSongs: [Song]
     var downloadStatuses: [PrebufferDownloadStatus] = []
 }
 
