@@ -2216,6 +2216,7 @@ struct PlaybackSyncPolicyTests {
         #expect(PrebufferCachePruningPolicy.shouldRemove(filename: "next-1.mp3", keepFilenames: keepFilenames) == false)
         #expect(PrebufferCachePruningPolicy.shouldRemove(filename: "outside-window.mp3", keepFilenames: keepFilenames) == true)
         #expect(PrebufferCachePruningPolicy.shouldRemove(filename: "outside-window.download", keepFilenames: keepFilenames) == false)
+        #expect(PrebufferCachePruningPolicy.shouldRemove(filename: "prebufferManifest.v1.json", keepFilenames: keepFilenames) == false)
     }
 
     @Test func prebufferSchedulingCountsOnlyPreparedTracksAsReady() {

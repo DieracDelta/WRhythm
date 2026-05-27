@@ -198,7 +198,38 @@ struct PrebufferSchedulingPolicy: Sendable {
 struct PrebufferCachePruningPolicy: Sendable {
     static func shouldRemove(filename: String, keepFilenames: Set<String>) -> Bool {
         guard !filename.hasSuffix(".download") else { return false }
+        guard !filename.hasSuffix(".json") else { return false }
         return !keepFilenames.contains(filename)
+    }
+}
+
+struct PersistedPrebufferRecord: Codable, Sendable {
+    let key: String
+    let filename: String
+    let song: Song
+    let qualityLabel: String
+    let updatedAt: Date
+}
+
+struct PrebufferManifestPolicy: Sendable {
+    static func restorableRecords(
+        records: [PersistedPrebufferRecord],
+        existingFilenames: Set<String>
+    ) -> [PersistedPrebufferRecord] {
+        var recordsByKey: [String: PersistedPrebufferRecord] = [:]
+        for record in records where existingFilenames.contains(record.filename) {
+            if let existing = recordsByKey[record.key], existing.updatedAt >= record.updatedAt {
+                continue
+            }
+            recordsByKey[record.key] = record
+        }
+
+        return recordsByKey.values.sorted { lhs, rhs in
+            if lhs.updatedAt != rhs.updatedAt {
+                return lhs.updatedAt > rhs.updatedAt
+            }
+            return lhs.song.title.localizedCaseInsensitiveCompare(rhs.song.title) == .orderedAscending
+        }
     }
 }
 
@@ -603,6 +634,7 @@ class AudioPlayer: NSObject, ObservableObject {
 
     private static let persistedPlaybackStateKey = "audioPlayerPersistedPlaybackState.v1"
     private static let persistedPlaybackVersion = 1
+    private static let prebufferManifestFilename = "prebufferManifest.v1.json"
 
     private let player: AVPlayer
     private var timeObserver: Any?
@@ -681,6 +713,7 @@ class AudioPlayer: NSObject, ObservableObject {
         addPeriodicTimeObserver()
         observePlayerBuffering()
         restorePersistedPlaybackState()
+        restorePersistedPrebufferManifest()
         setupPlaybackPersistence()
     }
 
@@ -1747,6 +1780,10 @@ class AudioPlayer: NSObject, ObservableObject {
         return directory
     }
 
+    private var prebufferManifestURL: URL {
+        prebufferDirectory.appendingPathComponent(Self.prebufferManifestFilename, isDirectory: false)
+    }
+
     private func shouldTranscodeForPlayback(_ song: Song) -> Bool {
         let streamingQuality = StreamingQuality.current
         return streamingQuality != .original || !isFormatSupportedNatively(song.contentType, song.suffix)
@@ -1788,6 +1825,93 @@ class AudioPlayer: NSObject, ObservableObject {
 
     private func prebufferURL(for song: Song) -> URL {
         prebufferDirectory.appendingPathComponent(sanitizedPrebufferFilename(for: song))
+    }
+
+    private func prebufferRecord(for key: String, prebuffer: PreparedPrebuffer) -> PersistedPrebufferRecord? {
+        let prebufferDirectory = prebufferDirectory.standardizedFileURL
+        let fileDirectory = prebuffer.url.deletingLastPathComponent().standardizedFileURL
+        guard fileDirectory == prebufferDirectory else { return nil }
+        return PersistedPrebufferRecord(
+            key: key,
+            filename: prebuffer.url.lastPathComponent,
+            song: prebuffer.song,
+            qualityLabel: prebuffer.qualityLabel,
+            updatedAt: Date()
+        )
+    }
+
+    private func savePrebufferManifest() {
+        let records = preparedPrebuffers.compactMap { key, prebuffer in
+            prebufferRecord(for: key, prebuffer: prebuffer)
+        }
+            .sorted { lhs, rhs in lhs.song.title.localizedCaseInsensitiveCompare(rhs.song.title) == .orderedAscending }
+        guard !records.isEmpty else {
+            try? FileManager.default.removeItem(at: prebufferManifestURL)
+            return
+        }
+
+        do {
+            let data = try JSONEncoder().encode(records)
+            try data.write(to: prebufferManifestURL, options: .atomic)
+        } catch {
+            print("⚠️ Failed to save prebuffer manifest: \(WRhythmLogRedactor.errorSummary(error))")
+        }
+    }
+
+    private func loadPrebufferManifestRecords() -> [PersistedPrebufferRecord] {
+        do {
+            let data = try Data(contentsOf: prebufferManifestURL)
+            return try JSONDecoder().decode([PersistedPrebufferRecord].self, from: data)
+        } catch {
+            return []
+        }
+    }
+
+    private func restorePersistedPrebufferManifest() {
+        let records = loadPrebufferManifestRecords()
+        guard !records.isEmpty else { return }
+
+        let existingFilenames = Set((try? FileManager.default.contentsOfDirectory(
+            at: prebufferDirectory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ).map(\.lastPathComponent)) ?? [])
+        let restorableRecords = PrebufferManifestPolicy.restorableRecords(
+            records: records,
+            existingFilenames: existingFilenames
+        )
+        guard !restorableRecords.isEmpty else {
+            savePrebufferManifest()
+            return
+        }
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            var restoredAny = false
+            for record in restorableRecords {
+                let url = self.prebufferDirectory.appendingPathComponent(record.filename, isDirectory: false)
+                guard FileManager.default.fileExists(atPath: url.path) else { continue }
+
+                do {
+                    let prebuffer = try await Self.preparePrebufferAsset(
+                        for: record.song,
+                        url: url,
+                        qualityLabel: record.qualityLabel
+                    )
+                    guard FileManager.default.fileExists(atPath: url.path) else { continue }
+                    self.prebufferURLs[record.key] = url
+                    self.preparedPrebuffers[record.key] = prebuffer
+                    restoredAny = true
+                } catch {
+                    try? FileManager.default.removeItem(at: url)
+                }
+            }
+
+            if restoredAny {
+                self.updatePrebufferedTrackCount()
+            }
+            self.savePrebufferManifest()
+        }
     }
 
     private func existingPrebufferURL(for song: Song) -> URL? {
@@ -1947,6 +2071,7 @@ class AudioPlayer: NSObject, ObservableObject {
         }
 
         let queueKeys = queue.map(prebufferKey)
+        let currentKey = queue.indices.contains(currentIndex) ? queueKeys[currentIndex] : nil
         let start = min(max(currentIndex + 1, 0), queue.count)
         let end = min(queue.count, start + prebufferAheadCount)
         let upcomingSongs = start < end ? Array(queue[start..<end]) : []
@@ -1961,7 +2086,7 @@ class AudioPlayer: NSObject, ObservableObject {
             keepCount: retainPreviousPrebufferCount
         )
         let desiredDownloadKeys = PrebufferSchedulingPolicy.desiredKeys(
-            currentKey: nil,
+            currentKey: currentKey,
             upcomingKeys: upcomingKeys,
             previousKeys: previousKeys
         )
@@ -2093,6 +2218,7 @@ class AudioPlayer: NSObject, ObservableObject {
                         player.prebufferProgressByKey.removeValue(forKey: key)
                         player.preparedPrebuffers.removeValue(forKey: key)
                         player.prebufferURLs.removeValue(forKey: key)
+                        player.savePrebufferManifest()
                         if player.prebufferURL(for: song) == url {
                             try? FileManager.default.removeItem(at: url)
                         }
@@ -2102,6 +2228,7 @@ class AudioPlayer: NSObject, ObservableObject {
                 }
                 player.prebufferURLs[key] = prebuffer.url
                 player.preparedPrebuffers[key] = prebuffer
+                player.savePrebufferManifest()
                 player.clearPrebufferRetryState(for: key)
                 player.prebufferTasks.removeValue(forKey: key)
                 player.prebufferTaskTokens.removeValue(forKey: key)
@@ -2131,6 +2258,7 @@ class AudioPlayer: NSObject, ObservableObject {
                 player.prebufferProgressByKey.removeValue(forKey: key)
                 player.preparedPrebuffers.removeValue(forKey: key)
                 player.prebufferURLs.removeValue(forKey: key)
+                player.savePrebufferManifest()
                 if player.prebufferURL(for: song) == url {
                     try? FileManager.default.removeItem(at: url)
                 }
@@ -2143,18 +2271,20 @@ class AudioPlayer: NSObject, ObservableObject {
 
     private func desiredPrebufferKeys() -> Set<String> {
         guard !queue.isEmpty else { return [] }
+        let queueKeys = queue.map(prebufferKey)
+        let currentKey = queueKeys.indices.contains(currentIndex) ? queueKeys[currentIndex] : nil
         let upcomingKeys = PrebufferSchedulingPolicy.upcomingKeys(
-            queueKeys: queue.map(prebufferKey),
+            queueKeys: queueKeys,
             currentIndex: currentIndex,
             aheadCount: prebufferAheadCount
         )
         let previousKeys = PrebufferSchedulingPolicy.previousKeys(
-            queueKeys: queue.map(prebufferKey),
+            queueKeys: queueKeys,
             currentIndex: currentIndex,
             keepCount: retainPreviousPrebufferCount
         )
         return PrebufferSchedulingPolicy.desiredKeys(
-            currentKey: nil,
+            currentKey: currentKey,
             upcomingKeys: upcomingKeys,
             previousKeys: previousKeys
         )
@@ -2265,9 +2395,14 @@ class AudioPlayer: NSObject, ObservableObject {
             prebufferingProgressPercent = activePercent
         }
 
+        var removedMissingPrebuffer = false
         for (key, prebuffer) in preparedPrebuffers where !FileManager.default.fileExists(atPath: prebuffer.url.path) {
             preparedPrebuffers.removeValue(forKey: key)
             prebufferURLs.removeValue(forKey: key)
+            removedMissingPrebuffer = true
+        }
+        if removedMissingPrebuffer {
+            savePrebufferManifest()
         }
         guard !queue.isEmpty else {
             prebufferedTrackCount = 0
@@ -2322,8 +2457,9 @@ class AudioPlayer: NSObject, ObservableObject {
         if availablePrebufferedTrackQualityLabels != qualityLabels {
             availablePrebufferedTrackQualityLabels = qualityLabels
         }
+        let currentSlice = queue.indices.contains(currentIndex) ? [queue[currentIndex]] : []
         let downloadStatuses = PrebufferProgressPolicy.downloadStatuses(
-            for: Array(previousSlice) + Array(upcomingSlice),
+            for: Array(previousSlice) + currentSlice + Array(upcomingSlice),
             activeKeys: Set(prebufferTasks.keys),
             progressByKey: prebufferProgressByKey,
             keyForSong: { prebufferKey(for: $0) }
@@ -2390,9 +2526,11 @@ class AudioPlayer: NSObject, ObservableObject {
             return nil
         })
 
+        var removedPreparedPrebuffer = false
         for key in Array(preparedPrebuffers.keys) where !keepKeys.contains(key) {
             preparedPrebuffers.removeValue(forKey: key)
             prebufferURLs.removeValue(forKey: key)
+            removedPreparedPrebuffer = true
         }
 
         for url in files where PrebufferCachePruningPolicy.shouldRemove(
@@ -2400,6 +2538,9 @@ class AudioPlayer: NSObject, ObservableObject {
             keepFilenames: keepFilenames
         ) {
             try? FileManager.default.removeItem(at: url)
+        }
+        if removedPreparedPrebuffer {
+            savePrebufferManifest()
         }
         updatePrebufferedTrackCount()
     }

@@ -92,6 +92,37 @@ struct AudioQualityPolicyTests {
         #expect(songs.map(\.id) == ["same"])
     }
 
+    @Test func prebufferManifestRestoresOnlyExistingFilesAndKeepsNewestRecordPerKey() {
+        let oldRecord = PersistedPrebufferRecord(
+            key: "same|q192",
+            filename: "same-old.mp3",
+            song: makeSong(id: "same", title: "Old Same"),
+            qualityLabel: "192 kbps",
+            updatedAt: Date(timeIntervalSince1970: 100)
+        )
+        let newRecord = PersistedPrebufferRecord(
+            key: "same|q192",
+            filename: "same-new.mp3",
+            song: makeSong(id: "same", title: "New Same"),
+            qualityLabel: "192 kbps",
+            updatedAt: Date(timeIntervalSince1970: 200)
+        )
+        let missingRecord = PersistedPrebufferRecord(
+            key: "missing|q192",
+            filename: "missing.mp3",
+            song: makeSong(id: "missing", title: "Missing"),
+            qualityLabel: "192 kbps",
+            updatedAt: Date(timeIntervalSince1970: 300)
+        )
+
+        let records = PrebufferManifestPolicy.restorableRecords(
+            records: [oldRecord, newRecord, missingRecord],
+            existingFilenames: ["same-old.mp3", "same-new.mp3"]
+        )
+
+        #expect(records.map(\.filename) == ["same-new.mp3"])
+    }
+
     @Test func storedAlbumArtworkPolicyBuildsFilesystemSafeNames() {
         let fileName = StoredAlbumArtworkPolicy.fileName(for: "artist/album+cover==")
 
