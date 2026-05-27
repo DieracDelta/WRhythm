@@ -508,8 +508,8 @@ struct WRhythmHeroHeader<Actions: View>: View {
                 .fill(.regularMaterial)
 
             if let coverArtId,
-               let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 420) {
-                CachedAsyncImage(url: coverURL) { image in
+               let coverURL = StoredAlbumArtworkCache.displayURL(for: coverArtId, size: 420) {
+                CachedAsyncImage(url: coverURL, storedCoverArtId: coverArtId) { image in
                     image
                         .resizable()
                         .aspectRatio(contentMode: .fill)
@@ -608,8 +608,8 @@ struct WRhythmFeatureHeader: View {
         VStack(spacing: WRhythmSpacing.xs) {
             ZStack {
                 if let coverArtId,
-                   let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 180) {
-                    CachedAsyncImage(url: coverURL) { image in
+                   let coverURL = StoredAlbumArtworkCache.displayURL(for: coverArtId, size: 180) {
+                    CachedAsyncImage(url: coverURL, storedCoverArtId: coverArtId) { image in
                         image
                             .resizable()
                             .aspectRatio(contentMode: .fill)
@@ -1158,8 +1158,8 @@ struct WRhythmArtworkBackdrop: View {
             WRhythmTheme.pageGradient(for: colorScheme)
 
             if let coverArtId,
-               let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 120) {
-                CachedAsyncImage(url: coverURL) { image in
+               let coverURL = StoredAlbumArtworkCache.displayURL(for: coverArtId, size: 120) {
+                CachedAsyncImage(url: coverURL, storedCoverArtId: coverArtId) { image in
                     image
                         .resizable()
                         .aspectRatio(contentMode: .fill)
@@ -1246,7 +1246,7 @@ struct WRhythmArtworkThumbnail: View {
                 .fill(.thinMaterial)
 
             if let artworkURL {
-                CachedAsyncImage(url: artworkURL) { image in
+                CachedAsyncImage(url: artworkURL, storedCoverArtId: coverArtId) { image in
                     image
                         .resizable()
                         .aspectRatio(contentMode: .fill)
@@ -1280,7 +1280,7 @@ struct WRhythmArtworkThumbnail: View {
         if let localURL = StoredAlbumArtworkCache.localURLIfExists(for: coverArtId) {
             return localURL
         }
-        return NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: Int(size * 3))
+        return StoredAlbumArtworkCache.displayURL(for: coverArtId, size: Int(size * 3))
     }
 }
 

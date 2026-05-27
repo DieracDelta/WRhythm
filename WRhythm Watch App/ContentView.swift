@@ -891,8 +891,8 @@ private struct MiniPlayerArtwork: View {
                 .fill(.thinMaterial)
 
             if let coverArtId,
-               let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 96) {
-                CachedAsyncImage(url: coverURL) { image in
+               let coverURL = StoredAlbumArtworkCache.displayURL(for: coverArtId, size: 96) {
+                CachedAsyncImage(url: coverURL, storedCoverArtId: coverArtId) { image in
                     image
                         .resizable()
                         .aspectRatio(contentMode: .fill)

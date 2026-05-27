@@ -23,6 +23,7 @@ struct SettingsView: View {
     @AppStorage("retainPreviousPrebufferCount") private var retainPreviousPrebufferCount = 3
     @AppStorage("experimentalAudioMuseFeaturesEnabled") private var experimentalAudioMuseFeaturesEnabled = false
     @AppStorage(StoredAlbumArtworkPolicy.enabledUserDefaultsKey) private var storeAlbumArtwork = false
+    @State private var storedAlbumArtworkBytes: Int64 = 0
 
     private var streamingQuality: Binding<StreamingQuality> {
         Binding {
@@ -67,6 +68,9 @@ struct SettingsView: View {
             if !showing && downloadManager.pendingQualityChange == nil {
                 selectedQuality = downloadManager.audioQuality
             }
+        }
+        .task {
+            refreshStoredAlbumArtworkUsage()
         }
         .alert("Re-download Required", isPresented: $downloadManager.showQualityChangePrompt) {
             Button("Re-download All", role: .destructive) {
@@ -371,7 +375,24 @@ struct SettingsView: View {
             Task {
                 await downloadManager.cacheArtworkForDownloadedSongs()
                 await AudioPlayer.shared.cacheArtworkForAvailableTracks()
+                refreshStoredAlbumArtworkUsage()
             }
+        }
+
+        if storeAlbumArtwork {
+            HStack(spacing: WRhythmSpacing.xs) {
+                Image(systemName: "internaldrive")
+                    .foregroundStyle(WRhythmTheme.accent)
+                Text("Album art cache")
+                    .font(WRhythmTypography.metadata)
+                    .foregroundColor(.secondary)
+                Spacer(minLength: WRhythmSpacing.sm)
+                Text(storedAlbumArtworkBytes.formatted(.byteCount(style: .file)))
+                    .font(WRhythmTypography.metadata)
+                    .foregroundColor(.secondary)
+                    .monospacedDigit()
+            }
+            .accessibilityElement(children: .combine)
         }
 
         Button(action: {
@@ -420,6 +441,11 @@ struct SettingsView: View {
             range: 10...500,
             step: 10
         )
+    }
+
+    @MainActor
+    private func refreshStoredAlbumArtworkUsage() {
+        storedAlbumArtworkBytes = StoredAlbumArtworkCache.storedArtworkByteCount()
     }
 
     @ViewBuilder

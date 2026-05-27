@@ -55,6 +55,14 @@ enum StoredAlbumArtworkCache {
         UserDefaults.standard.bool(forKey: StoredAlbumArtworkPolicy.enabledUserDefaultsKey)
     }
 
+    @MainActor
+    static func displayURL(for coverArtId: String, size: Int = 300) -> URL? {
+        if let localURL = localURLIfExists(for: coverArtId) {
+            return localURL
+        }
+        return NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: size)
+    }
+
     static func localURLIfExists(for coverArtId: String) -> URL? {
         let url = localURL(for: coverArtId)
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
@@ -68,24 +76,41 @@ enum StoredAlbumArtworkCache {
 
         do {
             let (data, response) = try await URLSession.shared.data(from: remoteURL)
-            guard !data.isEmpty else { return }
-            guard let image = PlatformImage(data: data) else {
-                if let httpResponse = response as? HTTPURLResponse {
-                    print("⚠️ Stored album art response was not decodable: \(httpResponse.statusCode)")
-                }
-                return
-            }
-
-            let localURL = localURL(for: coverArtId)
-            try ensureDirectory()
-            try data.write(to: localURL, options: .atomic)
-
-            await MainActor.run {
-                ImageCache.shared.cacheImage(image, for: remoteURL)
-                ImageCache.shared.cacheImage(image, for: localURL)
-            }
+            try await persistIfEnabled(
+                coverArtId: coverArtId,
+                data: data,
+                responseStatusCode: (response as? HTTPURLResponse)?.statusCode,
+                remoteURL: remoteURL
+            )
         } catch {
             print("⚠️ Failed to store album art: \(WRhythmLogRedactor.errorSummary(error))")
+        }
+    }
+
+    static func persistIfEnabled(
+        coverArtId: String?,
+        data: Data,
+        responseStatusCode: Int? = nil,
+        remoteURL: URL?
+    ) async throws {
+        guard isEnabled, let coverArtId, localURLIfExists(for: coverArtId) == nil else { return }
+        guard !data.isEmpty else { return }
+        guard let image = PlatformImage(data: data) else {
+            if let responseStatusCode {
+                print("⚠️ Stored album art response was not decodable: \(responseStatusCode)")
+            }
+            return
+        }
+
+        let localURL = localURL(for: coverArtId)
+        try ensureDirectory()
+        try data.write(to: localURL, options: .atomic)
+
+        await MainActor.run {
+            if let remoteURL {
+                ImageCache.shared.cacheImage(image, for: remoteURL)
+            }
+            ImageCache.shared.cacheImage(image, for: localURL)
         }
     }
 
@@ -93,6 +118,24 @@ enum StoredAlbumArtworkCache {
         let directory = artworkDirectory
         guard FileManager.default.fileExists(atPath: directory.path) else { return }
         try? FileManager.default.removeItem(at: directory)
+    }
+
+    static func storedArtworkByteCount() -> Int64 {
+        let directory = artworkDirectory
+        guard let enumerator = FileManager.default.enumerator(
+            at: directory,
+            includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else { return 0 }
+
+        return enumerator.compactMap { item -> Int64? in
+            guard let url = item as? URL,
+                  let values = try? url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey]),
+                  values.isRegularFile == true else {
+                return nil
+            }
+            return Int64(values.fileSize ?? 0)
+        }.reduce(0, +)
     }
 
     private static func localURL(for coverArtId: String) -> URL {
@@ -173,8 +216,13 @@ final class ImageCache {
         return nil
     }
 
-    func loadImage(for url: URL, completion: @escaping @MainActor (PlatformImage?) -> Void) {
+    func loadImage(
+        for url: URL,
+        storedCoverArtId: String? = nil,
+        completion: @escaping @MainActor (PlatformImage?) -> Void
+    ) {
         if let image = getImage(for: url) {
+            persistCachedArtworkIfNeeded(for: url, storedCoverArtId: storedCoverArtId)
             completion(image)
             return
         }
@@ -194,12 +242,44 @@ final class ImageCache {
             Task { @MainActor in
                 if let data, let loadedImage {
                     self.cacheImage(loadedImage, data: data, response: response, for: url)
+                    let responseStatusCode = (response as? HTTPURLResponse)?.statusCode
+                    Task {
+                        do {
+                            try await StoredAlbumArtworkCache.persistIfEnabled(
+                                coverArtId: storedCoverArtId,
+                                data: data,
+                                responseStatusCode: responseStatusCode,
+                                remoteURL: url
+                            )
+                        } catch {
+                            print("⚠️ Failed to store album art: \(WRhythmLogRedactor.errorSummary(error))")
+                        }
+                    }
                 }
 
                 let completions = self.inFlightRequests.removeValue(forKey: cacheKey) ?? []
                 completions.forEach { $0(loadedImage) }
             }
         }.resume()
+    }
+
+    func persistCachedArtworkIfNeeded(for url: URL, storedCoverArtId: String?) {
+        guard let storedCoverArtId, StoredAlbumArtworkCache.isEnabled else { return }
+        let request = URLRequest(url: url, cachePolicy: .returnCacheDataElseLoad)
+        guard let cachedResponse = URLCache.shared.cachedResponse(for: request) else { return }
+
+        Task {
+            do {
+                try await StoredAlbumArtworkCache.persistIfEnabled(
+                    coverArtId: storedCoverArtId,
+                    data: cachedResponse.data,
+                    responseStatusCode: (cachedResponse.response as? HTTPURLResponse)?.statusCode,
+                    remoteURL: url
+                )
+            } catch {
+                print("⚠️ Failed to store cached album art: \(WRhythmLogRedactor.errorSummary(error))")
+            }
+        }
     }
 
     func cacheImage(_ image: PlatformImage, for url: URL) {
@@ -225,6 +305,7 @@ final class ImageCache {
 // Custom AsyncImage with proper caching
 struct CachedAsyncImage<Content: View, Placeholder: View>: View {
     let url: URL?
+    let storedCoverArtId: String?
     let content: (Image) -> Content
     let placeholder: () -> Placeholder
 
@@ -270,6 +351,7 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
 
         // Check cache first
         if let cachedImage = ImageCache.shared.getImage(for: url) {
+            ImageCache.shared.persistCachedArtworkIfNeeded(for: url, storedCoverArtId: storedCoverArtId)
             self.image = cachedImage
             self.loadedCacheKey = cacheKey
             self.loadingCacheKey = nil
@@ -280,7 +362,7 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
 
         // Load from network
         loadingCacheKey = cacheKey
-        ImageCache.shared.loadImage(for: url) { loadedImage in
+        ImageCache.shared.loadImage(for: url, storedCoverArtId: storedCoverArtId) { loadedImage in
             guard self.url.map({ ImageCache.shared.cacheKey(for: $0) }) == cacheKey else {
                 if self.loadingCacheKey == cacheKey {
                     self.loadingCacheKey = nil
@@ -299,8 +381,9 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
 
 // Convenience initializer matching AsyncImage API
 extension CachedAsyncImage where Placeholder == Color {
-    init(url: URL?, @ViewBuilder content: @escaping (Image) -> Content) {
+    init(url: URL?, storedCoverArtId: String? = nil, @ViewBuilder content: @escaping (Image) -> Content) {
         self.url = url
+        self.storedCoverArtId = storedCoverArtId
         self.content = content
         self.placeholder = { Color.gray }
     }

@@ -2504,7 +2504,10 @@ class AudioPlayer: NSObject, ObservableObject {
         let coverArtIds = Set(
             Array(availablePrebufferedSongs.compactMap(\.coverArt)) +
             Array(prebufferedSongs.compactMap(\.coverArt)) +
-            Array(retainedPrebufferedSongs.compactMap(\.coverArt))
+            Array(retainedPrebufferedSongs.compactMap(\.coverArt)) +
+            Array(queue.compactMap(\.coverArt)) +
+            Array(playlistGenQueue.compactMap(\.coverArt)) +
+            (currentSong?.coverArt.map { [$0] } ?? [])
         )
         for coverArtId in coverArtIds {
             await StoredAlbumArtworkCache.persistIfEnabled(coverArtId: coverArtId)
@@ -3326,7 +3329,7 @@ class AudioPlayer: NSObject, ObservableObject {
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
 
         if let coverArtId = song.coverArt,
-           let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 300) {
+           let coverURL = StoredAlbumArtworkCache.displayURL(for: coverArtId, size: 300) {
             let artworkSongID = song.id
             guard NowPlayingArtworkLoadPolicy.shouldStartLoad(
                 songID: artworkSongID,
@@ -3338,7 +3341,22 @@ class AudioPlayer: NSObject, ObservableObject {
             nowPlayingArtworkSongID = artworkSongID
             nowPlayingArtworkTask = Task {
                 do {
-                    let (data, _) = try await URLSession.shared.data(from: coverURL)
+                    let data: Data
+                    let response: URLResponse?
+                    if coverURL.isFileURL {
+                        data = try Data(contentsOf: coverURL)
+                        response = nil
+                    } else {
+                        let loaded = try await URLSession.shared.data(from: coverURL)
+                        data = loaded.0
+                        response = loaded.1
+                        try await StoredAlbumArtworkCache.persistIfEnabled(
+                            coverArtId: coverArtId,
+                            data: data,
+                            responseStatusCode: (response as? HTTPURLResponse)?.statusCode,
+                            remoteURL: coverURL
+                        )
+                    }
                     try Task.checkCancellation()
                     if let image = PlatformImage(data: data) {
                         let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }

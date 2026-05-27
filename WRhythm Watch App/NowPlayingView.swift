@@ -985,8 +985,8 @@ private struct NowPlayingArtwork: View, Equatable {
                 .fill(.regularMaterial)
 
             if let coverArtId,
-               let coverURL = NavidromeAPI.shared.getCoverArtURL(id: coverArtId, size: 420) {
-                CachedAsyncImage(url: coverURL) { image in
+               let coverURL = StoredAlbumArtworkCache.displayURL(for: coverArtId, size: 420) {
+                CachedAsyncImage(url: coverURL, storedCoverArtId: coverArtId) { image in
                     image
                         .resizable()
                         .aspectRatio(contentMode: .fit)
