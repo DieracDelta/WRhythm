@@ -377,16 +377,18 @@ struct PrebufferProgressPolicy: Sendable {
 
     static func statusSummary(
         previousReadyCount: Int,
+        previousTargetCount: Int,
         nextReadyCount: Int,
+        nextTargetCount: Int,
         activeCount: Int,
         activePercent: Int?,
         playerIsBuffering: Bool,
         playerBufferPercent: Int?
     ) -> String? {
         var parts: [String] = []
-        if previousReadyCount > 0 || nextReadyCount > 0 {
-            parts.append("\(previousReadyCount) prev available")
-            parts.append("\(nextReadyCount) next available")
+        if previousReadyCount > 0 || nextReadyCount > 0 || previousTargetCount > 0 || nextTargetCount > 0 {
+            parts.append(availabilityLabel(readyCount: previousReadyCount, targetCount: previousTargetCount, suffix: "prev available"))
+            parts.append(availabilityLabel(readyCount: nextReadyCount, targetCount: nextTargetCount, suffix: "next available"))
         }
         if activeCount > 0 {
             if let activePercent {
@@ -403,6 +405,13 @@ struct PrebufferProgressPolicy: Sendable {
             }
         }
         return parts.isEmpty ? nil : parts.joined(separator: " • ")
+    }
+
+    private static func availabilityLabel(readyCount: Int, targetCount: Int, suffix: String) -> String {
+        guard targetCount > 0, readyCount != targetCount else {
+            return "\(readyCount) \(suffix)"
+        }
+        return "\(readyCount)/\(targetCount) \(suffix)"
     }
 }
 
@@ -648,6 +657,8 @@ class AudioPlayer: NSObject, ObservableObject {
     private var lastPersistenceWrite = Date.distantPast
     private var pendingPersistenceTask: Task<Void, Never>?
     private let maxConcurrentPrebuffers = 3
+    private var lastObservedPrebufferAheadCount: Int?
+    private var lastObservedPreviousPrebufferCount: Int?
     private var prebufferAheadCount: Int {
         let saved = UserDefaults.standard.object(forKey: "prebufferAheadCount") as? Int ?? 8
         return PrebufferSettingsPolicy.sanitizeAheadCount(saved)
@@ -715,6 +726,7 @@ class AudioPlayer: NSObject, ObservableObject {
         restorePersistedPlaybackState()
         restorePersistedPrebufferManifest()
         setupPlaybackPersistence()
+        observePrebufferSettingsChanges()
     }
 
     var liveCurrentTime: TimeInterval {
@@ -733,12 +745,32 @@ class AudioPlayer: NSObject, ObservableObject {
     var queueBufferStatusSummary: String? {
         PrebufferProgressPolicy.statusSummary(
             previousReadyCount: retainedPrebufferedSongs.count,
+            previousTargetCount: previousPrebufferTargetCount,
             nextReadyCount: prebufferedSongs.count,
+            nextTargetCount: nextPrebufferTargetCount,
             activeCount: prebufferingTrackCount,
             activePercent: prebufferingProgressPercent,
             playerIsBuffering: isBuffering,
             playerBufferPercent: currentBufferPercent
         )
+    }
+
+    private var previousPrebufferTargetCount: Int {
+        guard !queue.isEmpty else { return 0 }
+        return PrebufferSchedulingPolicy.previousRange(
+            queueCount: queue.count,
+            currentIndex: currentIndex,
+            keepCount: retainPreviousPrebufferCount
+        ).count
+    }
+
+    private var nextPrebufferTargetCount: Int {
+        guard !queue.isEmpty else { return 0 }
+        return PrebufferSchedulingPolicy.upcomingRange(
+            queueCount: queue.count,
+            currentIndex: currentIndex,
+            aheadCount: prebufferAheadCount
+        ).count
     }
 
     private func recordPlaybackIntentChange() {
@@ -836,6 +868,27 @@ class AudioPlayer: NSObject, ObservableObject {
             .dropFirst()
             .sink { [weak self] _ in
                 self?.schedulePlaybackPersistence()
+            }
+            .store(in: &cancellables)
+    }
+
+    private func observePrebufferSettingsChanges() {
+        lastObservedPrebufferAheadCount = prebufferAheadCount
+        lastObservedPreviousPrebufferCount = retainPreviousPrebufferCount
+
+        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                let aheadCount = self.prebufferAheadCount
+                let previousCount = self.retainPreviousPrebufferCount
+                guard aheadCount != self.lastObservedPrebufferAheadCount ||
+                    previousCount != self.lastObservedPreviousPrebufferCount else {
+                    return
+                }
+
+                self.lastObservedPrebufferAheadCount = aheadCount
+                self.lastObservedPreviousPrebufferCount = previousCount
+                self.scheduleQueuePrebuffer()
             }
             .store(in: &cancellables)
     }

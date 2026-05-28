@@ -2443,7 +2443,9 @@ struct PlaybackSyncPolicyTests {
     @Test func prebufferProgressSummaryShowsActiveDownloadPercent() {
         let summary = PrebufferProgressPolicy.statusSummary(
             previousReadyCount: 2,
+            previousTargetCount: 2,
             nextReadyCount: 5,
+            nextTargetCount: 5,
             activeCount: 1,
             activePercent: 80,
             playerIsBuffering: false,
@@ -2456,7 +2458,9 @@ struct PlaybackSyncPolicyTests {
     @Test func prebufferProgressSummaryUsesBufferingOnlyForCurrentPlayback() {
         let summary = PrebufferProgressPolicy.statusSummary(
             previousReadyCount: 0,
+            previousTargetCount: 0,
             nextReadyCount: 0,
+            nextTargetCount: 0,
             activeCount: 0,
             activePercent: nil,
             playerIsBuffering: true,
@@ -2469,7 +2473,9 @@ struct PlaybackSyncPolicyTests {
     @Test func prebufferProgressSummaryKeepsCurrentBufferingSeparateFromDownloads() {
         let summary = PrebufferProgressPolicy.statusSummary(
             previousReadyCount: 1,
+            previousTargetCount: 1,
             nextReadyCount: 1,
+            nextTargetCount: 1,
             activeCount: 1,
             activePercent: 35,
             playerIsBuffering: true,
@@ -2477,6 +2483,21 @@ struct PlaybackSyncPolicyTests {
         )
 
         #expect(summary == "1 prev available • 1 next available • 1 downloading 35% • buffering 12%")
+    }
+
+    @Test func prebufferProgressSummaryShowsReadyOutOfTargetWhenStillCatchingUp() {
+        let summary = PrebufferProgressPolicy.statusSummary(
+            previousReadyCount: 20,
+            previousTargetCount: 28,
+            nextReadyCount: 16,
+            nextTargetCount: 20,
+            activeCount: 1,
+            activePercent: 33,
+            playerIsBuffering: false,
+            playerBufferPercent: nil
+        )
+
+        #expect(summary == "20/28 prev available • 16/20 next available • 1 downloading 33%")
     }
 
     @Test func prebufferProgressBuildsDownloadingRowsForActiveQueueItems() {
