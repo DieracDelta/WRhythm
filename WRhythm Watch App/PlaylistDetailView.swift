@@ -164,11 +164,9 @@ struct PlaylistDetailView: View {
             )
 
             WRhythmCard(padding: WRhythmSpacing.sm) {
-                LazyVStack(spacing: 0) {
-                    ForEach(trackItems) { item in
-                        TrackRowView(song: item.song, player: player, downloadManager: downloadManager, offlineMode: offlineMode) {
-                            player.playQueue(queue, startingAt: item.queueIndex)
-                        }
+                SlidingRenderWindowForEach(trackItems, estimatedRowHeight: 64) { _, item in
+                    TrackRowView(song: item.song, player: player, downloadManager: downloadManager, offlineMode: offlineMode) {
+                        player.playQueue(queue, startingAt: item.queueIndex)
                     }
                 }
             }

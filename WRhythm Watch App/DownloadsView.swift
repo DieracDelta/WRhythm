@@ -11,14 +11,12 @@ struct DownloadsView: View {
     @ObservedObject var downloadManager = DownloadManager.shared
     @State private var presentedSheet: DownloadsSheet?
     @State private var deleteConfirmationText = ""
-    @State private var displayedSongCount = 20  // Start with 20 songs
 
     private var player: AudioPlayer { AudioPlayer.shared }
 
     var body: some View {
         WRhythmScreen {
             let sortedSongs = Array(downloadManager.downloadedSongs.values.sorted(by: { $0.downloadedAt > $1.downloadedAt }))
-            let songsToDisplay = Array(sortedSongs.prefix(displayedSongCount))
 
             if downloadManager.getTotalPendingDownloads() > 0 || downloadManager.isPaused {
                 downloadStatusCard
@@ -37,27 +35,8 @@ struct DownloadsView: View {
             } else {
                 downloadedSummaryCard
 
-                LazyVStack(spacing: WRhythmSpacing.xs) {
-                    ForEach(songsToDisplay, id: \.songId) { downloadedSong in
-                        downloadedSongRow(downloadedSong)
-                            .onAppear {
-                                if downloadedSong.songId == songsToDisplay.last?.songId && displayedSongCount < sortedSongs.count {
-                                    displayedSongCount = min(displayedSongCount + 20, sortedSongs.count)
-                                }
-                            }
-                    }
-
-                    if displayedSongCount < sortedSongs.count {
-                        Button(action: {
-                            displayedSongCount = min(displayedSongCount + 20, sortedSongs.count)
-                        }) {
-                            Label("Load \(sortedSongs.count - displayedSongCount) more", systemImage: "chevron.down")
-                                .font(WRhythmTypography.controlLabel)
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(WRhythmTheme.secondaryAccent)
-                    }
+                SlidingRenderWindowForEach(sortedSongs, estimatedRowHeight: 72, spacing: WRhythmSpacing.xs) { _, downloadedSong in
+                    downloadedSongRow(downloadedSong)
                 }
             }
         }

@@ -21,9 +21,11 @@ struct SettingsView: View {
     @AppStorage("scrobblingEnabled") private var scrobblingEnabled = true
     @AppStorage("prebufferAheadCount") private var prebufferAheadCount = 8
     @AppStorage("retainPreviousPrebufferCount") private var retainPreviousPrebufferCount = 3
+    @AppStorage(SongRenderWindowPolicy.userDefaultsKey) private var songRenderWindowLimit = SongRenderWindowPolicy.defaultLimit
     @AppStorage("experimentalAudioMuseFeaturesEnabled") private var experimentalAudioMuseFeaturesEnabled = false
     @AppStorage(StoredAlbumArtworkPolicy.enabledUserDefaultsKey) private var storeAlbumArtwork = false
     @State private var storedAlbumArtworkBytes: Int64 = 0
+    @State private var songRenderWindowLimitText = "\(SongRenderWindowPolicy.defaultLimit)"
 
     private var streamingQuality: Binding<StreamingQuality> {
         Binding {
@@ -309,6 +311,21 @@ struct SettingsView: View {
             range: 0...100,
             step: 1
         )
+
+        SettingsNumberRow(
+            title: "Menu Song Window",
+            valueText: $songRenderWindowLimitText,
+            detailText: "Maximum rendered songs per menu. Use 0 for unlimited.",
+            displayValue: SongRenderWindowPolicy.displayText(for: songRenderWindowLimit),
+            commit: commitSongRenderWindowLimit
+        )
+        .onAppear {
+            songRenderWindowLimit = SongRenderWindowPolicy.sanitizeLimit(songRenderWindowLimit)
+            songRenderWindowLimitText = "\(songRenderWindowLimit)"
+        }
+        .onChange(of: songRenderWindowLimit) { _, newValue in
+            songRenderWindowLimitText = "\(SongRenderWindowPolicy.sanitizeLimit(newValue))"
+        }
     }
 
     @ViewBuilder
@@ -522,6 +539,14 @@ struct SettingsView: View {
             retainPreviousPrebufferCount = PrebufferSettingsPolicy.sanitizePreviousCount(Int(newValue))
         }
     }
+
+    private func commitSongRenderWindowLimit() {
+        let trimmed = songRenderWindowLimitText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parsed = Int(trimmed) ?? SongRenderWindowPolicy.defaultLimit
+        let sanitized = SongRenderWindowPolicy.sanitizeLimit(parsed)
+        songRenderWindowLimit = sanitized
+        songRenderWindowLimitText = "\(sanitized)"
+    }
 }
 
 private enum SettingsSheet: String, Identifiable {
@@ -604,6 +629,42 @@ private struct SettingsInlineProgressView: View {
         ProgressView()
             .controlSize(.small)
             .frame(width: 16, height: 16)
+    }
+}
+
+private struct SettingsNumberRow: View {
+    let title: String
+    @Binding var valueText: String
+    let detailText: String
+    let displayValue: String
+    let commit: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(title)
+                    .font(WRhythmTypography.controlLabel)
+
+                Spacer(minLength: WRhythmSpacing.sm)
+
+                Text(displayValue)
+                    .font(WRhythmTypography.controlLabel)
+                    .foregroundColor(.secondary)
+                    .monospacedDigit()
+            }
+
+            TextField("0", text: $valueText)
+#if os(iOS)
+                .keyboardType(.numberPad)
+#endif
+                .platformSearchTextFieldStyle()
+                .onSubmit(commit)
+                .onDisappear(perform: commit)
+
+            Text(detailText)
+                .font(WRhythmTypography.metadata)
+                .foregroundColor(.secondary)
+        }
     }
 }
 

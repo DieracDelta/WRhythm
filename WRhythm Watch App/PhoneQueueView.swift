@@ -92,28 +92,26 @@ struct PhoneQueueView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.vertical, WRhythmSpacing.xs)
                 } else {
-                    LazyVStack(spacing: WRhythmSpacing.xs) {
-                        ForEach(queueItems(songs)) { item in
-                            Button(action: {
-                                play(item.index)
-                            }) {
-                                PhoneQueueRow(
-                                    song: item.song,
-                                    index: item.index,
-                                    isCurrent: currentIndex == item.index,
-                                    isPlaying: isPlaying
-                                )
-                            }
-                            .buttonStyle(.plain)
-                            .wrhythmQueueTrackActions(
+                    SlidingRenderWindowForEach(queueItems(songs), estimatedRowHeight: 62, spacing: WRhythmSpacing.xs) { _, item in
+                        Button(action: {
+                            play(item.index)
+                        }) {
+                            PhoneQueueRow(
                                 song: item.song,
-                                canRemoveFromQueue: canRemove(item.index),
-                                removeFromQueue: {
-                                    remove(item.index)
-                                },
-                                clearQueue: clear
+                                index: item.index,
+                                isCurrent: currentIndex == item.index,
+                                isPlaying: isPlaying
                             )
                         }
+                        .buttonStyle(.plain)
+                        .wrhythmQueueTrackActions(
+                            song: item.song,
+                            canRemoveFromQueue: canRemove(item.index),
+                            removeFromQueue: {
+                                remove(item.index)
+                            },
+                            clearQueue: clear
+                        )
                     }
                 }
             }

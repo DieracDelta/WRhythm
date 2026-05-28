@@ -136,7 +136,7 @@ private struct BufferedTracksListContent: View {
             WRhythmCard {
                 VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
                     WRhythmSectionHeader(title: "Downloading")
-                    ForEach(downloadStatuses) { status in
+                    SlidingRenderWindowForEach(downloadStatuses, estimatedRowHeight: 58) { _, status in
                         WRhythmMediaRow(
                             title: status.song.title,
                             subtitle: status.song.artist,
@@ -166,7 +166,7 @@ private struct BufferedTracksListContent: View {
             WRhythmCard {
                 VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
                     WRhythmSectionHeader(title: title)
-                    ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
+                    SlidingRenderWindowForEach(songs, estimatedRowHeight: 58) { index, song in
                         Button {
                             player.playAvailableTracksQueue(readySongs, startingAt: availableIndex(for: song, fallback: index))
                         } label: {

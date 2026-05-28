@@ -28,14 +28,12 @@ struct RecentlyPlayedView: View {
                     header
 
                     WRhythmCard {
-                        VStack(spacing: 0) {
-                            ForEach(Array(store.items.enumerated()), id: \.element.id) { index, item in
-                                recentlyPlayedRow(item: item, index: index)
+                        SlidingRenderWindowForEach(store.items, estimatedRowHeight: 66) { index, item in
+                            recentlyPlayedRow(item: item, index: index)
 
-                                if item.id != store.items.last?.id {
-                                    Divider()
-                                        .padding(.leading, 56)
-                                }
+                            if item.id != store.items.last?.id {
+                                Divider()
+                                    .padding(.leading, 56)
                             }
                         }
                     }

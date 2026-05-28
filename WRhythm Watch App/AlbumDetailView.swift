@@ -315,11 +315,9 @@ struct AlbumDetailView: View {
             )
 
             WRhythmCard(padding: WRhythmSpacing.sm) {
-                VStack(spacing: 0) {
-                    ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
-                        TrackRowView(song: song, player: player, downloadManager: downloadManager, offlineMode: offlineMode) {
-                            player.playQueue(queue, startingAt: index)
-                        }
+                SlidingRenderWindowForEach(songs, estimatedRowHeight: 64) { index, song in
+                    TrackRowView(song: song, player: player, downloadManager: downloadManager, offlineMode: offlineMode) {
+                        player.playQueue(queue, startingAt: index)
                     }
                 }
             }

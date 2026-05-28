@@ -151,7 +151,7 @@ struct FavouritesView: View {
                             }
                         }
 
-                        ForEach(Array(songsToShow.enumerated()), id: \.element.id) { index, song in
+                        SlidingRenderWindowForEach(songsToShow, estimatedRowHeight: 64) { index, song in
                             TrackRowView(song: song, player: player, downloadManager: downloadManager, offlineMode: offlineMode) {
                                 player.playQueue(songsToShow, startingAt: index)
                             }
@@ -241,7 +241,7 @@ struct FavouritesView: View {
                                     }
                                 }
 
-                                ForEach(Array(songsToShow.enumerated()), id: \.element.id) { index, song in
+                                SlidingRenderWindowForEach(songsToShow, estimatedRowHeight: 64) { index, song in
                                     TrackRowView(song: song, player: player, downloadManager: downloadManager, offlineMode: offlineMode) {
                                         player.playQueue(songsToShow, startingAt: index)
                                     }

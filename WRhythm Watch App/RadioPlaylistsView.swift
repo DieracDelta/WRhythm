@@ -758,30 +758,28 @@ struct RadioPlaylistDetailView: View {
             } else {
                 WRhythmSectionHeader(title: "Songs", subtitle: "\(downloadedSongs.count) ready")
 
-                VStack(spacing: 8) {
-                    ForEach(downloadedSongItems) { item in
-                        if let downloadedSong = downloadManager.downloadedSongs[item.songId] {
-                            let song = Song(
-                                id: downloadedSong.songId,
-                                title: downloadedSong.title,
-                                album: downloadedSong.album,
-                                albumId: nil,
-                                artist: downloadedSong.artist,
-                                artistId: nil,
-                                track: nil,
-                                year: nil,
-                                genre: nil,
-                                coverArt: downloadedSong.coverArt,
-                                size: Int(downloadedSong.fileSize),
-                                contentType: nil,
-                                suffix: nil,
-                                duration: nil,
-                                bitRate: nil,
-                                path: downloadedSong.filePath
-                            )
-                            TrackRowView(song: song, player: player, downloadManager: downloadManager, offlineMode: true) {
-                                playRadio(startingAt: item.index)
-                            }
+                SlidingRenderWindowForEach(downloadedSongItems, estimatedRowHeight: 64, spacing: 8) { _, item in
+                    if let downloadedSong = downloadManager.downloadedSongs[item.songId] {
+                        let song = Song(
+                            id: downloadedSong.songId,
+                            title: downloadedSong.title,
+                            album: downloadedSong.album,
+                            albumId: nil,
+                            artist: downloadedSong.artist,
+                            artistId: nil,
+                            track: nil,
+                            year: nil,
+                            genre: nil,
+                            coverArt: downloadedSong.coverArt,
+                            size: Int(downloadedSong.fileSize),
+                            contentType: nil,
+                            suffix: nil,
+                            duration: nil,
+                            bitRate: nil,
+                            path: downloadedSong.filePath
+                        )
+                        TrackRowView(song: song, player: player, downloadManager: downloadManager, offlineMode: true) {
+                            playRadio(startingAt: item.index)
                         }
                     }
                 }
