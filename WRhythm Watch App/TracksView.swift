@@ -14,6 +14,8 @@ struct TracksView: View {
     @State private var artistResults: [Artist] = []
     @State private var isSearching = false
     @State private var errorMessage = ""
+    @State private var isRestoringCachedSearch = false
+    @State private var restoredCachedSearchQueryToSkip: String?
 #if os(watchOS)
     @State private var presentedSheet: TracksSheet?
 #endif
@@ -153,8 +155,17 @@ struct TracksView: View {
             }
         }
 #endif
+        .onAppear {
+            loadCachedSearchIfNeeded()
+        }
         .onChange(of: searchText) { _, newValue in
             guard !offlineMode else { return }
+            let trimmedValue = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            if restoredCachedSearchQueryToSkip == trimmedValue {
+                restoredCachedSearchQueryToSkip = nil
+                return
+            }
+            guard !isRestoringCachedSearch else { return }
             if newValue.isEmpty {
                 clearOnlineSearchResults()
             } else {
@@ -535,6 +546,29 @@ struct TracksView: View {
         errorMessage = ""
     }
 
+    private func loadCachedSearchIfNeeded() {
+        guard !offlineMode, searchText.isEmpty else { return }
+        guard let cached = SearchResultDiskCache.loadLastSearch() else { return }
+
+        isRestoringCachedSearch = true
+        applySearchResult(cached.result)
+        restoredCachedSearchQueryToSkip = cached.query
+        searchText = cached.query
+        isSearching = false
+        errorMessage = ""
+
+        Task { @MainActor in
+            await Task.yield()
+            isRestoringCachedSearch = false
+        }
+    }
+
+    private func applySearchResult(_ result: SearchResult) {
+        artistResults = result.artist ?? []
+        albumResults = result.album ?? []
+        searchResults = result.song ?? []
+    }
+
     private func performSearch(query: String, debounce: Bool = true) {
         searchTask?.cancel()
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -567,9 +601,8 @@ struct TracksView: View {
                     currentQuery: searchText.trimmingCharacters(in: .whitespacesAndNewlines),
                     isCancelled: Task.isCancelled
                 ) else { return }
-                self.artistResults = result.artist ?? []
-                self.albumResults = result.album ?? []
-                self.searchResults = result.song ?? []
+                self.applySearchResult(result)
+                SearchResultDiskCache.save(query: trimmedQuery, result: result)
                 self.isSearching = false
 
                 print("🔍 Search results: \(self.artistResults.count) artists, \(self.albumResults.count) albums, \(self.searchResults.count) songs")

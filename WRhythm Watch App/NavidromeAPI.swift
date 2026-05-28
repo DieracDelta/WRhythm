@@ -1180,7 +1180,7 @@ struct ArtistIndex: Decodable {
     let artist: [Artist]
 }
 
-struct Artist: Decodable, Identifiable, Equatable {
+struct Artist: Codable, Identifiable, Equatable, Sendable {
     let id: String
     let name: String
     let albumCount: Int?
@@ -1202,7 +1202,7 @@ struct ArtistWithAlbums: Decodable {
     let album: [AlbumSummary]
 }
 
-struct AlbumSummary: Decodable, Identifiable, Equatable {
+struct AlbumSummary: Codable, Identifiable, Equatable, Sendable {
     let id: String
     let name: String
     let artist: String?
@@ -1490,7 +1490,7 @@ struct SearchResponse: Decodable {
     let searchResult3: SearchResult?
 }
 
-struct SearchResult: Decodable {
+struct SearchResult: Codable, Sendable {
     let artist: [Artist]?
     let album: [AlbumSummary]?
     let song: [Song]?
