@@ -15,6 +15,7 @@ struct PlaylistDetailView: View {
     @State private var isLoading = true
     @State private var isSyncing = false
     @State private var errorMessage = ""
+    @State private var songSortOption: SongSortOption = .original
     @ObservedObject var downloadManager = DownloadManager.shared
     @ObservedObject var player = AudioPlayer.shared
     @AppStorage("offlineMode") private var offlineMode = false
@@ -73,6 +74,7 @@ struct PlaylistDetailView: View {
     private var offlinePlaylistContent: some View {
         let cachedPlaylist = downloadManager.cachedPlaylists.first { $0.id == playlistId }
         let songs = downloadedPlaylistSongs(cachedPlaylist)
+        let displayedSongs = songSortOption.sorted(songs)
 
         if songs.isEmpty {
             WRhythmScreen(coverArtId: cachedPlaylist?.coverArt) {
@@ -103,27 +105,29 @@ struct PlaylistDetailView: View {
                 ) {
                     WRhythmActionStrip {
                         Button(action: {
-                            player.playQueue(songs, startingAt: 0)
+                            player.playQueue(displayedSongs, startingAt: 0)
                         }) {
                             Label("Play", systemImage: "play.fill")
                         }
                         .buttonStyle(.borderedProminent)
 
                         Button(action: {
-                            player.playQueueShuffled(songs)
+                            player.playQueueShuffled(displayedSongs)
                         }) {
                             Image(systemName: "shuffle")
                         }
                     }
                 }
 
-                trackSection(songs: songs, queue: songs)
+                trackSection(songs: displayedSongs, queue: displayedSongs)
             }
         }
     }
 
     private func onlinePlaylistContent(_ playlist: Playlist, songs: [Song]) -> some View {
-        WRhythmScreen(coverArtId: playlist.coverArt ?? songs.first?.coverArt) {
+        let displayedSongs = songSortOption.sorted(filteredSongs(songs))
+
+        return WRhythmScreen(coverArtId: playlist.coverArt ?? songs.first?.coverArt) {
             WRhythmHeroHeader(
                 title: playlist.name,
                 subtitle: "\(playlist.songCount) song\(playlist.songCount == 1 ? "" : "s")",
@@ -134,14 +138,14 @@ struct PlaylistDetailView: View {
             ) {
                 WRhythmActionStrip {
                     Button(action: {
-                        player.playQueue(songs, startingAt: 0)
+                        player.playQueue(displayedSongs, startingAt: 0)
                     }) {
                         Label("Play", systemImage: "play.fill")
                     }
                     .buttonStyle(.borderedProminent)
 
                     Button(action: {
-                        player.playQueueShuffled(songs)
+                        player.playQueueShuffled(displayedSongs)
                     }) {
                         Image(systemName: "shuffle")
                     }
@@ -150,7 +154,7 @@ struct PlaylistDetailView: View {
                 }
             }
 
-            trackSection(songs: filteredSongs(songs), queue: songs)
+            trackSection(songs: displayedSongs, queue: displayedSongs)
         }
     }
 
@@ -161,7 +165,9 @@ struct PlaylistDetailView: View {
             WRhythmSectionHeader(
                 title: "Tracks",
                 subtitle: "\(songs.count) song\(songs.count == 1 ? "" : "s")"
-            )
+            ) {
+                WRhythmSortMenu(selection: $songSortOption)
+            }
 
             WRhythmCard(padding: WRhythmSpacing.sm) {
                 SlidingRenderWindowForEach(trackItems, estimatedRowHeight: 64) { _, item in

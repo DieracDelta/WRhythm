@@ -10,6 +10,9 @@ import SwiftUI
 struct FavouritesView: View {
     @EnvironmentObject var libraryDataManager: LibraryDataManager
     @State private var searchText = ""
+    @State private var songSortOption: SongSortOption = .original
+    @State private var albumSortOption: AlbumSortOption = .titleAscending
+    @State private var artistSortOption: ArtistSortOption = .nameAscending
     @ObservedObject var downloadManager = DownloadManager.shared
     @ObservedObject var player = AudioPlayer.shared
     @AppStorage("offlineMode") private var offlineMode = false
@@ -125,7 +128,7 @@ struct FavouritesView: View {
                 message: "Try a different search term"
             )
         } else {
-            let songsToShow = filteredSongs(offlineStarredSongs)
+            let songsToShow = songSortOption.sorted(filteredSongs(offlineStarredSongs))
             ScrollView {
                 VStack(spacing: 16) {
                     VStack(alignment: .leading, spacing: 8) {
@@ -133,6 +136,7 @@ struct FavouritesView: View {
                             Text("Songs")
                                 .font(WRhythmTypography.featureTitle)
                             Spacer()
+                            WRhythmSortMenu(selection: $songSortOption)
                             if songsToShow.count > 1 {
                                 HStack(spacing: 8) {
                                     Button(action: {
@@ -193,9 +197,9 @@ struct FavouritesView: View {
                     message: "Star items in Navidrome to see them here"
                 )
             } else {
-                let songsToShow = filteredSongs(starred.song ?? [])
-                let albumsToShow = filteredAlbums(starred.album ?? [])
-                let artistsToShow = filteredArtists(starred.artist ?? [])
+                let songsToShow = songSortOption.sorted(filteredSongs(starred.song ?? []))
+                let albumsToShow = albumSortOption.sorted(filteredAlbums(starred.album ?? []))
+                let artistsToShow = artistSortOption.sorted(filteredArtists(starred.artist ?? []))
                 if songsToShow.isEmpty && albumsToShow.isEmpty && artistsToShow.isEmpty {
                     WRhythmEmptyState(
                         systemImage: "magnifyingglass",
@@ -213,6 +217,7 @@ struct FavouritesView: View {
                                         .font(WRhythmTypography.featureTitle)
                                     Spacer()
                                     HStack(spacing: 8) {
+                                        WRhythmSortMenu(selection: $songSortOption)
                                         if songsToShow.count > 1 {
                                             Button(action: {
                                                 player.playQueue(songsToShow, startingAt: 0)
@@ -254,10 +259,11 @@ struct FavouritesView: View {
                         // Starred Albums
                         if !albumsToShow.isEmpty {
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("Albums")
-                                    .font(WRhythmTypography.featureTitle)
+                                WRhythmSectionHeader(title: "Albums") {
+                                    WRhythmSortMenu(selection: $albumSortOption)
+                                }
 
-                                ForEach(albumsToShow) { album in
+                                SlidingRenderWindowForEach(albumsToShow, estimatedRowHeight: 64) { _, album in
                                     NavigationLink(destination: AlbumDetailView(albumId: album.id)) {
                                         WRhythmCollectionRow(
                                             title: album.name,
@@ -278,10 +284,11 @@ struct FavouritesView: View {
                         // Starred Artists
                         if !artistsToShow.isEmpty {
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("Artists")
-                                    .font(WRhythmTypography.featureTitle)
+                                WRhythmSectionHeader(title: "Artists") {
+                                    WRhythmSortMenu(selection: $artistSortOption)
+                                }
 
-                                ForEach(artistsToShow) { artist in
+                                SlidingRenderWindowForEach(artistsToShow, estimatedRowHeight: 64) { _, artist in
                                     NavigationLink(destination: ArtistDetailView(artistId: artist.id, artistName: artist.name)) {
                                         WRhythmCollectionRow(
                                             title: artist.name,

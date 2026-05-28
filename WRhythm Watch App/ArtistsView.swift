@@ -16,6 +16,7 @@ struct ArtistsView: View {
     @State private var isSearching = false
     @State private var presentedSheet: ArtistsSheet?
     @State private var searchTask: Task<Void, Never>?
+    @State private var sortOption: ArtistSortOption = .nameAscending
     @ObservedObject var downloadManager = DownloadManager.shared
     @AppStorage("offlineMode") private var offlineMode = false
     private let batchSize = 20
@@ -27,19 +28,18 @@ struct ArtistsView: View {
                     song.artist == artist.name
                 }
             }
-            if searchText.isEmpty {
+            guard !searchText.isEmpty else {
                 return downloadedArtists
             }
             return downloadedArtists.filter { artist in
                 artist.name.localizedCaseInsensitiveContains(searchText)
             }
-        } else {
-            // Online mode: use search results if searching, otherwise show batch-loaded list
-            if !searchText.isEmpty {
-                return searchResults
-            }
-            return displayedArtists
         }
+
+        if !searchText.isEmpty {
+            return searchResults
+        }
+        return displayedArtists
     }
 
     var body: some View {
@@ -47,8 +47,10 @@ struct ArtistsView: View {
             .navigationTitle(offlineMode ? "Artists (\(downloadManager.getDownloadedArtists().count))" : "Artists (\(filteredDisplayedArtists.count))")
             .wrhythmPageBackground()
             .toolbar {
-                if !offlineMode {
-                    ToolbarItem(placement: .platformTopBarTrailing) {
+                ToolbarItemGroup(placement: .platformTopBarTrailing) {
+                    WRhythmSortMenu(selection: $sortOption)
+
+                    if !offlineMode {
                         WRhythmSearchToolbarButton(
                             hasQuery: !searchText.isEmpty,
                             clear: {
@@ -67,24 +69,24 @@ struct ArtistsView: View {
             .sheet(item: $presentedSheet) { sheet in
                 switch sheet {
                 case .search:
-                PlatformSearchSheet("Search Artists", onCancel: {
-                    presentedSheet = nil
-                }) {
-                    VStack(spacing: 16) {
-                        TextField("Search artists", text: $searchText)
-                            .platformSearchTextFieldStyle()
-                            .frame(maxWidth: .infinity)
+                    PlatformSearchSheet("Search Artists", onCancel: {
+                        presentedSheet = nil
+                    }) {
+                        VStack(spacing: 16) {
+                            TextField("Search artists", text: $searchText)
+                                .platformSearchTextFieldStyle()
+                                .frame(maxWidth: .infinity)
 
-                        Button("Search") {
-                            presentedSheet = nil
-                            performSearch(query: searchText)
+                            Button("Search") {
+                                presentedSheet = nil
+                                performSearch(query: searchText)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(searchText.isEmpty)
+
+                            Spacer()
                         }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(searchText.isEmpty)
-
-                        Spacer()
                     }
-                }
                 }
             }
             .onAppear {
@@ -116,11 +118,12 @@ struct ArtistsView: View {
 
     @ViewBuilder
     private var offlineContent: some View {
-        // Offline mode: show downloaded artists only
         let downloadedArtists = downloadManager.getDownloadedArtists()
         let filteredArtists = searchText.isEmpty ? downloadedArtists : downloadedArtists.filter { artist in
             artist.name.localizedCaseInsensitiveContains(searchText)
         }
+        let sortedArtists = sortedDownloadedArtists(filteredArtists)
+
         if downloadedArtists.isEmpty {
             WRhythmEmptyState(
                 systemImage: "arrow.down.circle",
@@ -134,33 +137,43 @@ struct ArtistsView: View {
                 message: "Try a different search term"
             )
         } else {
-            List {
+            ScrollView {
+                VStack(spacing: WRhythmSpacing.sm) {
 #if os(iOS)
-                PhoneSearchSubmenuHeader(
-                    title: "Offline Artists",
-                    subtitle: "Artists available from downloaded music.",
-                    systemImage: "person.2",
-                    countText: artistCountText(filteredArtists.count),
-                    queryText: searchText
-                )
+                    PhoneSearchSubmenuHeader(
+                        title: "Offline Artists",
+                        subtitle: "Artists available from downloaded music.",
+                        systemImage: "person.2",
+                        countText: artistCountText(sortedArtists.count),
+                        queryText: searchText
+                    )
 #endif
 
-                ForEach(Array(filteredArtists.enumerated()), id: \.element.name) { index, artist in
-                    let albumCount = downloadManager.getDownloadedAlbums().filter { $0.artist == artist.name }.count
-                    NavigationLink(destination: ArtistDetailView(artistId: "offline-\(artist.name)", artistName: artist.name)) {
-                        WRhythmCollectionRow(
-                            title: artist.name,
-                            subtitle: albumCount > 0 ? "\(albumCount) album\(albumCount == 1 ? "" : "s")" : nil,
-                            coverArtId: artist.coverArt,
-                            fallbackSystemImage: "person.fill",
-                            tint: WRhythmTheme.artist
-                        ) {
-                            Image(systemName: "arrow.down.circle.fill")
-                                .font(WRhythmTypography.metadata)
-                                .foregroundColor(WRhythmTheme.success)
+                    WRhythmCard {
+                        SlidingRenderWindowForEach(sortedArtists, estimatedRowHeight: 64) { _, artist in
+                            let albumCount = downloadedAlbumCount(for: artist.name)
+                            NavigationLink(destination: ArtistDetailView(artistId: "offline-\(artist.name)", artistName: artist.name)) {
+                                WRhythmCollectionRow(
+                                    title: artist.name,
+                                    subtitle: albumCount > 0 ? "\(albumCount) album\(albumCount == 1 ? "" : "s")" : nil,
+                                    coverArtId: artist.coverArt,
+                                    fallbackSystemImage: "person.fill",
+                                    tint: WRhythmTheme.artist
+                                ) {
+                                    Image(systemName: "arrow.down.circle.fill")
+                                        .font(WRhythmTypography.metadata)
+                                        .foregroundColor(WRhythmTheme.success)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .wrhythmArtistActions(artistId: "offline-\(artist.name)", artistName: artist.name)
+
+                            if artist.name != sortedArtists.last?.name {
+                                Divider()
+                                    .padding(.leading, 56)
+                            }
                         }
                     }
-                    .wrhythmArtistActions(artistId: "offline-\(artist.name)", artistName: artist.name)
                 }
             }
             .searchable(text: $searchText, prompt: "Search artists")
@@ -181,11 +194,10 @@ struct ArtistsView: View {
                 title: "Artist Error",
                 message: libraryDataManager.artistsErrorMessage
             ) {
-                    libraryDataManager.fetchArtists(forceRefresh: true)
+                libraryDataManager.fetchArtists(forceRefresh: true)
             }
         } else if displayedArtists.isEmpty && !libraryDataManager.artists.isEmpty {
-           // Initializing display
-           ProgressView()
+            ProgressView()
         } else if displayedArtists.isEmpty {
             WRhythmEmptyState(
                 systemImage: "person.2",
@@ -193,46 +205,54 @@ struct ArtistsView: View {
                 message: nil,
                 actionTitle: "Retry"
             ) {
-                    libraryDataManager.fetchArtists(forceRefresh: true)
+                libraryDataManager.fetchArtists(forceRefresh: true)
             }
         } else {
-            List {
+            let sortedArtists = sortOption.sorted(filteredDisplayedArtists)
+            ScrollView {
+                VStack(spacing: WRhythmSpacing.sm) {
 #if os(iOS)
-                PhoneSearchSubmenuHeader(
-                    title: "Artists",
-                    subtitle: searchText.isEmpty ? "Browse performers across your library." : "Artists matching your search.",
-                    systemImage: "person.2",
-                    countText: artistCountText(filteredDisplayedArtists.count),
-                    queryText: searchText
-                )
+                    PhoneSearchSubmenuHeader(
+                        title: "Artists",
+                        subtitle: searchText.isEmpty ? "Browse performers across your library." : "Artists matching your search.",
+                        systemImage: "person.2",
+                        countText: artistCountText(sortedArtists.count),
+                        queryText: searchText
+                    )
 #endif
 
-                ForEach(filteredDisplayedArtists) { artist in
-                    NavigationLink(destination: ArtistDetailView(artistId: artist.id, artistName: artist.name)) {
-                        WRhythmCollectionRow(
-                            title: artist.name,
-                            subtitle: artist.albumCount.map { "\($0) albums" },
-                            coverArtId: artist.coverArt,
-                            fallbackSystemImage: "person.fill",
-                            tint: WRhythmTheme.artist
-                        )
-                    }
-                    .wrhythmArtistActions(artistId: artist.id, artistName: artist.name)
-                    .onAppear {
-                        if artist.id == displayedArtists.last?.id {
-                            loadMoreArtists()
+                    WRhythmCard {
+                        SlidingRenderWindowForEach(sortedArtists, estimatedRowHeight: 64) { _, artist in
+                            NavigationLink(destination: ArtistDetailView(artistId: artist.id, artistName: artist.name)) {
+                                WRhythmCollectionRow(
+                                    title: artist.name,
+                                    subtitle: artist.albumCount.map { "\($0) albums" },
+                                    coverArtId: artist.coverArt,
+                                    fallbackSystemImage: "person.fill",
+                                    tint: WRhythmTheme.artist
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .wrhythmArtistActions(artistId: artist.id, artistName: artist.name)
+                            .onAppear {
+                                if artist.id == displayedArtists.last?.id {
+                                    loadMoreArtists()
+                                }
+                            }
+
+                            if artist.id != sortedArtists.last?.id {
+                                Divider()
+                                    .padding(.leading, 56)
+                            }
                         }
                     }
-                }
 
-                if loadedCount < libraryDataManager.artists.count {
-                    HStack {
-                        Spacer()
+                    if loadedCount < libraryDataManager.artists.count {
                         ProgressView()
-                        Spacer()
-                    }
-                    .onAppear {
-                        loadMoreArtists()
+                            .frame(maxWidth: .infinity)
+                            .onAppear {
+                                loadMoreArtists()
+                            }
                     }
                 }
             }
@@ -255,6 +275,32 @@ struct ArtistsView: View {
         count == 1 ? "1 artist" : "\(count) artists"
     }
 
+    private func sortedDownloadedArtists(_ artists: [(name: String, coverArt: String?)]) -> [(name: String, coverArt: String?)] {
+        artists.sorted { lhs, rhs in
+            let lhsAlbumCount = downloadedAlbumCount(for: lhs.name)
+            let rhsAlbumCount = downloadedAlbumCount(for: rhs.name)
+
+            switch sortOption {
+            case .nameAscending:
+                return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+            case .nameDescending:
+                return rhs.name.localizedCaseInsensitiveCompare(lhs.name) == .orderedAscending
+            case .mostAlbums:
+                return lhsAlbumCount == rhsAlbumCount
+                    ? lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+                    : lhsAlbumCount > rhsAlbumCount
+            case .fewestAlbums:
+                return lhsAlbumCount == rhsAlbumCount
+                    ? lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+                    : lhsAlbumCount < rhsAlbumCount
+            }
+        }
+    }
+
+    private func downloadedAlbumCount(for artistName: String) -> Int {
+        downloadManager.getDownloadedAlbums().filter { $0.artist == artistName }.count
+    }
+
     private func performSearch(query: String) {
         searchTask?.cancel()
         guard !query.isEmpty else {
@@ -264,7 +310,7 @@ struct ArtistsView: View {
         }
 
         searchTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 300_000_000) // 300ms debounce
+            try? await Task.sleep(nanoseconds: 300_000_000)
             guard SearchResultOwnershipPolicy.shouldApply(
                 query: query,
                 currentQuery: searchText,
@@ -280,16 +326,16 @@ struct ArtistsView: View {
                     currentQuery: searchText,
                     isCancelled: Task.isCancelled
                 ) else { return }
-                self.searchResults = result.artist ?? []
-                self.isSearching = false
+                searchResults = result.artist ?? []
+                isSearching = false
             } catch {
                 guard SearchResultOwnershipPolicy.shouldApply(
                     query: query,
                     currentQuery: searchText,
                     isCancelled: Task.isCancelled
                 ) else { return }
-                self.searchResults = []
-                self.isSearching = false
+                searchResults = []
+                isSearching = false
             }
         }
     }

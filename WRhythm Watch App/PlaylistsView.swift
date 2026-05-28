@@ -12,6 +12,7 @@ struct PlaylistsView: View {
     @State private var isSyncing = false
     @State private var searchText = ""
     @State private var presentedSheet: PlaylistsSheet?
+    @State private var sortOption: PlaylistSortOption = .nameAscending
     @ObservedObject var downloadManager = DownloadManager.shared
     @AppStorage("offlineMode") private var offlineMode = false
 
@@ -35,9 +36,10 @@ struct PlaylistsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Action buttons at top when online
-            if !offlineMode {
-                WRhythmActionBar {
+            WRhythmActionBar {
+                WRhythmSortMenu(selection: $sortOption)
+
+                if !offlineMode {
                     Button(action: {
                         syncAllPlaylists()
                     }) {
@@ -57,16 +59,16 @@ struct PlaylistsView: View {
                         Image(systemName: "magnifyingglass")
                     }
                     .buttonStyle(.bordered)
+                }
 
-                    if !searchText.isEmpty {
-                        Button(action: {
-                            searchText = ""
-                        }) {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.secondary)
-                        }
-                        .buttonStyle(.plain)
+                if !searchText.isEmpty {
+                    Button(action: {
+                        searchText = ""
+                    }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.secondary)
                     }
+                    .buttonStyle(.plain)
                 }
             }
 
@@ -78,23 +80,23 @@ struct PlaylistsView: View {
         .sheet(item: $presentedSheet) { sheet in
             switch sheet {
             case .search:
-            PlatformSearchSheet("Search Playlists", onCancel: {
-                presentedSheet = nil
-            }) {
-                VStack(spacing: 16) {
-                    TextField("Search playlists", text: $searchText)
-                        .platformSearchTextFieldStyle()
-                        .frame(maxWidth: .infinity)
+                PlatformSearchSheet("Search Playlists", onCancel: {
+                    presentedSheet = nil
+                }) {
+                    VStack(spacing: 16) {
+                        TextField("Search playlists", text: $searchText)
+                            .platformSearchTextFieldStyle()
+                            .frame(maxWidth: .infinity)
 
-                    Button("Search") {
-                        presentedSheet = nil
+                        Button("Search") {
+                            presentedSheet = nil
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(searchText.isEmpty)
+
+                        Spacer()
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(searchText.isEmpty)
-
-                    Spacer()
                 }
-            }
             }
         }
         .onAppear {
@@ -115,7 +117,8 @@ struct PlaylistsView: View {
 
     @ViewBuilder
     private var offlineContent: some View {
-        // Offline mode: show cached playlists
+        let sortedPlaylists = sortedCachedPlaylists(filteredCachedPlaylists)
+
         if filteredCachedPlaylists.isEmpty {
             WRhythmEmptyState(
                 systemImage: "music.note.list",
@@ -123,33 +126,43 @@ struct PlaylistsView: View {
                 message: "View playlists while online to cache them"
             )
         } else {
-            List {
+            ScrollView {
+                VStack(spacing: WRhythmSpacing.sm) {
 #if os(iOS)
-                PhoneSearchSubmenuHeader(
-                    title: "Offline Playlists",
-                    subtitle: "Cached playlists ready for offline playback.",
-                    systemImage: "music.note.list",
-                    countText: playlistCountText(filteredCachedPlaylists.count),
-                    queryText: searchText
-                )
+                    PhoneSearchSubmenuHeader(
+                        title: "Offline Playlists",
+                        subtitle: "Cached playlists ready for offline playback.",
+                        systemImage: "music.note.list",
+                        countText: playlistCountText(sortedPlaylists.count),
+                        queryText: searchText
+                    )
 #endif
 
-                ForEach(filteredCachedPlaylists, id: \.id) { playlist in
-                    NavigationLink(destination: PlaylistDetailView(playlistId: playlist.id, playlistName: playlist.name)) {
-                        WRhythmCollectionRow(
-                            title: playlist.name,
-                            subtitle: "\(playlist.songCount) songs",
-                            detail: "Cached",
-                            coverArtId: playlist.coverArt,
-                            fallbackSystemImage: "music.note.list",
-                            tint: WRhythmTheme.playlistGen
-                        ) {
-                            Image(systemName: "arrow.down.circle.fill")
-                                .font(WRhythmTypography.metadata)
-                                .foregroundColor(WRhythmTheme.success)
+                    WRhythmCard {
+                        SlidingRenderWindowForEach(sortedPlaylists, estimatedRowHeight: 64) { _, playlist in
+                            NavigationLink(destination: PlaylistDetailView(playlistId: playlist.id, playlistName: playlist.name)) {
+                                WRhythmCollectionRow(
+                                    title: playlist.name,
+                                    subtitle: "\(playlist.songCount) songs",
+                                    detail: "Cached",
+                                    coverArtId: playlist.coverArt,
+                                    fallbackSystemImage: "music.note.list",
+                                    tint: WRhythmTheme.playlistGen
+                                ) {
+                                    Image(systemName: "arrow.down.circle.fill")
+                                        .font(WRhythmTypography.metadata)
+                                        .foregroundColor(WRhythmTheme.success)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .wrhythmPlaylistActions(playlistId: playlist.id, playlistName: playlist.name)
+
+                            if playlist.id != sortedPlaylists.last?.id {
+                                Divider()
+                                    .padding(.leading, 56)
+                            }
                         }
                     }
-                    .wrhythmPlaylistActions(playlistId: playlist.id, playlistName: playlist.name)
                 }
             }
             .searchable(text: $searchText, prompt: "Search playlists")
@@ -170,7 +183,7 @@ struct PlaylistsView: View {
                 title: "Playlist Error",
                 message: libraryDataManager.playlistsErrorMessage
             ) {
-                    libraryDataManager.fetchPlaylists(forceRefresh: true)
+                libraryDataManager.fetchPlaylists(forceRefresh: true)
             }
         } else if libraryDataManager.playlists.isEmpty {
             WRhythmEmptyState(
@@ -179,31 +192,42 @@ struct PlaylistsView: View {
                 message: nil,
                 actionTitle: "Retry"
             ) {
-                    libraryDataManager.fetchPlaylists(forceRefresh: true)
+                libraryDataManager.fetchPlaylists(forceRefresh: true)
             }
         } else {
-            List {
+            let sortedPlaylists = sortOption.sorted(filteredPlaylists)
+            ScrollView {
+                VStack(spacing: WRhythmSpacing.sm) {
 #if os(iOS)
-                PhoneSearchSubmenuHeader(
-                    title: "Playlists",
-                    subtitle: searchText.isEmpty ? "Mixes and saved queues from your library." : "Playlists matching your search.",
-                    systemImage: "music.note.list",
-                    countText: playlistCountText(filteredPlaylists.count),
-                    queryText: searchText
-                )
+                    PhoneSearchSubmenuHeader(
+                        title: "Playlists",
+                        subtitle: searchText.isEmpty ? "Mixes and saved queues from your library." : "Playlists matching your search.",
+                        systemImage: "music.note.list",
+                        countText: playlistCountText(sortedPlaylists.count),
+                        queryText: searchText
+                    )
 #endif
 
-                ForEach(filteredPlaylists) { playlist in
-                    NavigationLink(destination: PlaylistDetailView(playlistId: playlist.id, playlistName: playlist.name)) {
-                        WRhythmCollectionRow(
-                            title: playlist.name,
-                            subtitle: "\(playlist.songCount) songs",
-                            coverArtId: playlist.coverArt,
-                            fallbackSystemImage: "music.note.list",
-                            tint: WRhythmTheme.playlistGen
-                        )
+                    WRhythmCard {
+                        SlidingRenderWindowForEach(sortedPlaylists, estimatedRowHeight: 64) { _, playlist in
+                            NavigationLink(destination: PlaylistDetailView(playlistId: playlist.id, playlistName: playlist.name)) {
+                                WRhythmCollectionRow(
+                                    title: playlist.name,
+                                    subtitle: "\(playlist.songCount) songs",
+                                    coverArtId: playlist.coverArt,
+                                    fallbackSystemImage: "music.note.list",
+                                    tint: WRhythmTheme.playlistGen
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .wrhythmPlaylistActions(playlistId: playlist.id, playlistName: playlist.name)
+
+                            if playlist.id != sortedPlaylists.last?.id {
+                                Divider()
+                                    .padding(.leading, 56)
+                            }
+                        }
                     }
-                    .wrhythmPlaylistActions(playlistId: playlist.id, playlistName: playlist.name)
                 }
             }
             .wrhythmListSurface()
@@ -214,27 +238,36 @@ struct PlaylistsView: View {
         count == 1 ? "1 playlist" : "\(count) playlists"
     }
 
+    private func sortedCachedPlaylists(_ playlists: [CachedPlaylist]) -> [CachedPlaylist] {
+        playlists.sorted { lhs, rhs in
+            switch sortOption {
+            case .nameAscending:
+                return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+            case .nameDescending:
+                return rhs.name.localizedCaseInsensitiveCompare(lhs.name) == .orderedAscending
+            case .recentlyChanged:
+                return lhs.cachedAt == rhs.cachedAt ? lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending : lhs.cachedAt > rhs.cachedAt
+            case .mostTracks:
+                return lhs.songCount == rhs.songCount ? lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending : lhs.songCount > rhs.songCount
+            case .fewestTracks:
+                return lhs.songCount == rhs.songCount ? lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending : lhs.songCount < rhs.songCount
+            }
+        }
+    }
+
     private func syncAllPlaylists() {
         isSyncing = true
 
         Task {
-            // Refresh playlists first
             libraryDataManager.fetchPlaylists(forceRefresh: true)
-            
-            // Wait a bit for playlists to update (fetchPlaylists is async but we don't await it here directly as it's on main actor via func, 
-            // but the network call is in Task. We need to wait for it.)
-            // Actually LibraryDataManager.fetchPlaylists launches a Task. We can't await it easily unless we change the signature.
-            // For now, let's just fetch manually here to ensure we have the latest list to iterate.
-            
+
             do {
                 let fetchedPlaylists = try await NavidromeAPI.shared.getPlaylists()
                 await MainActor.run {
                     libraryDataManager.playlists = fetchedPlaylists
-                    // Cache playlists for offline mode
                     downloadManager.cachePlaylists(fetchedPlaylists)
                 }
 
-                // Then, fetch full details for each playlist to cache song IDs
                 for playlist in fetchedPlaylists {
                     do {
                         let fullPlaylist = try await NavidromeAPI.shared.getPlaylist(id: playlist.id)

@@ -151,6 +151,7 @@ struct AlbumDetailView: View {
     @State private var album: Album?
     @State private var isLoading = true
     @State private var errorMessage = ""
+    @State private var songSortOption: SongSortOption = .trackNumber
     @AppStorage("offlineMode") private var offlineMode = false
     @ObservedObject private var player = AudioPlayer.shared
     @ObservedObject private var downloadManager = DownloadManager.shared
@@ -192,6 +193,7 @@ struct AlbumDetailView: View {
     @ViewBuilder
     private var offlineAlbumContent: some View {
         let songs = offlineAlbumSongs
+        let sortedSongs = songSortOption.sorted(songs)
         if songs.isEmpty {
             WRhythmErrorState(
                 title: "Album unavailable offline",
@@ -211,27 +213,29 @@ struct AlbumDetailView: View {
                 ) {
                     WRhythmActionStrip {
                         Button(action: {
-                            player.playQueue(songs, startingAt: 0)
+                            player.playQueue(sortedSongs, startingAt: 0)
                         }) {
                             Label("Play", systemImage: "play.fill")
                         }
                         .buttonStyle(.borderedProminent)
 
                         Button(action: {
-                            player.playQueueShuffled(songs)
+                            player.playQueueShuffled(sortedSongs)
                         }) {
                             Image(systemName: "shuffle")
                         }
                     }
                 }
 
-                trackSection(songs: songs, queue: songs)
+                trackSection(songs: sortedSongs)
             }
         }
     }
 
     private func onlineAlbumContent(_ album: Album) -> some View {
-        WRhythmScreen(coverArtId: album.coverArt) {
+        let displayedSongs = songSortOption.sorted(filteredSongs(album.song))
+
+        return WRhythmScreen(coverArtId: album.coverArt) {
             WRhythmHeroHeader(
                 title: album.name,
                 subtitle: album.artist,
@@ -242,14 +246,14 @@ struct AlbumDetailView: View {
             ) {
                 WRhythmActionStrip {
                     Button(action: {
-                        player.playQueue(album.song, startingAt: 0)
+                        player.playQueue(displayedSongs, startingAt: 0)
                     }) {
                         Label("Play", systemImage: "play.fill")
                     }
                     .buttonStyle(.borderedProminent)
 
                     Button(action: {
-                        player.playQueueShuffled(album.song)
+                        player.playQueueShuffled(displayedSongs)
                     }) {
                         Image(systemName: "shuffle")
                     }
@@ -287,7 +291,7 @@ struct AlbumDetailView: View {
                 .buttonStyle(.plain)
             }
 
-            trackSection(songs: filteredSongs(album.song), queue: album.song)
+            trackSection(songs: displayedSongs)
         }
     }
 
@@ -307,17 +311,19 @@ struct AlbumDetailView: View {
         return parts.joined(separator: " - ")
     }
 
-    private func trackSection(songs: [Song], queue: [Song]) -> some View {
+    private func trackSection(songs: [Song]) -> some View {
         VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
             WRhythmSectionHeader(
                 title: "Tracks",
                 subtitle: "\(songs.count) song\(songs.count == 1 ? "" : "s")"
-            )
+            ) {
+                WRhythmSortMenu(selection: $songSortOption)
+            }
 
             WRhythmCard(padding: WRhythmSpacing.sm) {
                 SlidingRenderWindowForEach(songs, estimatedRowHeight: 64) { index, song in
                     TrackRowView(song: song, player: player, downloadManager: downloadManager, offlineMode: offlineMode) {
-                        player.playQueue(queue, startingAt: index)
+                        player.playQueue(songs, startingAt: index)
                     }
                 }
             }
