@@ -38,6 +38,15 @@ struct SortOptionsPolicyTests {
         #expect(AlbumSortOption.mostTracks.requiresCompleteAlbumList)
     }
 
+    @Test func albumSortsDeclareWhenServerOrderCanBeUsedDirectly() {
+        #expect(AlbumSortOption.titleAscending.isServerOrderedAlbumList)
+        #expect(AlbumSortOption.artistAscending.isServerOrderedAlbumList)
+        #expect(AlbumSortOption.newest.isServerOrderedAlbumList)
+        #expect(AlbumSortOption.titleDescending.isServerOrderedAlbumList == false)
+        #expect(AlbumSortOption.artistDescending.isServerOrderedAlbumList == false)
+        #expect(AlbumSortOption.mostTracks.isServerOrderedAlbumList == false)
+    }
+
     @Test func artistSortsByNameAndAlbumCount() {
         let artists = [
             Artist(id: "a", name: "Zed", albumCount: 2, coverArt: nil),

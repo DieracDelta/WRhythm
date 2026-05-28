@@ -34,7 +34,7 @@ struct MacSpacebarPlaybackShortcut: NSViewRepresentable {
 
         func installIfNeeded() {
             guard monitor == nil else { return }
-            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
                 self?.handle(event) ?? event
             }
         }
@@ -48,6 +48,9 @@ struct MacSpacebarPlaybackShortcut: NSViewRepresentable {
         private func handle(_ event: NSEvent) -> NSEvent? {
             guard event.keyCode == 49 || event.charactersIgnoringModifiers == " " else {
                 return event
+            }
+            guard event.type == .keyDown else {
+                return nil
             }
             guard !event.isARepeat else {
                 return nil

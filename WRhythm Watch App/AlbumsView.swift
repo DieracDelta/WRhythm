@@ -37,7 +37,10 @@ struct AlbumsView: View {
     }
 
     private var sortedFilteredAlbums: [AlbumSummary] {
-        sortOption.sorted(filteredAlbums)
+        if !offlineMode, searchText.isEmpty, sortOption.isServerOrderedAlbumList {
+            return filteredAlbums
+        }
+        return sortOption.sorted(filteredAlbums)
     }
 
     var body: some View {

@@ -42,8 +42,8 @@ struct SlidingRenderWindowForEach<Element, Row: View>: View {
                     }
             }
 
-            ForEach(Array(items.enumerated())[visibleRange], id: \.offset) { index, item in
-                row(index, item)
+            ForEach(Array(visibleRange), id: \.self) { index in
+                row(index, items[index])
                     .onAppear {
                         updateAnchorIfNeeded(for: index)
                     }
