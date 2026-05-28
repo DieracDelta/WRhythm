@@ -989,6 +989,23 @@ struct SyncStateRefreshPublicationPolicy: Sendable {
     }
 }
 
+struct SyncPullRefreshPublicationPolicy: Sendable {
+    static func shouldPublishLocalPlayback(
+        sharedOutputDeviceID: String?,
+        localDeviceID: String,
+        hasLocalPlayback: Bool,
+        isLocalPlaying: Bool
+    ) -> Bool {
+        guard hasLocalPlayback else { return false }
+        if isLocalPlaying { return true }
+        return sharedOutputDeviceID == localDeviceID
+    }
+
+    static func shouldRebroadcastSharedPlayback(sharedOutputDeviceID: String?) -> Bool {
+        sharedOutputDeviceID != nil
+    }
+}
+
 struct ConnectivityLossPlaybackPolicy: Sendable {
     static func sessionAfterDisconnectedOutput(
         disconnectedDeviceID: String,
@@ -1518,7 +1535,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         configureTransports()
         updateConnectedDeviceNames()
         _ = sendEnvelope(.init(kind: .syncRequest, sender: localPeerInfo(), command: nil, credentials: nil, targetDeviceID: nil))
-        sendCurrentSyncState(includeHello: true)
+        sendPullRefreshSyncState(includeHello: true)
     }
 
     func searchForNearbyDevices() {
@@ -1534,7 +1551,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
 #endif
 
         _ = sendEnvelope(.init(kind: .syncRequest, sender: localPeerInfo(), command: nil, credentials: nil, targetDeviceID: nil))
-        sendAuthoritativeSyncState(includeHello: true)
+        sendPullRefreshSyncState(includeHello: true)
         requestCredentialsFromPeers()
         maybeSendCredentialsToInterestedPeers()
     }
@@ -2400,6 +2417,40 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         }
     }
 
+    private func sendPullRefreshSyncState(includeHello: Bool = false) {
+        if includeHello {
+            broadcastPeerPresence()
+        }
+
+        let player = AudioPlayer.shared
+        let queue = player.queue.isEmpty ? player.currentSong.map { [$0] } ?? [] : player.queue
+        if SyncPullRefreshPublicationPolicy.shouldPublishLocalPlayback(
+            sharedOutputDeviceID: sharedSession?.outputDeviceID,
+            localDeviceID: localDeviceID,
+            hasLocalPlayback: !queue.isEmpty,
+            isLocalPlaying: player.isPlaying
+        ) {
+            let currentIndex = min(player.currentIndex, queue.count - 1)
+            publishSharedSession(makeSession(
+                queue: queue,
+                currentIndex: currentIndex,
+                position: localPlaybackPublishedPosition(queue: queue, currentIndex: currentIndex),
+                isPlaying: player.isPlaying,
+                outputDeviceID: localDeviceID,
+                volume: player.volume
+            ), applyLocally: false)
+            return
+        }
+
+        guard SyncPullRefreshPublicationPolicy.shouldRebroadcastSharedPlayback(
+            sharedOutputDeviceID: sharedSession?.outputDeviceID
+        ), let sharedSession else {
+            return
+        }
+
+        broadcastSharedSession(sharedSession)
+    }
+
     private func sendAuthoritativeSyncState(includeHello: Bool = false) {
         refreshLocalSharedSessionIfNeeded()
         if includeHello {
@@ -2709,7 +2760,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         case .syncRequest:
             guard SyncRequestTargetPolicy.shouldHandle(targetDeviceID: envelope.targetDeviceID, localDeviceID: localDeviceID) else { return }
             flushPendingCommands(for: envelope.sender.id)
-            sendCurrentSyncState(includeHello: true)
+            sendPullRefreshSyncState(includeHello: true)
             if CredentialSyncBootstrapPolicy.shouldOfferCredentialsToRequester(
                 localCredentialSyncEnabled: credentialSyncEnabled,
                 localHasCredentials: NavidromeAPI.shared.hasCredentials,

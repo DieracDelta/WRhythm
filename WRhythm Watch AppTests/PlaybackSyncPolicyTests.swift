@@ -1063,6 +1063,41 @@ struct PlaybackSyncPolicyTests {
         ) == false)
     }
 
+    @Test func pullRefreshDoesNotPublishPassivePausedLocalStateWithoutKnownOwner() {
+        #expect(SyncPullRefreshPublicationPolicy.shouldPublishLocalPlayback(
+            sharedOutputDeviceID: nil,
+            localDeviceID: "watch",
+            hasLocalPlayback: true,
+            isLocalPlaying: false
+        ) == false)
+    }
+
+    @Test func pullRefreshPublishesActiveLocalStateWithoutKnownOwner() {
+        #expect(SyncPullRefreshPublicationPolicy.shouldPublishLocalPlayback(
+            sharedOutputDeviceID: nil,
+            localDeviceID: "iphone",
+            hasLocalPlayback: true,
+            isLocalPlaying: true
+        ) == true)
+    }
+
+    @Test func pullRefreshPublishesPausedLocalOwnerAndRebroadcastsKnownRemoteOwner() {
+        #expect(SyncPullRefreshPublicationPolicy.shouldPublishLocalPlayback(
+            sharedOutputDeviceID: "iphone",
+            localDeviceID: "iphone",
+            hasLocalPlayback: true,
+            isLocalPlaying: false
+        ) == true)
+        #expect(SyncPullRefreshPublicationPolicy.shouldPublishLocalPlayback(
+            sharedOutputDeviceID: "iphone",
+            localDeviceID: "watch",
+            hasLocalPlayback: true,
+            isLocalPlaying: false
+        ) == false)
+        #expect(SyncPullRefreshPublicationPolicy.shouldRebroadcastSharedPlayback(sharedOutputDeviceID: "iphone") == true)
+        #expect(SyncPullRefreshPublicationPolicy.shouldRebroadcastSharedPlayback(sharedOutputDeviceID: nil) == false)
+    }
+
     @Test func supportedSyncGraphKeepsWatchIndependentWithIPhoneBridgeToMac() {
         #expect(SyncTransportAvailabilityPolicy.canDirectlyDiscover(local: .appleWatch, remote: .iPhone) == true)
         #expect(SyncTransportAvailabilityPolicy.canDirectlyDiscover(local: .iPhone, remote: .appleWatch) == true)
