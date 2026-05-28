@@ -952,7 +952,6 @@ struct LocalPlaybackOwnershipPolicy: Sendable {
         return sharedOutputDeviceID == localDeviceID
             || isLocalPlaying
             || isExplicitLocalPlaybackIntent
-            || (selectedPlaybackTargetID == localDeviceID && hasLocalPlayback)
     }
 }
 

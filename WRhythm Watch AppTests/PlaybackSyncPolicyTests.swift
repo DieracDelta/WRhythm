@@ -580,14 +580,26 @@ struct PlaybackSyncPolicyTests {
         ) == false)
     }
 
-    @Test func pausedLocalSelectedTargetCanPublishOverStaleRemoteOwner() {
+    @Test func explicitPausedLocalSelectedTargetCanPublishOverRemoteOwner() {
         #expect(LocalPlaybackOwnershipPolicy.shouldPublishLocalPlayback(
             sharedOutputDeviceID: "iphone",
             localDeviceID: "mac",
             selectedPlaybackTargetID: "mac",
             hasLocalPlayback: true,
-            isLocalPlaying: false
+            isLocalPlaying: false,
+            isExplicitLocalPlaybackIntent: true
         ) == true)
+    }
+
+    @Test func passivePausedLocalSelectedTargetDoesNotStealActiveRemoteOwner() {
+        #expect(LocalPlaybackOwnershipPolicy.shouldPublishLocalPlayback(
+            sharedOutputDeviceID: "iphone",
+            localDeviceID: "watch",
+            selectedPlaybackTargetID: "watch",
+            hasLocalPlayback: true,
+            isLocalPlaying: false,
+            isExplicitLocalPlaybackIntent: false
+        ) == false)
     }
 
     @Test func pausedLocalSelectedTargetWithoutPlaybackDoesNotPublishOverRemoteOwner() {
