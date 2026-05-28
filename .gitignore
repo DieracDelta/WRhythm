@@ -1,0 +1,28 @@
+# macOS / Xcode local state
+.DS_Store
+DerivedData/
+*.xcuserstate
+*.xcresult
+
+# Swift build output
+.build/
+
+# Local build/test logs
+LOG
+build_log*.txt
+
+# Local credentials and App Store scratch metadata
+creds_reddit
+sku
+
+# Nix build symlink
+result
+
+# Generated screenshot/output captures
+screenshots/
+sc_wrhythm.png
+
+# Temporary logo/image experiments
+mylogo.*
+mylogo_*.*
+temp.pbm
