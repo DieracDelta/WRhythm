@@ -3,6 +3,7 @@
 //  WRhythm Watch AppTests
 //
 
+import Foundation
 import Testing
 @testable import WRhythm_Watch_App
 

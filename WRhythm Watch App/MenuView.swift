@@ -29,6 +29,7 @@ struct MenuView: View {
 
             menuGroup("Playback") {
                 menuLink("Favorites", systemImage: "star.fill", destination: FavouritesView())
+                menuLink(recentlyPlayedTitle, systemImage: "clock.arrow.circlepath", destination: RecentlyPlayedView())
                 menuLink("Playlist Gen", systemImage: "radio", destination: RadioPlaylistsView())
                 menuLink("Spontaneous", systemImage: "shuffle", destination: SpontaneousMusicView())
             }
@@ -130,6 +131,14 @@ struct MenuView: View {
         )
     }
 #endif
+
+    private var recentlyPlayedTitle: String {
+#if os(watchOS)
+        "Recent"
+#else
+        "Recently Played"
+#endif
+    }
 }
 
 #Preview {

@@ -686,6 +686,7 @@ class AudioPlayer: NSObject, ObservableObject {
         }
     }
     private var scrobbleTracker = ScrobbleProgressTracker()
+    private var recentlyPlayedTracker = ScrobbleProgressTracker()
     private let maxPlaybackRetryAttempts = 4
     private let maxPlaybackRetryBackoff: TimeInterval = 30
     private var prebufferRetryAttemptsByKey: [String: Int] = [:]
@@ -805,6 +806,31 @@ class AudioPlayer: NSObject, ObservableObject {
         sendScrobbleEvent(scrobbleTracker.start(songID: song.id, currentTime: startTime, now: Date()))
     }
 
+    private func beginRecentlyPlayedTracking(for song: Song, startTime: TimeInterval) {
+        _ = recentlyPlayedTracker.start(songID: song.id, currentTime: startTime, now: Date())
+    }
+
+    private func updateRecentlyPlayedTracking() {
+        guard let song = currentSong else {
+            recentlyPlayedTracker.reset()
+            return
+        }
+
+        let effectiveDuration = duration > 0 ? duration : TimeInterval(song.duration ?? 0)
+        guard let event = recentlyPlayedTracker.update(
+            songID: song.id,
+            currentTime: liveCurrentTime,
+            duration: effectiveDuration,
+            isPlaying: isPlaying,
+            now: Date()
+        ) else { return }
+
+        if case .submission(let songID) = event,
+           let song = songForRecentlyPlayedHistory(songID: songID) {
+            RecentlyPlayedStore.shared.record(song: song)
+        }
+    }
+
     private func updateScrobbleTracking() {
         guard let song = currentSong else {
             scrobbleTracker.reset()
@@ -841,6 +867,19 @@ class AudioPlayer: NSObject, ObservableObject {
                 print("⚠️ Scrobble failed: \(error.localizedDescription)")
             }
         }
+    }
+
+    private func songForRecentlyPlayedHistory(songID: String) -> Song? {
+        if currentSong?.id == songID {
+            return currentSong
+        }
+        if let queueSong = queue.first(where: { $0.id == songID }) {
+            return queueSong
+        }
+        if let playlistGenSong = playlistGenQueue.first(where: { $0.id == songID }) {
+            return playlistGenSong
+        }
+        return nil
     }
 
     func persistPlaybackStateNow() {
@@ -2633,6 +2672,7 @@ class AudioPlayer: NSObject, ObservableObject {
             self.duration = 0
             print("🔄 Reset duration to 0, will try to get from stream")
         }
+        beginRecentlyPlayedTracking(for: song, startTime: startTime)
         beginScrobbleTracking(for: song, startTime: startTime)
         scheduleQueuePrebuffer()
 
@@ -2776,6 +2816,7 @@ class AudioPlayer: NSObject, ObservableObject {
         isPlaying = false
         currentSong = nil
         scrobbleTracker.reset()
+        recentlyPlayedTracker.reset()
         currentPlaybackURL = nil
         currentPlaybackIsLocalFile = false
         queue = []
@@ -2872,6 +2913,7 @@ class AudioPlayer: NSObject, ObservableObject {
                 // AVPlayer's item time is the actual playback position. Keep the optional
                 // offset at zero unless a future stream type explicitly requires it.
                 self.currentTime = self.baseTimeOffset + time.seconds
+                self.updateRecentlyPlayedTracking()
                 self.updateScrobbleTracking()
 
                 // Update duration if it's available and we don't have it yet

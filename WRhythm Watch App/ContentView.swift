@@ -214,6 +214,7 @@ enum MacDestination: String, Hashable, CaseIterable {
     case artists
     case playlists
     case favorites
+    case recentlyPlayed
     case playlistGen
     case tracks
     case spontaneous
@@ -228,6 +229,7 @@ enum MacDestination: String, Hashable, CaseIterable {
         case .artists: return "Artists"
         case .playlists: return "Playlists"
         case .favorites: return "Favorites"
+        case .recentlyPlayed: return "Recently Played"
         case .playlistGen: return "Playlist Gen"
         case .tracks: return "Search"
         case .spontaneous: return "Spontaneous"
@@ -244,6 +246,7 @@ enum MacDestination: String, Hashable, CaseIterable {
         case .artists: return "person.2"
         case .playlists: return "music.note.list"
         case .favorites: return "star.fill"
+        case .recentlyPlayed: return "clock.arrow.circlepath"
         case .playlistGen: return "music.note.list"
         case .tracks: return "magnifyingglass"
         case .spontaneous: return "shuffle"
@@ -546,6 +549,8 @@ struct MacDetailContent: View {
             PlaylistsView()
         case .favorites:
             FavouritesView()
+        case .recentlyPlayed:
+            RecentlyPlayedView()
         case .playlistGen:
             RadioPlaylistsView()
         case .tracks:
