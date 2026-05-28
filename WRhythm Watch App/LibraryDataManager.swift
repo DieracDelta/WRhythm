@@ -58,6 +58,7 @@ final class LibraryDataManager: ObservableObject {
     @Published var albumsErrorMessage = ""
     @Published var albumOffset = 0
     @Published var hasMoreAlbums = true
+    @Published var albumListType = "newest"
     
     // MARK: - Favourites
     @Published var starred: StarredContent?
@@ -143,18 +144,83 @@ final class LibraryDataManager: ObservableObject {
     }
     
     // MARK: - Albums Methods
-    func fetchInitialAlbums(forceRefresh: Bool = false) {
-        guard !isLoadingAlbums else { return }
-        if !albums.isEmpty && !forceRefresh { return }
+    func fetchInitialAlbums(forceRefresh: Bool = false, type: String = "newest") {
+        if isLoadingAlbums {
+            guard forceRefresh || albumListType != type else { return }
+            albumsFetchTask?.cancel()
+            isLoadingAlbums = false
+        }
+        if !albums.isEmpty && !forceRefresh && albumListType == type { return }
         
         albums = []
         albumOffset = 0
         hasMoreAlbums = true
+        albumListType = type
         albumsErrorMessage = ""
         albumsFetchTask?.cancel()
         albumsFetchGeneration += 1
         
         fetchMoreAlbums()
+    }
+
+    func fetchAllAlbums(forceRefresh: Bool = false, type: String = "newest") {
+        if isLoadingAlbums {
+            guard forceRefresh || albumListType != type else { return }
+            albumsFetchTask?.cancel()
+            isLoadingAlbums = false
+        }
+        if !albums.isEmpty && !hasMoreAlbums && !forceRefresh && albumListType == type { return }
+
+        albums = []
+        albumOffset = 0
+        hasMoreAlbums = true
+        albumListType = type
+        albumsErrorMessage = ""
+        albumsFetchTask?.cancel()
+        albumsFetchGeneration += 1
+        isLoadingAlbums = true
+
+        let generation = albumsFetchGeneration
+        albumsFetchTask = Task { @MainActor in
+            do {
+                let batchSize = 500
+                var offset = 0
+                var allAlbums: [AlbumSummary] = []
+
+                while true {
+                    let fetchedAlbums = try await NavidromeAPI.shared.getAlbumList(
+                        type: type,
+                        size: batchSize,
+                        offset: offset
+                    )
+                    guard AsyncResultOwnershipPolicy.shouldApply(
+                        capturedGeneration: generation,
+                        currentGeneration: self.albumsFetchGeneration,
+                        isCancelled: Task.isCancelled
+                    ) else { return }
+
+                    allAlbums.append(contentsOf: fetchedAlbums)
+                    offset += fetchedAlbums.count
+
+                    if fetchedAlbums.count < batchSize {
+                        break
+                    }
+                }
+
+                self.albums = allAlbums
+                self.albumOffset = allAlbums.count
+                self.hasMoreAlbums = false
+                self.isLoadingAlbums = false
+            } catch {
+                guard AsyncResultOwnershipPolicy.shouldApply(
+                    capturedGeneration: generation,
+                    currentGeneration: self.albumsFetchGeneration,
+                    isCancelled: Task.isCancelled
+                ) else { return }
+                self.albumsErrorMessage = error.localizedDescription
+                self.isLoadingAlbums = false
+            }
+        }
     }
     
     func fetchMoreAlbums() {
@@ -167,7 +233,7 @@ final class LibraryDataManager: ObservableObject {
         albumsFetchTask = Task { @MainActor in
             do {
                 let fetchedAlbums = try await NavidromeAPI.shared.getAlbumList(
-                    type: "newest",
+                    type: self.albumListType,
                     size: pageSize,
                     offset: offset
                 )

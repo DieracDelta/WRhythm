@@ -139,7 +139,7 @@ struct PlaylistsView: View {
 #endif
 
                     WRhythmCard {
-                        SlidingRenderWindowForEach(sortedPlaylists, estimatedRowHeight: 64) { _, playlist in
+                        SlidingRenderWindowForEach(sortedPlaylists, estimatedRowHeight: 64, resetToken: sortOption) { _, playlist in
                             NavigationLink(destination: PlaylistDetailView(playlistId: playlist.id, playlistName: playlist.name)) {
                                 WRhythmCollectionRow(
                                     title: playlist.name,
@@ -209,7 +209,7 @@ struct PlaylistsView: View {
 #endif
 
                     WRhythmCard {
-                        SlidingRenderWindowForEach(sortedPlaylists, estimatedRowHeight: 64) { _, playlist in
+                        SlidingRenderWindowForEach(sortedPlaylists, estimatedRowHeight: 64, resetToken: sortOption) { _, playlist in
                             NavigationLink(destination: PlaylistDetailView(playlistId: playlist.id, playlistName: playlist.name)) {
                                 WRhythmCollectionRow(
                                     title: playlist.name,

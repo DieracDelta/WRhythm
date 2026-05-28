@@ -89,8 +89,12 @@ struct AlbumsView: View {
             }
             .onAppear {
                 if !offlineMode && libraryDataManager.albums.isEmpty {
-                    libraryDataManager.fetchInitialAlbums()
+                    loadAlbums(forceRefresh: false)
                 }
+            }
+            .onChange(of: sortOption) { _, _ in
+                guard !offlineMode, searchText.isEmpty else { return }
+                loadAlbums(forceRefresh: true)
             }
             .onDisappear {
                 searchTask?.cancel()
@@ -141,7 +145,7 @@ struct AlbumsView: View {
 #endif
 
                     WRhythmCard {
-                        SlidingRenderWindowForEach(sortedAlbums, estimatedRowHeight: 64) { _, album in
+                        SlidingRenderWindowForEach(sortedAlbums, estimatedRowHeight: 64, resetToken: sortOption) { _, album in
                             NavigationLink(destination: AlbumDetailView(albumId: album.id)) {
                                 WRhythmCollectionRow(
                                     title: album.name,
@@ -184,7 +188,7 @@ struct AlbumsView: View {
                 title: "Album Error",
                 message: libraryDataManager.albumsErrorMessage
             ) {
-                libraryDataManager.fetchInitialAlbums(forceRefresh: true)
+                loadAlbums(forceRefresh: true)
             }
         } else if libraryDataManager.albums.isEmpty {
             WRhythmEmptyState(
@@ -193,7 +197,7 @@ struct AlbumsView: View {
                 message: nil,
                 actionTitle: "Retry"
             ) {
-                libraryDataManager.fetchInitialAlbums(forceRefresh: true)
+                loadAlbums(forceRefresh: true)
             }
         } else {
             ScrollView {
@@ -209,7 +213,7 @@ struct AlbumsView: View {
 #endif
 
                     WRhythmCard {
-                        SlidingRenderWindowForEach(sortedFilteredAlbums, estimatedRowHeight: 64) { _, album in
+                        SlidingRenderWindowForEach(sortedFilteredAlbums, estimatedRowHeight: 64, resetToken: sortOption) { _, album in
                             NavigationLink(destination: AlbumDetailView(albumId: album.id)) {
                                 WRhythmCollectionRow(
                                     title: album.name,
@@ -247,6 +251,14 @@ struct AlbumsView: View {
 
     private func albumCountText(_ count: Int) -> String {
         count == 1 ? "1 album" : "\(count) albums"
+    }
+
+    private func loadAlbums(forceRefresh: Bool) {
+        if sortOption.requiresCompleteAlbumList {
+            libraryDataManager.fetchAllAlbums(forceRefresh: forceRefresh, type: sortOption.serverAlbumListType)
+        } else {
+            libraryDataManager.fetchInitialAlbums(forceRefresh: forceRefresh, type: sortOption.serverAlbumListType)
+        }
     }
 
     private func sortedDownloadedAlbums(_ albums: [(id: String, name: String, artist: String?, coverArt: String?)]) -> [(id: String, name: String, artist: String?, coverArt: String?)] {

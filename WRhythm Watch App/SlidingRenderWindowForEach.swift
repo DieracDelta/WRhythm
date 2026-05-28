@@ -4,6 +4,7 @@ struct SlidingRenderWindowForEach<Element, Row: View>: View {
     private let items: [Element]
     private let estimatedRowHeight: CGFloat
     private let spacing: CGFloat
+    private let resetToken: AnyHashable
     private let row: (Int, Element) -> Row
 
     @AppStorage(SongRenderWindowPolicy.userDefaultsKey) private var storedLimit = SongRenderWindowPolicy.defaultLimit
@@ -13,11 +14,13 @@ struct SlidingRenderWindowForEach<Element, Row: View>: View {
         _ items: [Element],
         estimatedRowHeight: CGFloat = 64,
         spacing: CGFloat = 0,
+        resetToken: some Hashable = 0,
         @ViewBuilder row: @escaping (Int, Element) -> Row
     ) {
         self.items = items
         self.estimatedRowHeight = estimatedRowHeight
         self.spacing = spacing
+        self.resetToken = AnyHashable(resetToken)
         self.row = row
     }
 
@@ -60,6 +63,9 @@ struct SlidingRenderWindowForEach<Element, Row: View>: View {
                 return
             }
             anchorIndex = min(anchorIndex, newCount - 1)
+        }
+        .onChange(of: resetToken) { _, _ in
+            anchorIndex = 0
         }
     }
 

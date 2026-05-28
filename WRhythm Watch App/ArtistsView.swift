@@ -150,7 +150,7 @@ struct ArtistsView: View {
 #endif
 
                     WRhythmCard {
-                        SlidingRenderWindowForEach(sortedArtists, estimatedRowHeight: 64) { _, artist in
+                        SlidingRenderWindowForEach(sortedArtists, estimatedRowHeight: 64, resetToken: sortOption) { _, artist in
                             let albumCount = downloadedAlbumCount(for: artist.name)
                             NavigationLink(destination: ArtistDetailView(artistId: "offline-\(artist.name)", artistName: artist.name)) {
                                 WRhythmCollectionRow(
@@ -222,7 +222,7 @@ struct ArtistsView: View {
 #endif
 
                     WRhythmCard {
-                        SlidingRenderWindowForEach(sortedArtists, estimatedRowHeight: 64) { _, artist in
+                        SlidingRenderWindowForEach(sortedArtists, estimatedRowHeight: 64, resetToken: sortOption) { _, artist in
                             NavigationLink(destination: ArtistDetailView(artistId: artist.id, artistName: artist.name)) {
                                 WRhythmCollectionRow(
                                     title: artist.name,

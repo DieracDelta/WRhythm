@@ -74,6 +74,26 @@ enum AlbumSortOption: String, WRhythmSortOption {
         }
     }
 
+    var serverAlbumListType: String {
+        switch self {
+        case .titleAscending, .titleDescending:
+            return "alphabeticalByName"
+        case .artistAscending, .artistDescending:
+            return "alphabeticalByArtist"
+        case .newest, .mostTracks:
+            return "newest"
+        }
+    }
+
+    var requiresCompleteAlbumList: Bool {
+        switch self {
+        case .titleDescending, .artistDescending, .mostTracks:
+            return true
+        case .titleAscending, .artistAscending, .newest:
+            return false
+        }
+    }
+
     func sorted(_ albums: [AlbumSummary]) -> [AlbumSummary] {
         albums.sorted { lhs, rhs in
             switch self {

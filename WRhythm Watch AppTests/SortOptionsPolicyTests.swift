@@ -20,6 +20,24 @@ struct SortOptionsPolicyTests {
         #expect(AlbumSortOption.mostTracks.sorted(albums).map(\.id) == ["b", "c", "a"])
     }
 
+    @Test func albumSortsUseMatchingServerListTypeForPagedBrowsing() {
+        #expect(AlbumSortOption.titleAscending.serverAlbumListType == "alphabeticalByName")
+        #expect(AlbumSortOption.titleDescending.serverAlbumListType == "alphabeticalByName")
+        #expect(AlbumSortOption.artistAscending.serverAlbumListType == "alphabeticalByArtist")
+        #expect(AlbumSortOption.artistDescending.serverAlbumListType == "alphabeticalByArtist")
+        #expect(AlbumSortOption.newest.serverAlbumListType == "newest")
+        #expect(AlbumSortOption.mostTracks.serverAlbumListType == "newest")
+    }
+
+    @Test func albumSortsDeclareWhenTheyNeedCompleteClientSideData() {
+        #expect(AlbumSortOption.titleAscending.requiresCompleteAlbumList == false)
+        #expect(AlbumSortOption.artistAscending.requiresCompleteAlbumList == false)
+        #expect(AlbumSortOption.newest.requiresCompleteAlbumList == false)
+        #expect(AlbumSortOption.titleDescending.requiresCompleteAlbumList)
+        #expect(AlbumSortOption.artistDescending.requiresCompleteAlbumList)
+        #expect(AlbumSortOption.mostTracks.requiresCompleteAlbumList)
+    }
+
     @Test func artistSortsByNameAndAlbumCount() {
         let artists = [
             Artist(id: "a", name: "Zed", albumCount: 2, coverArt: nil),

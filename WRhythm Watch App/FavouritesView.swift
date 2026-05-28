@@ -155,7 +155,7 @@ struct FavouritesView: View {
                             }
                         }
 
-                        SlidingRenderWindowForEach(songsToShow, estimatedRowHeight: 64) { index, song in
+                        SlidingRenderWindowForEach(songsToShow, estimatedRowHeight: 64, resetToken: songSortOption) { index, song in
                             TrackRowView(song: song, player: player, downloadManager: downloadManager, offlineMode: offlineMode) {
                                 player.playQueue(songsToShow, startingAt: index)
                             }
@@ -246,7 +246,7 @@ struct FavouritesView: View {
                                     }
                                 }
 
-                                SlidingRenderWindowForEach(songsToShow, estimatedRowHeight: 64) { index, song in
+                                SlidingRenderWindowForEach(songsToShow, estimatedRowHeight: 64, resetToken: songSortOption) { index, song in
                                     TrackRowView(song: song, player: player, downloadManager: downloadManager, offlineMode: offlineMode) {
                                         player.playQueue(songsToShow, startingAt: index)
                                     }
@@ -263,7 +263,7 @@ struct FavouritesView: View {
                                     WRhythmSortMenu(selection: $albumSortOption)
                                 }
 
-                                SlidingRenderWindowForEach(albumsToShow, estimatedRowHeight: 64) { _, album in
+                                SlidingRenderWindowForEach(albumsToShow, estimatedRowHeight: 64, resetToken: albumSortOption) { _, album in
                                     NavigationLink(destination: AlbumDetailView(albumId: album.id)) {
                                         WRhythmCollectionRow(
                                             title: album.name,
@@ -288,7 +288,7 @@ struct FavouritesView: View {
                                     WRhythmSortMenu(selection: $artistSortOption)
                                 }
 
-                                SlidingRenderWindowForEach(artistsToShow, estimatedRowHeight: 64) { _, artist in
+                                SlidingRenderWindowForEach(artistsToShow, estimatedRowHeight: 64, resetToken: artistSortOption) { _, artist in
                                     NavigationLink(destination: ArtistDetailView(artistId: artist.id, artistName: artist.name)) {
                                         WRhythmCollectionRow(
                                             title: artist.name,
