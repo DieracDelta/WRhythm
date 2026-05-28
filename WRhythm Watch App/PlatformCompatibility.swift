@@ -1396,9 +1396,9 @@ struct WRhythmAppLoadingView: View {
 
     private var logoSize: CGFloat {
 #if os(watchOS)
-        64
+        48
 #else
-        96
+        64
 #endif
     }
 }
