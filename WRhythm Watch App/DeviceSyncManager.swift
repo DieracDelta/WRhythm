@@ -1751,6 +1751,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         )
 
         if session.outputDeviceID == localDeviceID {
+            player.resumePrebufferingForLocalOutput()
             withRemoteCommandApplication {
                 guard let song = session.currentSong else {
                     if plan.shouldStop {

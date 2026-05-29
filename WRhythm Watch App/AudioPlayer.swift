@@ -701,6 +701,7 @@ class AudioPlayer: NSObject, ObservableObject {
     private var recentPrebufferFailureDates: [Date] = []
     private var prebufferRetryCooldownUntil: Date?
     private var prebufferCooldownWakeTask: Task<Void, Never>?
+    private var allowsQueuePrebuffering = true
 #if os(iOS) || os(watchOS) || os(macOS)
     private var nowPlayingArtworkTask: Task<Void, Never>?
     private var nowPlayingArtworkSongID: String?
@@ -2148,7 +2149,7 @@ class AudioPlayer: NSObject, ObservableObject {
     }
 
     private func scheduleQueuePrebuffer() {
-        guard PrebufferOwnershipPolicy.shouldSchedule(isLocalPlaybackOutput: DeviceSyncManager.shared.isLocalPlaybackOutput) else {
+        guard PrebufferOwnershipPolicy.shouldSchedule(isLocalPlaybackOutput: allowsQueuePrebuffering) else {
             suspendPrebufferingForRemoteOutput()
             return
         }
@@ -2239,7 +2240,14 @@ class AudioPlayer: NSObject, ObservableObject {
     }
 
     func suspendPrebufferingForRemoteOutput() {
+        allowsQueuePrebuffering = false
         cancelPrebufferWork()
+    }
+
+    func resumePrebufferingForLocalOutput() {
+        guard !allowsQueuePrebuffering else { return }
+        allowsQueuePrebuffering = true
+        scheduleQueuePrebuffer()
     }
 
     private func cancelPrebufferWork() {
