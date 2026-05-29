@@ -15,6 +15,9 @@ struct WRhythm_Watch_AppApp: App {
 
     init() {
         WRhythmFont.registerIfNeeded()
+#if POWER_INFO
+        MetricKitReporter.shared.start()
+#endif
 #if DEBUG
         Task { @MainActor in
             SyncLiveHarness.shared.startIfNeeded()

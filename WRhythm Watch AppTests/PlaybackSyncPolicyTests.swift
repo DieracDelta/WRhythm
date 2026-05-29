@@ -2422,6 +2422,11 @@ struct PlaybackSyncPolicyTests {
         ) == false)
     }
 
+    @Test func passiveRemotePlaybackObserversDoNotSchedulePrebufferDownloads() {
+        #expect(PrebufferOwnershipPolicy.shouldSchedule(isLocalPlaybackOutput: true))
+        #expect(PrebufferOwnershipPolicy.shouldSchedule(isLocalPlaybackOutput: false) == false)
+    }
+
     @Test func prebufferProgressPercentUsesActualReceivedBytes() {
         let progress = PrebufferProgressPolicy.normalizedProgress(receivedBytes: 800, expectedBytes: 1_000)
 

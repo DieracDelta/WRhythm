@@ -1793,8 +1793,11 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             }
         } else if plan.shouldPause {
             withRemoteCommandApplication {
+                player.suspendPrebufferingForRemoteOutput()
                 player.pause()
             }
+        } else {
+            player.suspendPrebufferingForRemoteOutput()
         }
     }
 

@@ -1,0 +1,103 @@
+//
+//  MetricKitReporter.swift
+//  WRhythm
+//
+
+import Foundation
+
+struct MetricKitPayloadFilePolicy: Sendable {
+    static func filename(prefix: String, receivedAt: Date, index: Int) -> String {
+        let timestamp = ISO8601DateFormatter.wrhythmMetricKitFilename.string(from: receivedAt)
+        return "\(prefix)-\(timestamp)-\(index).json"
+    }
+}
+
+private extension ISO8601DateFormatter {
+    static let wrhythmMetricKitFilename: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+}
+
+#if POWER_INFO && canImport(MetricKit)
+import MetricKit
+
+final class MetricKitReporter: NSObject, MXMetricManagerSubscriber {
+    static let shared = MetricKitReporter()
+
+    private let fileManager: FileManager
+    private var hasStarted = false
+
+    private init(fileManager: FileManager = .default) {
+        self.fileManager = fileManager
+        super.init()
+    }
+
+    func start() {
+        guard !hasStarted else { return }
+        hasStarted = true
+        MXMetricManager.shared.add(self)
+        print("📈 MetricKit reporter started. Payloads will be saved to: \(payloadDirectory.path)")
+    }
+
+    deinit {
+        MXMetricManager.shared.remove(self)
+    }
+
+    func didReceive(_ payloads: [MXMetricPayload]) {
+        savePayloads(payloads, prefix: "metrics")
+    }
+
+    func didReceive(_ payloads: [MXDiagnosticPayload]) {
+        savePayloads(payloads, prefix: "diagnostics")
+    }
+
+    private var payloadDirectory: URL {
+        let baseDirectory = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? fileManager.temporaryDirectory
+        return baseDirectory
+            .appendingPathComponent("WRhythm", isDirectory: true)
+            .appendingPathComponent("MetricKit", isDirectory: true)
+    }
+
+    private func savePayloads(_ payloads: [MXMetricPayload], prefix: String) {
+        save(payloads.map { $0.jsonRepresentation() }, prefix: prefix)
+    }
+
+    private func savePayloads(_ payloads: [MXDiagnosticPayload], prefix: String) {
+        save(payloads.map { $0.jsonRepresentation() }, prefix: prefix)
+    }
+
+    private func save(_ payloadData: [Data], prefix: String) {
+        guard !payloadData.isEmpty else { return }
+
+        do {
+            try fileManager.createDirectory(at: payloadDirectory, withIntermediateDirectories: true)
+        } catch {
+            print("⚠️ Failed to create MetricKit payload directory: \(error.localizedDescription)")
+            return
+        }
+
+        let receivedAt = Date()
+        for (index, data) in payloadData.enumerated() {
+            let filename = MetricKitPayloadFilePolicy.filename(prefix: prefix, receivedAt: receivedAt, index: index)
+            let url = payloadDirectory.appendingPathComponent(filename, isDirectory: false)
+            do {
+                try data.write(to: url, options: .atomic)
+                print("📈 Saved MetricKit \(prefix) payload: \(url.path)")
+            } catch {
+                print("⚠️ Failed to save MetricKit \(prefix) payload: \(error.localizedDescription)")
+            }
+        }
+    }
+}
+#else
+final class MetricKitReporter {
+    static let shared = MetricKitReporter()
+
+    private init() {}
+
+    func start() {}
+}
+#endif

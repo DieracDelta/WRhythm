@@ -6,6 +6,7 @@
 //
 
 import Testing
+import Foundation
 @testable import WRhythm_Watch_App
 
 @MainActor
@@ -74,6 +75,14 @@ struct WRhythm_Watch_AppTests {
         #expect(PlaylistGenerationActionPolicy.canStart(isGenerating: false, hasRequiredSelection: true))
         #expect(PlaylistGenerationActionPolicy.canStart(isGenerating: true, hasRequiredSelection: true) == false)
         #expect(PlaylistGenerationActionPolicy.canStart(isGenerating: false, hasRequiredSelection: false) == false)
+    }
+
+    @Test func metricKitPayloadFilenamesAreStableAndTagged() {
+        let date = Date(timeIntervalSince1970: 1_771_000_000.123)
+        let filename = MetricKitPayloadFilePolicy.filename(prefix: "metrics", receivedAt: date, index: 2)
+
+        #expect(filename.hasPrefix("metrics-"))
+        #expect(filename.hasSuffix("-2.json"))
     }
 
 }

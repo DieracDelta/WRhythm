@@ -195,6 +195,12 @@ struct PrebufferSchedulingPolicy: Sendable {
     }
 }
 
+struct PrebufferOwnershipPolicy: Sendable {
+    static func shouldSchedule(isLocalPlaybackOutput: Bool) -> Bool {
+        isLocalPlaybackOutput
+    }
+}
+
 struct PrebufferCachePruningPolicy: Sendable {
     static func shouldRemove(filename: String, keepFilenames: Set<String>) -> Bool {
         guard !filename.hasSuffix(".download") else { return false }
@@ -2142,13 +2148,13 @@ class AudioPlayer: NSObject, ObservableObject {
     }
 
     private func scheduleQueuePrebuffer() {
+        guard PrebufferOwnershipPolicy.shouldSchedule(isLocalPlaybackOutput: DeviceSyncManager.shared.isLocalPlaybackOutput) else {
+            suspendPrebufferingForRemoteOutput()
+            return
+        }
+
         guard !queue.isEmpty else {
-            prebufferTasks.values.forEach { $0.cancel() }
-            prebufferTasks.removeAll()
-            prebufferTaskTokens.removeAll()
-            prebufferProgressByKey.removeAll()
-            clearPrebufferRetryState()
-            updatePrebufferedTrackCount()
+            cancelPrebufferWork()
             return
         }
 
@@ -2230,6 +2236,19 @@ class AudioPlayer: NSObject, ObservableObject {
             }
             startPrebuffering(song, key: key)
         }
+    }
+
+    func suspendPrebufferingForRemoteOutput() {
+        cancelPrebufferWork()
+    }
+
+    private func cancelPrebufferWork() {
+        prebufferTasks.values.forEach { $0.cancel() }
+        prebufferTasks.removeAll()
+        prebufferTaskTokens.removeAll()
+        prebufferProgressByKey.removeAll()
+        clearPrebufferRetryState()
+        updatePrebufferedTrackCount()
     }
 
     private func startPrebuffering(_ song: Song, key: String) {
