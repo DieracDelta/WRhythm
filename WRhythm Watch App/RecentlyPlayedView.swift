@@ -87,7 +87,7 @@ struct RecentlyPlayedView: View {
                             WRhythmFavoriteButton(
                                 isFavorite: downloadManager.starredSongIds.contains(item.song.id),
                                 size: .row,
-                                action: { TrackActions.toggleFavorite(item.song) }
+                                action: { await TrackActions.toggleFavoriteAsync(item.song) }
                             )
                         }
 

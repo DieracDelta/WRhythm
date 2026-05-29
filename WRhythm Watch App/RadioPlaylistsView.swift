@@ -494,11 +494,14 @@ private struct SonicPlaylistGeneratorView: View {
                     )
 
                     Button(action: generateSimilarTracks) {
-                        Label("Generate", systemImage: "sparkles")
+                        Label(player.playlistGenIsGenerating ? "Generating" : "Generate", systemImage: "sparkles")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(sourceSong == nil)
+                    .disabled(!PlaylistGenerationActionPolicy.canStart(
+                        isGenerating: player.playlistGenIsGenerating,
+                        hasRequiredSelection: sourceSong != nil
+                    ))
 
                 case .sonicPath:
                     SonicTrackSearchPicker(
@@ -514,11 +517,17 @@ private struct SonicPlaylistGeneratorView: View {
                     )
 
                     Button(action: generateSonicPath) {
-                        Label("Generate Path", systemImage: "point.topleft.down.curvedto.point.bottomright.up")
+                        Label(
+                            player.playlistGenIsGenerating ? "Generating" : "Generate Path",
+                            systemImage: "point.topleft.down.curvedto.point.bottomright.up"
+                        )
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(startSong == nil || endSong == nil)
+                    .disabled(!PlaylistGenerationActionPolicy.canStart(
+                        isGenerating: player.playlistGenIsGenerating,
+                        hasRequiredSelection: startSong != nil && endSong != nil
+                    ))
 
                 case .audioMuseAlchemy:
                     SonicTrackSearchPicker(
@@ -528,30 +537,42 @@ private struct SonicPlaylistGeneratorView: View {
                     )
 
                     Button(action: generateAudioMuseAlchemy) {
-                        Label("Generate Alchemy", systemImage: "atom")
+                        Label(player.playlistGenIsGenerating ? "Generating" : "Generate Alchemy", systemImage: "atom")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(alchemySong == nil)
+                    .disabled(!PlaylistGenerationActionPolicy.canStart(
+                        isGenerating: player.playlistGenIsGenerating,
+                        hasRequiredSelection: alchemySong != nil
+                    ))
                 }
             }
         }
     }
 
     private func generateSimilarTracks() {
-        guard let sourceSong else { return }
+        guard PlaylistGenerationActionPolicy.canStart(
+            isGenerating: player.playlistGenIsGenerating,
+            hasRequiredSelection: sourceSong != nil
+        ), let sourceSong else { return }
         didStartGeneration()
         player.startSonicSimilarityPlaylistGeneration(for: sourceSong)
     }
 
     private func generateSonicPath() {
-        guard let startSong, let endSong else { return }
+        guard PlaylistGenerationActionPolicy.canStart(
+            isGenerating: player.playlistGenIsGenerating,
+            hasRequiredSelection: startSong != nil && endSong != nil
+        ), let startSong, let endSong else { return }
         didStartGeneration()
         player.startSonicPathPlaylistGeneration(from: startSong, to: endSong)
     }
 
     private func generateAudioMuseAlchemy() {
-        guard let alchemySong else { return }
+        guard PlaylistGenerationActionPolicy.canStart(
+            isGenerating: player.playlistGenIsGenerating,
+            hasRequiredSelection: alchemySong != nil
+        ), let alchemySong else { return }
         didStartGeneration()
         player.startAudioMuseAlchemyPlaylistGeneration(for: alchemySong)
     }

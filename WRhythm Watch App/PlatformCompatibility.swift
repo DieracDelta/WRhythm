@@ -1035,10 +1035,25 @@ struct WRhythmFavoriteButton: View {
     let isFavorite: Bool
     var size: WRhythmFavoriteButtonSize = .action
     var isBusy = false
-    let action: () -> Void
+    let action: () async -> Void
+    @State private var isRunningAction = false
 
     var body: some View {
-        Button(action: action) {
+        let isDisabled = AsyncActionPresentationPolicy.isDisabled(
+            isRunning: isRunningAction,
+            isExternallyBusy: isBusy
+        )
+
+        Button {
+            guard !isDisabled else { return }
+            isRunningAction = true
+            Task {
+                await action()
+                await MainActor.run {
+                    isRunningAction = false
+                }
+            }
+        } label: {
             ZStack(alignment: .bottomTrailing) {
                 Image(systemName: isFavorite ? "heart.fill" : "heart")
                     .font(size.iconFont)
@@ -1066,8 +1081,8 @@ struct WRhythmFavoriteButton: View {
             .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .disabled(isBusy)
-        .opacity(isBusy ? 0.55 : 1)
+        .disabled(isDisabled)
+        .opacity(AsyncActionPresentationPolicy.opacity(isDisabled: isDisabled))
         .accessibilityLabel(isFavorite ? "Unfavorite" : "Favorite")
         .accessibilityValue(isFavorite ? "Favorited" : "Not favorited")
     }
@@ -1078,6 +1093,26 @@ struct WRhythmFavoriteButton: View {
         } else {
             return AnyShapeStyle(.regularMaterial)
         }
+    }
+}
+
+struct AsyncActionPresentationPolicy: Sendable {
+    static func isDisabled(
+        isRunning: Bool,
+        isExternallyBusy: Bool = false,
+        isUnavailable: Bool = false
+    ) -> Bool {
+        isRunning || isExternallyBusy || isUnavailable
+    }
+
+    static func opacity(isDisabled: Bool) -> Double {
+        isDisabled ? 0.55 : 1
+    }
+}
+
+struct PlaylistGenerationActionPolicy: Sendable {
+    static func canStart(isGenerating: Bool, hasRequiredSelection: Bool) -> Bool {
+        !isGenerating && hasRequiredSelection
     }
 }
 

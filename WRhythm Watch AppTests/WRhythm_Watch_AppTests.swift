@@ -58,4 +58,22 @@ struct WRhythm_Watch_AppTests {
         #expect(ActiveDownloadsPresentationPolicy.headerSubtitle(activeCount: 0, queuedCount: 0, failedCount: 2) == nil)
     }
 
+    @Test func asyncActionsAreDisabledWhileRunningOrUnavailable() {
+        #expect(AsyncActionPresentationPolicy.isDisabled(isRunning: true))
+        #expect(AsyncActionPresentationPolicy.isDisabled(isRunning: false) == false)
+        #expect(AsyncActionPresentationPolicy.isDisabled(isRunning: false, isExternallyBusy: true))
+        #expect(AsyncActionPresentationPolicy.isDisabled(isRunning: false, isUnavailable: true))
+    }
+
+    @Test func asyncActionsDimWhenDisabled() {
+        #expect(AsyncActionPresentationPolicy.opacity(isDisabled: true) == 0.55)
+        #expect(AsyncActionPresentationPolicy.opacity(isDisabled: false) == 1)
+    }
+
+    @Test func playlistGenerationCannotStartWhileGeneratingOrMissingSelection() {
+        #expect(PlaylistGenerationActionPolicy.canStart(isGenerating: false, hasRequiredSelection: true))
+        #expect(PlaylistGenerationActionPolicy.canStart(isGenerating: true, hasRequiredSelection: true) == false)
+        #expect(PlaylistGenerationActionPolicy.canStart(isGenerating: false, hasRequiredSelection: false) == false)
+    }
+
 }

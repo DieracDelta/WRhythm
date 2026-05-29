@@ -16,7 +16,7 @@ struct TrackRowView: View {
     let onTap: () -> Void
     var onDownload: () -> Void
     var onDelete: () -> Void
-    var onToggleFavorite: () -> Void
+    var onToggleFavorite: () async -> Void
 
     init(
         song: Song,
@@ -27,7 +27,7 @@ struct TrackRowView: View {
         onTap: @escaping () -> Void,
         onDownload: @escaping () -> Void,
         onDelete: @escaping () -> Void,
-        onToggleFavorite: @escaping () -> Void
+        onToggleFavorite: @escaping () async -> Void
     ) {
         self.song = song
         self.isDownloaded = isDownloaded
@@ -120,7 +120,7 @@ extension TrackRowView {
             onTap: onTap,
             onDownload: { downloadManager.downloadSong(song) },
             onDelete: { downloadManager.deleteSong(song.id) },
-            onToggleFavorite: { TrackActions.toggleFavorite(song) }
+            onToggleFavorite: { await TrackActions.toggleFavoriteAsync(song) }
         )
     }
 }

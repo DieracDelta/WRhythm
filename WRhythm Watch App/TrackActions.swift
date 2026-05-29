@@ -119,24 +119,28 @@ enum TrackActions {
     }
 
     static func toggleFavorite(_ song: Song) {
+        Task {
+            await toggleFavoriteAsync(song)
+        }
+    }
+
+    static func toggleFavoriteAsync(_ song: Song) async {
         let isStarred = DownloadManager.shared.starredSongIds.contains(song.id)
 
-        Task {
-            do {
-                if isStarred {
-                    try await NavidromeAPI.shared.unstar(songId: song.id)
-                    await MainActor.run {
-                        DownloadManager.shared.unstarSong(song.id, isOffline: false)
-                    }
-                } else {
-                    try await NavidromeAPI.shared.star(songId: song.id)
-                    await MainActor.run {
-                        DownloadManager.shared.starSong(song.id, isOffline: false)
-                    }
+        do {
+            if isStarred {
+                try await NavidromeAPI.shared.unstar(songId: song.id)
+                await MainActor.run {
+                    DownloadManager.shared.unstarSong(song.id, isOffline: false)
                 }
-            } catch {
-                print("❌ Failed to toggle favorite: \(error)")
+            } else {
+                try await NavidromeAPI.shared.star(songId: song.id)
+                await MainActor.run {
+                    DownloadManager.shared.starSong(song.id, isOffline: false)
+                }
             }
+        } catch {
+            print("❌ Failed to toggle favorite: \(error)")
         }
     }
 

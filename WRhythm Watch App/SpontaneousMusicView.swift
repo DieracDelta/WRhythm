@@ -93,6 +93,7 @@ struct SpontaneousMusicView: View {
     }
 
     private func shuffleAll() {
+        guard !isLoading else { return }
         if offlineMode {
             shuffleOffline()
         } else {

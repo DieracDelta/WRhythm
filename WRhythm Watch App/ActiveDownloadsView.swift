@@ -8,8 +8,6 @@
 import SwiftUI
 
 struct ActiveDownloadsPresentationPolicy: Sendable {
-    static let queuedPreviewLimit = 20
-
     static func showsEmptyState(activeCount: Int, queuedCount: Int, failedCount: Int = 0) -> Bool {
         activeCount == 0 && queuedCount == 0 && failedCount == 0
     }
@@ -76,8 +74,9 @@ struct ActiveDownloadsView: View {
                     if !downloadManager.activeDownloads.isEmpty {
                         WRhythmSectionHeader(title: "Active", subtitle: "Current transfers")
 
+                        let activeSongIds = Array(downloadManager.activeDownloads.keys)
                         VStack(spacing: WRhythmSpacing.xs) {
-                            ForEach(Array(downloadManager.activeDownloads.keys), id: \.self) { songId in
+                            SlidingRenderWindowForEach(activeSongIds, estimatedRowHeight: 86, spacing: WRhythmSpacing.xs) { _, songId in
                                 ActiveDownloadRow(songId: songId, song: findSongInfo(songId))
                             }
                         }
@@ -87,15 +86,8 @@ struct ActiveDownloadsView: View {
                         WRhythmSectionHeader(title: "Queued", subtitle: "\(downloadManager.downloadQueue.count) waiting")
 
                         VStack(spacing: WRhythmSpacing.xs) {
-                            ForEach(Array(downloadManager.downloadQueue.prefix(ActiveDownloadsPresentationPolicy.queuedPreviewLimit)), id: \.id) { song in
+                            SlidingRenderWindowForEach(downloadManager.downloadQueue, estimatedRowHeight: 64, spacing: WRhythmSpacing.xs) { _, song in
                                 QueuedDownloadRow(song: song)
-                            }
-
-                            if downloadManager.downloadQueue.count > ActiveDownloadsPresentationPolicy.queuedPreviewLimit {
-                                Text("+ \(downloadManager.downloadQueue.count - ActiveDownloadsPresentationPolicy.queuedPreviewLimit) more")
-                                    .font(WRhythmTypography.rowSubtitle)
-                                    .foregroundColor(.secondary)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
                             }
                         }
                     }
@@ -103,8 +95,9 @@ struct ActiveDownloadsView: View {
                     if !downloadManager.failedDownloads.isEmpty {
                         WRhythmSectionHeader(title: "Failed", subtitle: "\(downloadManager.failedDownloads.count) needs attention")
 
+                        let failedDownloads = Array(downloadManager.failedDownloads.values.sorted(by: { $0.failedAt > $1.failedAt }))
                         VStack(spacing: WRhythmSpacing.xs) {
-                            ForEach(Array(downloadManager.failedDownloads.values.sorted(by: { $0.failedAt > $1.failedAt }))) { failed in
+                            SlidingRenderWindowForEach(failedDownloads, estimatedRowHeight: 64, spacing: WRhythmSpacing.xs) { _, failed in
                                 FailedDownloadRow(failedDownload: failed)
                             }
                         }
