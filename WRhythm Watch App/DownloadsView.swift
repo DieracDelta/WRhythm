@@ -18,7 +18,7 @@ struct DownloadsView: View {
         WRhythmScreen {
             let sortedSongs = Array(downloadManager.downloadedSongs.values.sorted(by: { $0.downloadedAt > $1.downloadedAt }))
 
-            if downloadManager.getTotalPendingDownloads() > 0 || downloadManager.isPaused {
+            if downloadManager.getTotalPendingDownloads() > 0 || !downloadManager.failedDownloads.isEmpty || downloadManager.isPaused {
                 downloadStatusCard
             }
 
@@ -63,6 +63,9 @@ struct DownloadsView: View {
                     WRhythmMetricRow(title: "Completed", value: "\(downloadManager.sessionCompletedCount)", valueColor: WRhythmTheme.success)
                     WRhythmMetricRow(title: "Active", value: "\(downloadManager.getActiveDownloadCount())", valueColor: WRhythmTheme.secondaryAccent)
                     WRhythmMetricRow(title: "Queued", value: "\(downloadManager.getQueuedDownloadCount())", valueColor: WRhythmTheme.warning)
+                    if !downloadManager.failedDownloads.isEmpty {
+                        WRhythmMetricRow(title: "Failed", value: "\(downloadManager.failedDownloads.count)", valueColor: WRhythmTheme.danger)
+                    }
                     WRhythmMetricRow(title: "Total", value: "\(downloadManager.sessionTotalCount)")
                 }
 

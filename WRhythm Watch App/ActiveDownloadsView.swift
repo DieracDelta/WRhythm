@@ -7,13 +7,51 @@
 
 import SwiftUI
 
+struct ActiveDownloadsPresentationPolicy: Sendable {
+    static let queuedPreviewLimit = 20
+
+    static func showsEmptyState(activeCount: Int, queuedCount: Int, failedCount: Int = 0) -> Bool {
+        activeCount == 0 && queuedCount == 0 && failedCount == 0
+    }
+
+    static func headerTitle(activeCount: Int, queuedCount: Int, failedCount: Int = 0) -> String {
+        if activeCount > 0 {
+            return "\(activeCount) downloading"
+        }
+        if queuedCount > 0 {
+            return "\(queuedCount) queued"
+        }
+        return "\(failedCount) failed"
+    }
+
+    static func headerSubtitle(activeCount: Int, queuedCount: Int, failedCount: Int = 0) -> String? {
+        guard activeCount > 0 else {
+            return nil
+        }
+        if activeCount > 0, queuedCount > 0, failedCount > 0 {
+            return "\(queuedCount) queued, \(failedCount) failed"
+        }
+        if activeCount > 0, queuedCount > 0 {
+            return "\(queuedCount) queued"
+        }
+        if activeCount > 0, failedCount > 0 {
+            return "\(failedCount) failed"
+        }
+        return nil
+    }
+}
+
 struct ActiveDownloadsView: View {
     @ObservedObject var downloadManager = DownloadManager.shared
 
     var body: some View {
         ScrollView {
             VStack(spacing: WRhythmVisual.sectionSpacing) {
-                if downloadManager.activeDownloads.isEmpty {
+                if ActiveDownloadsPresentationPolicy.showsEmptyState(
+                    activeCount: downloadManager.activeDownloads.count,
+                    queuedCount: downloadManager.downloadQueue.count,
+                    failedCount: downloadManager.failedDownloads.count
+                ) {
                     WRhythmEmptyState(
                         systemImage: "arrow.down.circle",
                         title: "No Active Downloads",
@@ -21,17 +59,27 @@ struct ActiveDownloadsView: View {
                     )
                 } else {
                     WRhythmFeatureHeader(
-                        title: "\(downloadManager.activeDownloads.count) downloading",
-                        subtitle: downloadManager.downloadQueue.isEmpty ? nil : "\(downloadManager.downloadQueue.count) queued",
+                        title: ActiveDownloadsPresentationPolicy.headerTitle(
+                            activeCount: downloadManager.activeDownloads.count,
+                            queuedCount: downloadManager.downloadQueue.count,
+                            failedCount: downloadManager.failedDownloads.count
+                        ),
+                        subtitle: ActiveDownloadsPresentationPolicy.headerSubtitle(
+                            activeCount: downloadManager.activeDownloads.count,
+                            queuedCount: downloadManager.downloadQueue.count,
+                            failedCount: downloadManager.failedDownloads.count
+                        ),
                         systemImage: "arrow.down.circle.fill",
                         tint: WRhythmTheme.downloads
                     )
 
-                    WRhythmSectionHeader(title: "Active", subtitle: "Current transfers")
+                    if !downloadManager.activeDownloads.isEmpty {
+                        WRhythmSectionHeader(title: "Active", subtitle: "Current transfers")
 
-                    VStack(spacing: WRhythmSpacing.xs) {
-                        ForEach(Array(downloadManager.activeDownloads.keys), id: \.self) { songId in
-                            ActiveDownloadRow(songId: songId, song: findSongInfo(songId))
+                        VStack(spacing: WRhythmSpacing.xs) {
+                            ForEach(Array(downloadManager.activeDownloads.keys), id: \.self) { songId in
+                                ActiveDownloadRow(songId: songId, song: findSongInfo(songId))
+                            }
                         }
                     }
 
@@ -39,15 +87,25 @@ struct ActiveDownloadsView: View {
                         WRhythmSectionHeader(title: "Queued", subtitle: "\(downloadManager.downloadQueue.count) waiting")
 
                         VStack(spacing: WRhythmSpacing.xs) {
-                            ForEach(Array(downloadManager.downloadQueue.prefix(20)), id: \.id) { song in
+                            ForEach(Array(downloadManager.downloadQueue.prefix(ActiveDownloadsPresentationPolicy.queuedPreviewLimit)), id: \.id) { song in
                                 QueuedDownloadRow(song: song)
                             }
 
-                            if downloadManager.downloadQueue.count > 20 {
-                                Text("+ \(downloadManager.downloadQueue.count - 20) more")
+                            if downloadManager.downloadQueue.count > ActiveDownloadsPresentationPolicy.queuedPreviewLimit {
+                                Text("+ \(downloadManager.downloadQueue.count - ActiveDownloadsPresentationPolicy.queuedPreviewLimit) more")
                                     .font(WRhythmTypography.rowSubtitle)
                                     .foregroundColor(.secondary)
                                     .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                    }
+
+                    if !downloadManager.failedDownloads.isEmpty {
+                        WRhythmSectionHeader(title: "Failed", subtitle: "\(downloadManager.failedDownloads.count) needs attention")
+
+                        VStack(spacing: WRhythmSpacing.xs) {
+                            ForEach(Array(downloadManager.failedDownloads.values.sorted(by: { $0.failedAt > $1.failedAt }))) { failed in
+                                FailedDownloadRow(failedDownload: failed)
                             }
                         }
                     }
@@ -62,6 +120,49 @@ struct ActiveDownloadsView: View {
     private func findSongInfo(_ songId: String) -> Song? {
         // Get song metadata for active downloads
         return downloadManager.songMetadata[songId]
+    }
+}
+
+private struct FailedDownloadRow: View {
+    let failedDownload: FailedDownload
+    @ObservedObject var downloadManager = DownloadManager.shared
+
+    var body: some View {
+        WRhythmCard(padding: 10) {
+            WRhythmMediaRow(
+                title: failedDownload.title,
+                subtitle: failedDownload.artist,
+                detail: failedDownload.errorDescription,
+                coverArtId: failedDownload.coverArt,
+                fallbackSystemImage: "exclamationmark.triangle",
+                artworkSize: 42
+            ) {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(WRhythmTypography.metadata)
+                        .foregroundColor(WRhythmTheme.danger)
+
+                    Button(action: {
+                        downloadManager.retryDownload(failedDownload.songId)
+                    }) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(WRhythmTypography.metadata)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Retry download")
+
+                    Button(action: {
+                        downloadManager.cancelDownload(failedDownload.songId)
+                    }) {
+                        Image(systemName: "xmark")
+                            .font(WRhythmTypography.metadata)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(WRhythmTheme.danger)
+                    .accessibilityLabel("Dismiss failed download")
+                }
+            }
+        }
     }
 }
 

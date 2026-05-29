@@ -196,6 +196,28 @@ struct DownloadedSong: Codable, Sendable {
     }
 }
 
+struct FailedDownload: Identifiable, Sendable {
+    let songId: String
+    let title: String
+    let artist: String?
+    let album: String?
+    let coverArt: String?
+    let errorDescription: String
+    let failedAt: Date
+
+    var id: String { songId }
+
+    init(song: Song, errorDescription: String, failedAt: Date = Date()) {
+        self.songId = song.id
+        self.title = song.title
+        self.artist = song.artist
+        self.album = song.album
+        self.coverArt = song.coverArt
+        self.errorDescription = errorDescription
+        self.failedAt = failedAt
+    }
+}
+
 struct CachedPlaylist: Codable, Sendable {
     let id: String
     let name: String
@@ -227,6 +249,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
     @Published var pendingStarChanges: Set<String> = []  // Songs to star on server
     @Published var pendingUnstarChanges: Set<String> = []  // Songs to unstar on server
     @Published var activeDownloads: [String: Double] = [:] // songId -> progress (0-1)
+    @Published var failedDownloads: [String: FailedDownload] = [:]
     @Published var downloadBytesReceived: [String: Int64] = [:] // songId -> bytes downloaded
     @Published var maxConcurrentDownloads: Int = UserDefaults.standard.integer(forKey: "maxConcurrentDownloads") == 0 ? 8 : UserDefaults.standard.integer(forKey: "maxConcurrentDownloads") {
         didSet {
@@ -1031,6 +1054,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
         // Clear everything
         downloadQueue.removeAll()
         activeDownloads.removeAll()
+        failedDownloads.removeAll()
         downloadTasks.removeAll()
         taskToSongId.removeAll()
         // Only remove metadata for songs that aren't already downloaded
@@ -1069,6 +1093,8 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
             return
         }
 
+        failedDownloads.removeValue(forKey: song.id)
+
         // Check if song is already in queue
         guard !downloadQueue.contains(where: { $0.id == song.id }) else {
             print("⏳ Song already queued: \(song.title)")
@@ -1106,6 +1132,8 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
                 maxBitRate: quality.maxBitRate
             ) else {
                 print("❌ Failed to get stream URL for: \(song.title)")
+                songMetadata[song.id] = song
+                failedDownloads[song.id] = FailedDownload(song: song, errorDescription: "Could not build stream URL")
                 continue
             }
 
@@ -1267,6 +1295,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
 
             downloadedSongs[song.id] = downloadedSong
             activeDownloads.removeValue(forKey: song.id)
+            failedDownloads.removeValue(forKey: song.id)
             downloadBytesReceived.removeValue(forKey: song.id)
             downloadTotalBytes.removeValue(forKey: song.id)
             downloadTasks.removeValue(forKey: song.id)
@@ -1299,12 +1328,12 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
             processQueue()
         } catch {
             print("❌ Failed to save downloaded file: \(error)")
+            failedDownloads[song.id] = FailedDownload(song: song, errorDescription: error.localizedDescription)
             activeDownloads.removeValue(forKey: song.id)
             downloadBytesReceived.removeValue(forKey: song.id)
             downloadTotalBytes.removeValue(forKey: song.id)
             downloadTasks.removeValue(forKey: song.id)
             taskToSongId.removeValue(forKey: downloadTask)
-            songMetadata.removeValue(forKey: song.id)
 
             // Process next item in queue even on error
             processQueue()
@@ -1352,7 +1381,11 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
             // Only remove metadata if it's not a cancellation error
             // For cancellations (pause/cancel), we keep metadata so retry works
             if !isCancellation {
-                songMetadata.removeValue(forKey: songId)
+                if let song = songMetadata[songId] {
+                    failedDownloads[songId] = FailedDownload(song: song, errorDescription: error.localizedDescription)
+                } else {
+                    songMetadata.removeValue(forKey: songId)
+                }
             }
 
             print("📊 [\(timestamp)] After error - Active downloads: \(activeDownloads.count), Queue: \(downloadQueue.count)")
@@ -1437,6 +1470,12 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
     // MARK: - Cancel & Retry
 
     func cancelDownload(_ songId: String) {
+        if failedDownloads.removeValue(forKey: songId) != nil {
+            songMetadata.removeValue(forKey: songId)
+            saveSongMetadata()
+            return
+        }
+
         // Cancel active download
         if let task = downloadTasks[songId] {
             task.cancel()
@@ -1483,6 +1522,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
         }
 
         print("🔄 Retrying download: \(song.title)")
+        failedDownloads.removeValue(forKey: songId)
 
         // Cancel existing download if active
         if let task = downloadTasks[songId] {
@@ -1596,6 +1636,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
         pendingUnstarChanges.removeAll()
         downloadQueue.removeAll()
         activeDownloads.removeAll()
+        failedDownloads.removeAll()
         downloadTasks.removeAll()
         taskToSongId.removeAll()
         downloadBytesReceived.removeAll()

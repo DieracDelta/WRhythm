@@ -46,4 +46,16 @@ struct WRhythm_Watch_AppTests {
         #expect(initialCompleted <= initialTotal)
     }
 
+    @Test func queuedDownloadsAreVisibleWhenNothingIsActivelyTransferring() {
+        #expect(ActiveDownloadsPresentationPolicy.showsEmptyState(activeCount: 0, queuedCount: 0))
+        #expect(ActiveDownloadsPresentationPolicy.showsEmptyState(activeCount: 0, queuedCount: 3) == false)
+        #expect(ActiveDownloadsPresentationPolicy.headerTitle(activeCount: 0, queuedCount: 3) == "3 queued")
+    }
+
+    @Test func failedDownloadsAreVisibleWhenNothingIsActivelyTransferring() {
+        #expect(ActiveDownloadsPresentationPolicy.showsEmptyState(activeCount: 0, queuedCount: 0, failedCount: 2) == false)
+        #expect(ActiveDownloadsPresentationPolicy.headerTitle(activeCount: 0, queuedCount: 0, failedCount: 2) == "2 failed")
+        #expect(ActiveDownloadsPresentationPolicy.headerSubtitle(activeCount: 0, queuedCount: 0, failedCount: 2) == nil)
+    }
+
 }
