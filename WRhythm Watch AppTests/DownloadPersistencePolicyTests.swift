@@ -214,6 +214,98 @@ struct DownloadPersistencePolicyTests {
         #expect(FileManager.default.fileExists(atPath: sourceURL.path) == false)
     }
 
+    @Test func downloadedTracksAreGroupedIntoSearchableAlbumSections() {
+        let downloads = [
+            makeDownloadedSong(
+                id: "b-2",
+                title: "Beta Two",
+                artist: "Artist B",
+                album: "Beta Album",
+                downloadedAt: Date(timeIntervalSince1970: 20)
+            ),
+            makeDownloadedSong(
+                id: "a-1",
+                title: "Alpha One",
+                artist: "Artist A",
+                album: "Alpha Album",
+                downloadedAt: Date(timeIntervalSince1970: 10)
+            ),
+            makeDownloadedSong(
+                id: "b-1",
+                title: "Beta One",
+                artist: "Artist B",
+                album: "Beta Album",
+                downloadedAt: Date(timeIntervalSince1970: 30)
+            ),
+            makeDownloadedSong(
+                id: "unknown",
+                title: "Loose Track",
+                artist: nil,
+                album: nil,
+                downloadedAt: Date(timeIntervalSince1970: 40)
+            )
+        ]
+
+        let sections = DownloadsPresentationPolicy.albumSections(for: downloads, searchText: "")
+
+        #expect(sections.map(\.title) == ["Alpha Album", "Beta Album", "Unknown Album"])
+        #expect(sections[0].songs.map(\.songId) == ["a-1"])
+        #expect(sections[1].songs.map(\.songId) == ["b-1", "b-2"])
+        #expect(sections[2].songs.map(\.songId) == ["unknown"])
+    }
+
+    @Test func downloadedAlbumSearchMatchesAlbumArtistAndTrackTitles() {
+        let downloads = [
+            makeDownloadedSong(id: "one", title: "River", artist: "Yiruma", album: "Piano Songs"),
+            makeDownloadedSong(id: "two", title: "Gold Dust", artist: "DJ Fresh", album: "Drum Songs"),
+            makeDownloadedSong(id: "three", title: "Intro", artist: "Daft Punk", album: "Discovery")
+        ]
+
+        let albumMatch = DownloadsPresentationPolicy.albumSections(for: downloads, searchText: "piano")
+        let artistMatch = DownloadsPresentationPolicy.albumSections(for: downloads, searchText: "fresh")
+        let titleMatch = DownloadsPresentationPolicy.albumSections(for: downloads, searchText: "intro")
+
+        #expect(albumMatch.map(\.songs).flatMap { $0 }.map(\.songId) == ["one"])
+        #expect(artistMatch.map(\.songs).flatMap { $0 }.map(\.songId) == ["two"])
+        #expect(titleMatch.map(\.songs).flatMap { $0 }.map(\.songId) == ["three"])
+    }
+
+    @Test func downloadedTrackQualityLabelsAreStableAndHumanReadable() {
+        #expect(DownloadsPresentationPolicy.qualityLabel(forBitRate: AudioQuality.original.downloadedBitRate) == "Original")
+        #expect(DownloadsPresentationPolicy.qualityLabel(forBitRate: 192) == "192 kbps")
+        #expect(DownloadsPresentationPolicy.qualityLabel(forBitRate: 320) == "320 kbps")
+    }
+
+    @Test func albumQualityChangeTargetsEveryTrackInThatAlbum() {
+        let targetAlbum = DownloadedAlbumSection(
+            title: "Target Album",
+            artist: "Artist",
+            coverArt: "cover",
+            songs: [
+                makeDownloadedSong(id: "one", title: "One", album: "Target Album"),
+                makeDownloadedSong(id: "two", title: "Two", album: "Target Album")
+            ]
+        )
+
+        let targets = DownloadQualityChangePolicy.songIdsForAlbumQualityChange(targetAlbum)
+
+        #expect(targets == ["one", "two"])
+    }
+
+    @Test func keepAllAvailableTracksSkipsAlreadyDownloadedSongsAndChunksWork() {
+        let songs = (0..<105).map { makeSong(id: "song-\($0)", title: "Song \($0)") }
+
+        let planned = AvailableTrackKeepBatchPolicy.songsToKeep(
+            availableSongs: songs,
+            downloadedSongIds: ["song-1", "song-50", "song-104"]
+        )
+        let chunks = AvailableTrackKeepBatchPolicy.chunks(planned, chunkSize: 20)
+
+        #expect(planned.count == 102)
+        #expect(planned.contains(where: { $0.id == "song-1" }) == false)
+        #expect(chunks.map(\.count) == [20, 20, 20, 20, 20, 2])
+    }
+
     private func makeSong(id: String, title: String) -> Song {
         Song(
             id: id,
@@ -235,17 +327,25 @@ struct DownloadPersistencePolicyTests {
         )
     }
 
-    private func makeDownloadedSong(id: String, title: String, downloadedAt: Date) -> DownloadedSong {
+    private func makeDownloadedSong(
+        id: String,
+        title: String,
+        artist: String? = "Artist",
+        album: String? = "Album",
+        coverArt: String? = "cover",
+        downloadedAt: Date = Date(timeIntervalSince1970: 1_790_000_000),
+        downloadedBitRate: Int = 192
+    ) -> DownloadedSong {
         DownloadedSong(
             songId: id,
             title: title,
-            artist: "Artist",
-            album: "Album",
-            coverArt: "cover",
+            artist: artist,
+            album: album,
+            coverArt: coverArt,
             filePath: "\(id).mp3",
             downloadedAt: downloadedAt,
             fileSize: 123,
-            downloadedBitRate: 192
+            downloadedBitRate: downloadedBitRate
         )
     }
 }

@@ -373,6 +373,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
     private var taskToSongId: [URLSessionDownloadTask: String] = [:]
     private(set) var songMetadata: [String: Song] = [:]  // Expose for reading
     @Published var downloadQueue: [Song] = []  // Expose queue for UI
+    private var downloadQualityOverrides: [String: AudioQuality] = [:]
 
     // Throttling for progress updates
     private var lastProgressUpdate: Date = .distantPast
@@ -1179,6 +1180,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
         activeDownloads.removeAll()
         downloadTasks.removeAll()
         taskToSongId.removeAll()
+        downloadQualityOverrides.removeAll()
         Self.completionContextStore.removeAll()
         downloadBytesReceived.removeAll()
         downloadTotalBytes.removeAll()
@@ -1315,7 +1317,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
             let song = downloadQueue.removeFirst()
 
             // Use selected audio quality for transcoding
-            let quality = audioQuality
+            let quality = downloadQualityOverrides[song.id] ?? audioQuality
             guard let streamURL = NavidromeAPI.shared.getStreamURL(
                 id: song.id,
                 format: quality.streamFormat,
@@ -1331,7 +1333,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
 
             let timestamp = Date.now.formatted(.iso8601)
             let limitText = isUnlimited ? "∞" : "\(maxConcurrentDownloads)"
-            print("📥 [\(timestamp)] Starting download (\(activeDownloads.count + 1)/\(limitText)): \(song.title) @ \(audioQuality.shortDescription)")
+            print("📥 [\(timestamp)] Starting download (\(activeDownloads.count + 1)/\(limitText)): \(song.title) @ \(quality.shortDescription)")
 
             let task = downloadSession.downloadTask(with: streamURL)
             task.taskDescription = song.id
@@ -1517,6 +1519,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
         downloadedSongs[song.id] = downloadedSong
         activeDownloads.removeValue(forKey: song.id)
         failedDownloads.removeValue(forKey: song.id)
+        downloadQualityOverrides.removeValue(forKey: song.id)
         downloadBytesReceived.removeValue(forKey: song.id)
         downloadTotalBytes.removeValue(forKey: song.id)
         downloadTasks.removeValue(forKey: song.id)
@@ -1549,7 +1552,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
         processQueue()
     }
 
-    func keepAvailableTrack(song: Song, sourceURL: URL, qualityLabel: String) throws {
+    func keepAvailableTrack(song: Song, sourceURL: URL, qualityLabel: String) async throws {
         guard !isDownloaded(song.id) else { return }
         guard fileManager.fileExists(atPath: sourceURL.path) else {
             throw CocoaError(.fileNoSuchFile)
@@ -1560,15 +1563,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
             sourceExtension: sourceURL.pathExtension
         )
         let destinationURL = downloadsDirectory.appendingPathComponent(filename, isDirectory: false)
-        try fileManager.createDirectory(at: downloadsDirectory, withIntermediateDirectories: true)
-
-        if sourceURL.standardizedFileURL != destinationURL.standardizedFileURL {
-            try? fileManager.removeItem(at: destinationURL)
-            try fileManager.copyItem(at: sourceURL, to: destinationURL)
-        }
-
-        let values = try destinationURL.resourceValues(forKeys: [.fileSizeKey])
-        let fileSize = Int64(values.fileSize ?? 0)
+        let fileSize = try await Self.copyAvailableTrackFile(from: sourceURL, to: destinationURL)
         let downloadedBitRate = AvailableTrackKeepPolicy.downloadedBitRate(fromQualityLabel: qualityLabel)
 
         downloadedSongs[song.id] = DownloadedSong(
@@ -1595,6 +1590,28 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
         print("✅ Kept available track as download: \(song.title)")
     }
 
+    nonisolated private static func copyAvailableTrackFile(from sourceURL: URL, to destinationURL: URL) async throws -> Int64 {
+        try await Task.detached(priority: .utility) {
+            let fileManager = FileManager.default
+            guard fileManager.fileExists(atPath: sourceURL.path) else {
+                throw CocoaError(.fileNoSuchFile)
+            }
+
+            let destinationDirectory = destinationURL.deletingLastPathComponent()
+            try fileManager.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
+
+            if sourceURL.standardizedFileURL != destinationURL.standardizedFileURL {
+                if fileManager.fileExists(atPath: destinationURL.path) {
+                    try fileManager.removeItem(at: destinationURL)
+                }
+                try fileManager.copyItem(at: sourceURL, to: destinationURL)
+            }
+
+            let values = try destinationURL.resourceValues(forKeys: [.fileSizeKey])
+            return Int64(values.fileSize ?? 0)
+        }.value
+    }
+
     private func handleDownloadFinishedMoveFailed(downloadTask: URLSessionDownloadTask, error: Error) {
         guard let songId = songId(for: downloadTask),
               let song = songMetadata[songId] else {
@@ -1609,6 +1626,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
         downloadTotalBytes.removeValue(forKey: song.id)
         downloadTasks.removeValue(forKey: song.id)
         taskToSongId.removeValue(forKey: downloadTask)
+        downloadQualityOverrides.removeValue(forKey: song.id)
         saveIncompleteDownloads()
 
         // Process next item in queue even on error
@@ -1652,6 +1670,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
             downloadTotalBytes.removeValue(forKey: songId)
             downloadTasks.removeValue(forKey: songId)
             taskToSongId.removeValue(forKey: downloadTask)
+            downloadQualityOverrides.removeValue(forKey: songId)
             _ = Self.completionContextStore.removeContext(for: downloadTask.taskIdentifier)
 
             // Only remove metadata if it's not a cancellation error
@@ -1771,6 +1790,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
     // MARK: - Cancel & Retry
 
     func cancelDownload(_ songId: String) {
+        downloadQualityOverrides.removeValue(forKey: songId)
         if failedDownloads.removeValue(forKey: songId) != nil {
             songMetadata.removeValue(forKey: songId)
             saveSongMetadata()
@@ -1847,6 +1867,60 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
         processQueue()
     }
 
+    func changeQuality(for downloadedSong: DownloadedSong, to quality: AudioQuality) {
+        guard downloadedSong.downloadedBitRate != quality.downloadedBitRate else { return }
+        let song = songMetadata[downloadedSong.songId] ?? song(from: downloadedSong)
+        queueReplacementDownload(song, previousDownload: downloadedSong, quality: quality)
+    }
+
+    func changeQuality(for downloads: [DownloadedSong], to quality: AudioQuality) {
+        for download in downloads {
+            changeQuality(for: download, to: quality)
+        }
+    }
+
+    private func queueReplacementDownload(_ song: Song, previousDownload: DownloadedSong, quality: AudioQuality) {
+        if activeDownloads[song.id] != nil {
+            downloadQualityOverrides[song.id] = quality
+            return
+        }
+
+        let fileURL = downloadsDirectory.appendingPathComponent(previousDownload.filePath)
+        try? fileManager.removeItem(at: fileURL)
+        downloadedSongs.removeValue(forKey: song.id)
+        failedDownloads.removeValue(forKey: song.id)
+        downloadQueue.removeAll { $0.id == song.id }
+        downloadQueue.append(song)
+        downloadQualityOverrides[song.id] = quality
+        songMetadata[song.id] = song
+        sessionTotalCount += 1
+        saveMetadata()
+        saveSongMetadata()
+        saveIncompleteDownloads()
+        processQueue()
+    }
+
+    private func song(from downloadedSong: DownloadedSong) -> Song {
+        Song(
+            id: downloadedSong.songId,
+            title: downloadedSong.title,
+            album: downloadedSong.album,
+            albumId: nil,
+            artist: downloadedSong.artist,
+            artistId: nil,
+            track: nil,
+            year: nil,
+            genre: nil,
+            coverArt: downloadedSong.coverArt,
+            size: Int(downloadedSong.fileSize),
+            contentType: nil,
+            suffix: URL(fileURLWithPath: downloadedSong.filePath).pathExtension,
+            duration: nil,
+            bitRate: downloadedSong.downloadedBitRate,
+            path: downloadedSong.filePath
+        )
+    }
+
     // MARK: - Delete
 
     func deleteSong(_ songId: String) {
@@ -1858,6 +1932,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
             try fileManager.removeItem(at: fileURL)
             downloadedSongs.removeValue(forKey: songId)
             songMetadata.removeValue(forKey: songId)
+            downloadQualityOverrides.removeValue(forKey: songId)
             saveMetadata()
             saveSongMetadata()
             print("🗑️ Deleted: \(downloaded.title)")

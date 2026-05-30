@@ -11,21 +11,29 @@ struct DownloadsView: View {
     @ObservedObject var downloadManager = DownloadManager.shared
     @State private var presentedSheet: DownloadsSheet?
     @State private var deleteConfirmationText = ""
+    @State private var isSearchVisible = false
+    @State private var searchText = ""
 
     private var player: AudioPlayer { AudioPlayer.shared }
 
+    private var visibleDownloads: [DownloadedSong] {
+        DownloadsPresentationPolicy.sortedVisibleDownloads(
+            Array(downloadManager.downloadedSongs.values),
+            fileExists: downloadManager.hasDownloadedFile
+        )
+    }
+
+    private var albumSections: [DownloadedAlbumSection] {
+        DownloadsPresentationPolicy.albumSections(for: visibleDownloads, searchText: searchText)
+    }
+
     var body: some View {
         WRhythmScreen {
-            let sortedSongs = DownloadsPresentationPolicy.sortedVisibleDownloads(
-                Array(downloadManager.downloadedSongs.values),
-                fileExists: downloadManager.hasDownloadedFile
-            )
-
             if downloadManager.getTotalPendingDownloads() > 0 || !downloadManager.failedDownloads.isEmpty || downloadManager.isPaused {
                 downloadStatusCard
             }
 
-            if DownloadsPresentationPolicy.showsEmptyState(visibleDownloadCount: sortedSongs.count) {
+            if DownloadsPresentationPolicy.showsEmptyState(visibleDownloadCount: visibleDownloads.count) {
 #if os(iOS)
                 PhoneDownloadsEmptyView(message: emptyDownloadsMessage)
 #else
@@ -38,8 +46,21 @@ struct DownloadsView: View {
             } else {
                 downloadedSummaryCard
 
-                SlidingRenderWindowForEach(sortedSongs, estimatedRowHeight: 72, spacing: WRhythmSpacing.xs) { _, downloadedSong in
-                    downloadedSongRow(downloadedSong)
+                if isSearchVisible {
+                    TextField("Search downloads", text: $searchText)
+                        .platformSearchTextFieldStyle()
+                }
+
+                if albumSections.isEmpty {
+                    WRhythmEmptyState(
+                        systemImage: "magnifyingglass",
+                        title: "No Matches",
+                        message: nil
+                    )
+                } else {
+                    SlidingRenderWindowForEach(albumSections, estimatedRowHeight: 82, spacing: WRhythmSpacing.xs) { _, section in
+                        downloadedAlbumRow(section)
+                    }
                 }
             }
         }
@@ -51,6 +72,26 @@ struct DownloadsView: View {
             switch sheet {
             case .deleteAll:
                 deleteAllSheet
+            case .albumQuality(let albumID):
+                if let section = albumSections.first(where: { $0.id == albumID }) {
+                    DownloadQualityPickerSheet(
+                        title: section.title,
+                        currentQualityLabel: section.qualitySummary
+                    ) { quality in
+                        downloadManager.changeQuality(for: section.songs, to: quality)
+                        presentedSheet = nil
+                    }
+                }
+            case .trackQuality(let songID):
+                if let downloadedSong = visibleDownloads.first(where: { $0.songId == songID }) {
+                    DownloadQualityPickerSheet(
+                        title: downloadedSong.title,
+                        currentQualityLabel: DownloadsPresentationPolicy.qualityLabel(for: downloadedSong)
+                    ) { quality in
+                        downloadManager.changeQuality(for: downloadedSong, to: quality)
+                        presentedSheet = nil
+                    }
+                }
             }
         }
     }
@@ -141,14 +182,27 @@ struct DownloadsView: View {
                 WRhythmIconBadge(systemImage: "internaldrive", tint: WRhythmTheme.downloads)
 
                 VStack(alignment: .leading, spacing: WRhythmSpacing.xxs) {
-                    Text("\(downloadManager.getTotalDownloaded()) songs")
+                    Text("\(albumSections.count) albums")
                         .font(WRhythmTypography.featureTitle)
-                    Text(formatBytes(downloadManager.getTotalSize()))
+                    Text("\(downloadManager.getTotalDownloaded()) songs • \(formatBytes(downloadManager.getTotalSize()))")
                         .font(WRhythmTypography.rowSubtitle)
                         .foregroundColor(.secondary)
                 }
 
                 Spacer()
+
+                Button {
+                    withAnimation(.snappy(duration: 0.18)) {
+                        isSearchVisible.toggle()
+                        if !isSearchVisible {
+                            searchText = ""
+                        }
+                    }
+                } label: {
+                    Image(systemName: isSearchVisible ? "xmark" : "magnifyingglass")
+                }
+                .buttonStyle(.bordered)
+                .tint(WRhythmTheme.accent)
 
                 Button(action: {
                     presentedSheet = .deleteAll
@@ -162,44 +216,33 @@ struct DownloadsView: View {
         }
     }
 
-    private func downloadedSongRow(_ downloadedSong: DownloadedSong) -> some View {
-        Button(action: {
-            player.playSong(song(from: downloadedSong))
-        }) {
-            HStack(spacing: WRhythmSpacing.sm) {
-                VStack(alignment: .leading, spacing: WRhythmSpacing.xxs) {
-                    Text(downloadedSong.title)
-                        .font(WRhythmTypography.rowTitle)
-                        .lineLimit(1)
-                    if let artist = downloadedSong.artist {
-                        Text(artist)
-                            .font(WRhythmTypography.rowSubtitle)
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                    }
-                    Text(formatBytes(downloadedSong.fileSize))
-                        .font(WRhythmTypography.metadata)
-                        .foregroundColor(.secondary)
-                }
-
-                Spacer()
-
-                if player.currentSong?.id == downloadedSong.songId && player.isPlaying {
-                    Image(systemName: "speaker.wave.2.fill")
-                        .font(WRhythmTypography.metadata)
-                        .foregroundColor(WRhythmTheme.accent)
-                }
-
-                WRhythmRowIconButton(
-                    systemImage: "trash",
-                    tint: WRhythmTheme.danger,
-                    accessibilityLabel: "Delete download"
+    private func downloadedAlbumRow(_ section: DownloadedAlbumSection) -> some View {
+        HStack(spacing: WRhythmSpacing.xs) {
+            NavigationLink {
+                DownloadedAlbumTracksView(section: section)
+            } label: {
+                WRhythmMediaRow(
+                    title: section.title,
+                    subtitle: section.artist,
+                    detail: "\(section.songs.count) songs • \(formatBytes(section.totalSize))",
+                    coverArtId: section.coverArt,
+                    artworkSize: 48
                 ) {
-                    downloadManager.deleteSong(downloadedSong.songId)
+                    EmptyView()
                 }
             }
+            .buttonStyle(.plain)
+
+            Spacer(minLength: WRhythmSpacing.xs)
+
+            Button {
+                presentedSheet = .albumQuality(albumID: section.id)
+            } label: {
+                DownloadQualityBadge(label: section.qualitySummary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Change quality for \(section.title)")
         }
-        .buttonStyle(.plain)
         .padding(WRhythmSpacing.sm)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous))
     }
@@ -295,8 +338,244 @@ struct DownloadsView: View {
     }
 }
 
-private enum DownloadsSheet: String, Identifiable {
+private enum DownloadsSheet: Identifiable {
     case deleteAll
+    case albumQuality(albumID: String)
+    case trackQuality(songID: String)
 
-    var id: String { rawValue }
+    var id: String {
+        switch self {
+        case .deleteAll:
+            return "deleteAll"
+        case .albumQuality(let albumID):
+            return "albumQuality:\(albumID)"
+        case .trackQuality(let songID):
+            return "trackQuality:\(songID)"
+        }
+    }
+}
+
+private struct DownloadedAlbumTracksView: View {
+    @ObservedObject private var downloadManager = DownloadManager.shared
+    @ObservedObject private var player = AudioPlayer.shared
+    @State private var presentedSheet: DownloadsSheet?
+
+    let section: DownloadedAlbumSection
+
+    private var displayedSection: DownloadedAlbumSection {
+        let visibleDownloads = DownloadsPresentationPolicy.sortedVisibleDownloads(
+            Array(downloadManager.downloadedSongs.values),
+            fileExists: downloadManager.hasDownloadedFile
+        )
+        return DownloadsPresentationPolicy.albumSections(for: visibleDownloads, searchText: "")
+            .first(where: { $0.id == section.id }) ?? section
+    }
+
+    var body: some View {
+        let section = displayedSection
+        WRhythmScreen {
+            WRhythmCard {
+                VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
+                    WRhythmMediaRow(
+                        title: section.title,
+                        subtitle: section.artist,
+                        detail: "\(section.songs.count) songs • \(section.qualitySummary)",
+                        coverArtId: section.coverArt,
+                        artworkSize: 52
+                    ) {
+                        Button {
+                            presentedSheet = .albumQuality(albumID: section.id)
+                        } label: {
+                            DownloadQualityBadge(label: section.qualitySummary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    Divider()
+
+                    SlidingRenderWindowForEach(section.songs, estimatedRowHeight: 64) { _, downloadedSong in
+                        HStack(spacing: WRhythmSpacing.xs) {
+                            Button {
+                                player.playSong(song(from: downloadedSong))
+                            } label: {
+                                WRhythmMediaRow(
+                                    title: downloadedSong.title,
+                                    subtitle: downloadedSong.artist,
+                                    detail: formatBytes(downloadedSong.fileSize),
+                                    coverArtId: downloadedSong.coverArt,
+                                    artworkSize: 42
+                                ) {
+                                    if player.currentSong?.id == downloadedSong.songId && player.isPlaying {
+                                        Image(systemName: "speaker.wave.2.fill")
+                                            .font(WRhythmTypography.metadata)
+                                            .foregroundStyle(WRhythmTheme.accent)
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+
+                            Button {
+                                presentedSheet = .trackQuality(songID: downloadedSong.songId)
+                            } label: {
+                                DownloadQualityBadge(label: DownloadsPresentationPolicy.qualityLabel(for: downloadedSong))
+                            }
+                            .buttonStyle(.plain)
+
+                            WRhythmRowIconButton(
+                                systemImage: "trash",
+                                tint: WRhythmTheme.danger,
+                                accessibilityLabel: "Delete download"
+                            ) {
+                                downloadManager.deleteSong(downloadedSong.songId)
+                            }
+                        }
+
+                        if downloadedSong.songId != section.songs.last?.songId {
+                            Divider()
+                                .padding(.leading, 54)
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle(section.title)
+        .platformNavigationBarTitleDisplayModeInline()
+        .sheet(item: $presentedSheet) { sheet in
+            switch sheet {
+            case .deleteAll:
+                EmptyView()
+            case .albumQuality:
+                DownloadQualityPickerSheet(
+                    title: section.title,
+                    currentQualityLabel: section.qualitySummary
+                ) { quality in
+                    downloadManager.changeQuality(for: section.songs, to: quality)
+                    presentedSheet = nil
+                }
+            case .trackQuality(let songID):
+                if let downloadedSong = section.songs.first(where: { $0.songId == songID }) {
+                    DownloadQualityPickerSheet(
+                        title: downloadedSong.title,
+                        currentQualityLabel: DownloadsPresentationPolicy.qualityLabel(for: downloadedSong)
+                    ) { quality in
+                        downloadManager.changeQuality(for: downloadedSong, to: quality)
+                        presentedSheet = nil
+                    }
+                }
+            }
+        }
+    }
+
+    private func song(from downloadedSong: DownloadedSong) -> Song {
+        Song(
+            id: downloadedSong.songId,
+            title: downloadedSong.title,
+            album: downloadedSong.album,
+            albumId: nil,
+            artist: downloadedSong.artist,
+            artistId: nil,
+            track: nil,
+            year: nil,
+            genre: nil,
+            coverArt: downloadedSong.coverArt,
+            size: Int(downloadedSong.fileSize),
+            contentType: nil,
+            suffix: nil,
+            duration: nil,
+            bitRate: downloadedSong.downloadedBitRate,
+            path: downloadedSong.filePath
+        )
+    }
+
+    private func formatBytes(_ bytes: Int64) -> String {
+        bytes.formatted(.byteCount(style: .file))
+    }
+}
+
+private struct DownloadQualityBadge: View {
+    let label: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "waveform")
+                .imageScale(.small)
+            Text(label)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .monospacedDigit()
+        }
+        .font(WRhythmTypography.metadata.weight(.semibold))
+        .foregroundStyle(WRhythmTheme.accent)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background {
+            Capsule(style: .continuous)
+                .fill(WRhythmTheme.accent.opacity(0.14))
+                .overlay {
+                    Capsule(style: .continuous)
+                        .strokeBorder(WRhythmTheme.accent.opacity(0.34), lineWidth: 1)
+                }
+        }
+    }
+}
+
+private struct DownloadQualityPickerSheet: View {
+    let title: String
+    let currentQualityLabel: String
+    let onSelect: (AudioQuality) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            WRhythmScreen {
+                WRhythmCard {
+                    VStack(alignment: .leading, spacing: WRhythmSpacing.sm) {
+                        Text(title)
+                            .font(WRhythmTypography.featureTitle)
+                            .lineLimit(2)
+
+                        Text("Current: \(currentQualityLabel)")
+                            .font(WRhythmTypography.rowSubtitle)
+                            .foregroundStyle(.secondary)
+
+                        ForEach(AudioQuality.allCases, id: \.rawValue) { quality in
+                            Button {
+                                onSelect(quality)
+                                dismiss()
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: WRhythmSpacing.xxs) {
+                                        Text(quality.shortDescription)
+                                            .font(WRhythmTypography.rowTitle)
+                                        Text(quality.description)
+                                            .font(WRhythmTypography.metadata)
+                                            .foregroundStyle(.secondary)
+                                    }
+
+                                    Spacer()
+
+                                    if quality.shortDescription == currentQualityLabel || quality.label == currentQualityLabel {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundStyle(WRhythmTheme.accent)
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.vertical, WRhythmSpacing.xs)
+
+                            if quality != AudioQuality.allCases.last {
+                                Divider()
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Download Quality")
+            .platformNavigationBarTitleDisplayModeInline()
+            .platformModalCloseToolbar {
+                dismiss()
+            }
+        }
+        .platformExplicitCloseModal()
+    }
 }

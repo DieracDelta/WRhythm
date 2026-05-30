@@ -539,6 +539,7 @@ class AudioPlayer: NSObject, ObservableObject {
     @Published private(set) var availablePrebufferedSongs: [Song] = []
     @Published private(set) var availablePrebufferedTrackQualityLabels: [String: String] = [:]
     @Published private(set) var prebufferDownloadStatuses: [PrebufferDownloadStatus] = []
+    @Published private(set) var isKeepingAvailableTracks = false
     @Published private(set) var prebufferingTrackCount = 0
     @Published private(set) var prebufferingProgressPercent: Int?
     @Published private(set) var availableTracksQueueRestoreAvailable = false
@@ -683,6 +684,7 @@ class AudioPlayer: NSObject, ObservableObject {
     private var currentPlaybackIsLocalFile = false
     private var playbackRetryTask: Task<Void, Never>?
     private var playbackRetryAttemptsBySongID: [String: Int] = [:]
+    private var keepAvailableTracksTask: Task<Void, Never>?
     private var playbackIntentRevision = 0
     private var playlistGenTask: Task<Void, Never>?
     private var playlistGenRestoreState: PlaylistGenRestoreState?
@@ -2625,10 +2627,10 @@ class AudioPlayer: NSObject, ObservableObject {
         return preparedPrebuffers.first { $0.value.song.id == song.id }?.value
     }
 
-    func keepAvailableTrack(_ song: Song) {
+    func keepAvailableTrack(_ song: Song) async {
         guard let prebuffer = preparedPrebufferMatchingAvailableSong(song) else { return }
         do {
-            try DownloadManager.shared.keepAvailableTrack(
+            try await DownloadManager.shared.keepAvailableTrack(
                 song: prebuffer.song,
                 sourceURL: prebuffer.url,
                 qualityLabel: prebuffer.qualityLabel
@@ -2640,8 +2642,29 @@ class AudioPlayer: NSObject, ObservableObject {
     }
 
     func keepAllAvailableTracks() {
-        for song in availablePrebufferedSongs {
-            keepAvailableTrack(song)
+        guard !isKeepingAvailableTracks else { return }
+        let songs = AvailableTrackKeepBatchPolicy.songsToKeep(
+            availableSongs: availablePrebufferedSongs,
+            downloadedSongIds: Set(DownloadManager.shared.downloadedSongs.keys)
+        )
+        guard !songs.isEmpty else { return }
+
+        keepAvailableTracksTask?.cancel()
+        isKeepingAvailableTracks = true
+        keepAvailableTracksTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                self.isKeepingAvailableTracks = false
+                self.keepAvailableTracksTask = nil
+            }
+
+            for chunk in AvailableTrackKeepBatchPolicy.chunks(songs, chunkSize: 20) {
+                guard !Task.isCancelled else { return }
+                for song in chunk {
+                    await self.keepAvailableTrack(song)
+                }
+                await Task.yield()
+            }
         }
     }
 

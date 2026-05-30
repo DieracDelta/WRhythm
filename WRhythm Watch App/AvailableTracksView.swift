@@ -172,12 +172,22 @@ private struct BufferedTracksListContent: View {
                         Button {
                             player.keepAllAvailableTracks()
                         } label: {
-                            Label("Keep All", systemImage: "tray.and.arrow.down.fill")
-                                .labelStyle(.titleAndIcon)
+                            if player.isKeepingAvailableTracks {
+                                HStack(spacing: 6) {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                    Text("Keeping")
+                                }
                                 .font(WRhythmTypography.metadata.weight(.semibold))
+                            } else {
+                                Label("Keep All", systemImage: "tray.and.arrow.down.fill")
+                                    .labelStyle(.titleAndIcon)
+                                    .font(WRhythmTypography.metadata.weight(.semibold))
+                            }
                         }
                         .buttonStyle(.bordered)
                         .tint(WRhythmTheme.accent)
+                        .disabled(player.isKeepingAvailableTracks)
                     }
 
                     SlidingRenderWindowForEach(songs, estimatedRowHeight: 58) { index, song in
@@ -200,7 +210,9 @@ private struct BufferedTracksListContent: View {
                             .buttonStyle(.plain)
 
                             Button {
-                                player.keepAvailableTrack(song)
+                                Task {
+                                    await player.keepAvailableTrack(song)
+                                }
                             } label: {
                                 VStack(alignment: .trailing, spacing: 6) {
                                     Image(systemName: downloadManager.isDownloaded(song.id) ? "checkmark.circle.fill" : "tray.and.arrow.down")
