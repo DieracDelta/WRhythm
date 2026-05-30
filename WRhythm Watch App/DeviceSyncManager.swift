@@ -143,7 +143,7 @@ struct SyncedCredentials: Codable, Sendable {
     }
 }
 
-struct PlaybackSnapshot: Codable, Identifiable, Sendable {
+nonisolated struct PlaybackSnapshot: Codable, Identifiable, Sendable {
     let id: String
     let deviceName: String
     let platform: String
@@ -159,7 +159,7 @@ struct PlaybackSnapshot: Codable, Identifiable, Sendable {
     let updatedAt: Date
 }
 
-struct PlaybackSession: Codable, Identifiable, Sendable {
+nonisolated struct PlaybackSession: Codable, Identifiable, Sendable {
     let id: String
     let revision: Int
     let queue: [Song]
@@ -698,7 +698,7 @@ struct PendingPlaybackSessionAcknowledgmentPolicy: Sendable {
     }
 }
 
-struct SyncDuplicatePolicy: Sendable {
+nonisolated struct SyncDuplicatePolicy: Sendable {
     static let maxTrackedEnvelopeIDs = 500
 
     static func shouldProcess(envelopeID: String?, processedEnvelopeIDs: Set<String>) -> Bool {
@@ -782,7 +782,7 @@ struct PlaybackDisplaySourcePolicy: Sendable {
     }
 }
 
-struct LocalPlaybackSyncState: Equatable, Sendable {
+nonisolated struct LocalPlaybackSyncState: Equatable, Sendable {
     let queueIDs: [String]
     let currentSongID: String?
     let currentIndex: Int
@@ -791,7 +791,7 @@ struct LocalPlaybackSyncState: Equatable, Sendable {
     let volume: Double
 }
 
-struct PlaybackSessionReconciliationPlan: Equatable, Sendable {
+nonisolated struct PlaybackSessionReconciliationPlan: Equatable, Sendable {
     let shouldStop: Bool
     let shouldReplaceQueue: Bool
     let shouldSeek: Bool
@@ -800,7 +800,7 @@ struct PlaybackSessionReconciliationPlan: Equatable, Sendable {
     let shouldPause: Bool
 }
 
-struct PlaybackSessionSyncPolicy: Sendable {
+nonisolated struct PlaybackSessionSyncPolicy: Sendable {
     static let seekDriftTolerance: TimeInterval = 3
     static let volumeTolerance = 0.01
     static let defaultMaxSessionAge: TimeInterval = 30
@@ -912,7 +912,7 @@ struct PlaybackSessionSyncPolicy: Sendable {
     }
 }
 
-struct PlaybackSessionSnapshotPolicy: Sendable {
+nonisolated struct PlaybackSessionSnapshotPolicy: Sendable {
     static func snapshot(
         from session: PlaybackSession,
         deviceName: String,
@@ -961,7 +961,7 @@ struct LocalPlaybackPublicationPolicy: Sendable {
     }
 }
 
-struct SyncStateRefreshPublicationPolicy: Sendable {
+nonisolated struct SyncStateRefreshPublicationPolicy: Sendable {
     static func shouldPublishLocalPlayback(
         sharedOutputDeviceID: String?,
         localDeviceID: String,
@@ -1006,7 +1006,7 @@ struct SyncPullRefreshPublicationPolicy: Sendable {
     }
 }
 
-struct ConnectivityLossPlaybackPolicy: Sendable {
+nonisolated struct ConnectivityLossPlaybackPolicy: Sendable {
     static func sessionAfterDisconnectedOutput(
         disconnectedDeviceID: String,
         currentSession: PlaybackSession?,

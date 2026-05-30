@@ -1,11 +1,11 @@
 import Foundation
 
-enum QueueMutationTarget: Equatable, Sendable {
+nonisolated enum QueueMutationTarget: Equatable, Sendable {
     case shared
     case local
 }
 
-struct QueuePresentationPolicy: Sendable {
+nonisolated struct QueuePresentationPolicy: Sendable {
     static func canRemove(index: Int, currentIndex: Int, queueCount: Int) -> Bool {
         index >= 0 && index < queueCount && index != currentIndex
     }

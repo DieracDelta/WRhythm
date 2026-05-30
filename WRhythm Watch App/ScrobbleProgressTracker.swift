@@ -5,12 +5,12 @@
 
 import Foundation
 
-enum ScrobblePlaybackEvent: Equatable, Sendable {
+nonisolated enum ScrobblePlaybackEvent: Equatable, Sendable {
     case nowPlaying(songID: String)
     case submission(songID: String)
 }
 
-struct ScrobbleProgressTracker: Sendable {
+nonisolated struct ScrobbleProgressTracker: Sendable {
     private(set) var songID: String?
     private(set) var listenedTime: TimeInterval = 0
     private(set) var submissionSent = false
@@ -74,7 +74,7 @@ struct ScrobbleProgressTracker: Sendable {
     }
 }
 
-struct ScrobbleDispatchPolicy: Sendable {
+nonisolated struct ScrobbleDispatchPolicy: Sendable {
     static func shouldTrack(
         scrobblingEnabled: Bool,
         offlineMode: Bool,
