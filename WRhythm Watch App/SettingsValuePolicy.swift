@@ -32,6 +32,7 @@ struct SongRenderWindowPolicy: Sendable {
     static let unlimitedSentinel = 0
     static let minimumLimit = 20
     static let defaultLimit = 250
+    static let hiddenSpacerSentinelRows = 1
 
     static func sanitizeLimit(_ value: Int) -> Int {
         value == unlimitedSentinel ? unlimitedSentinel : max(value, minimumLimit)
@@ -57,5 +58,22 @@ struct SongRenderWindowPolicy: Sendable {
         let proposedLowerBound = clampedAnchor - (limit / 2)
         let lowerBound = min(max(proposedLowerBound, 0), totalCount - limit)
         return lowerBound..<(lowerBound + limit)
+    }
+
+    static func hiddenSpacerRows(hiddenRows: Int, storedLimit: Int) -> Int {
+        guard hiddenRows > 0, effectiveLimit(storedLimit) != nil else { return 0 }
+        return min(hiddenRows, hiddenSpacerSentinelRows)
+    }
+
+    static func anchorAfterTopSpacerAppears(visibleRange: Range<Int>, storedLimit: Int) -> Int {
+        guard let limit = effectiveLimit(storedLimit), visibleRange.lowerBound > 0 else { return 0 }
+        return max(0, visibleRange.lowerBound - max(1, limit / 2))
+    }
+
+    static func anchorAfterBottomSpacerAppears(visibleRange: Range<Int>, totalCount: Int, storedLimit: Int) -> Int {
+        guard let limit = effectiveLimit(storedLimit), visibleRange.upperBound < totalCount else {
+            return max(0, totalCount - 1)
+        }
+        return min(max(0, totalCount - 1), visibleRange.upperBound + max(1, limit / 2))
     }
 }

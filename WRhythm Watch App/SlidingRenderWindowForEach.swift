@@ -38,7 +38,10 @@ struct SlidingRenderWindowForEach<Element, Row: View>: View {
                 Color.clear
                     .frame(height: spacerHeight(for: visibleRange.lowerBound))
                     .onAppear {
-                        anchorIndex = max(0, visibleRange.lowerBound - 1)
+                        anchorIndex = SongRenderWindowPolicy.anchorAfterTopSpacerAppears(
+                            visibleRange: visibleRange,
+                            storedLimit: storedLimit
+                        )
                     }
             }
 
@@ -53,7 +56,11 @@ struct SlidingRenderWindowForEach<Element, Row: View>: View {
                 Color.clear
                     .frame(height: spacerHeight(for: items.count - visibleRange.upperBound))
                     .onAppear {
-                        anchorIndex = min(items.count - 1, visibleRange.upperBound)
+                        anchorIndex = SongRenderWindowPolicy.anchorAfterBottomSpacerAppears(
+                            visibleRange: visibleRange,
+                            totalCount: items.count,
+                            storedLimit: storedLimit
+                        )
                     }
             }
         }
@@ -70,7 +77,11 @@ struct SlidingRenderWindowForEach<Element, Row: View>: View {
     }
 
     private func spacerHeight(for hiddenRows: Int) -> CGFloat {
-        max(0, CGFloat(hiddenRows) * (estimatedRowHeight + spacing))
+        let sentinelRows = SongRenderWindowPolicy.hiddenSpacerRows(
+            hiddenRows: hiddenRows,
+            storedLimit: storedLimit
+        )
+        return max(0, CGFloat(sentinelRows) * (estimatedRowHeight + spacing))
     }
 
     private func updateAnchorIfNeeded(for index: Int) {

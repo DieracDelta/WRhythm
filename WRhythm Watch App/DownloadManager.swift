@@ -282,6 +282,28 @@ struct DownloadedSong: Codable, Sendable {
     }
 }
 
+struct AvailableTrackKeepPolicy: Sendable {
+    static func destinationFileName(songId: String, sourceExtension: String) -> String {
+        let safeExtension = sourceExtension
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        let fileExtension = safeExtension.allSatisfy({ $0.isLetter || $0.isNumber }) && !safeExtension.isEmpty
+            ? safeExtension
+            : "audio"
+        return "\(songId).\(fileExtension)"
+    }
+
+    static func downloadedBitRate(fromQualityLabel qualityLabel: String) -> Int {
+        let trimmed = qualityLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.localizedCaseInsensitiveCompare("Original") == .orderedSame {
+            return AudioQuality.original.downloadedBitRate
+        }
+
+        let digits = trimmed.prefix { $0.isNumber }
+        return Int(digits) ?? AudioQuality.original.downloadedBitRate
+    }
+}
+
 struct FailedDownload: Identifiable, Sendable {
     let songId: String
     let title: String
@@ -1525,6 +1547,52 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
 
         // Process next item in queue
         processQueue()
+    }
+
+    func keepAvailableTrack(song: Song, sourceURL: URL, qualityLabel: String) throws {
+        guard !isDownloaded(song.id) else { return }
+        guard fileManager.fileExists(atPath: sourceURL.path) else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+
+        let filename = AvailableTrackKeepPolicy.destinationFileName(
+            songId: song.id,
+            sourceExtension: sourceURL.pathExtension
+        )
+        let destinationURL = downloadsDirectory.appendingPathComponent(filename, isDirectory: false)
+        try fileManager.createDirectory(at: downloadsDirectory, withIntermediateDirectories: true)
+
+        if sourceURL.standardizedFileURL != destinationURL.standardizedFileURL {
+            try? fileManager.removeItem(at: destinationURL)
+            try fileManager.copyItem(at: sourceURL, to: destinationURL)
+        }
+
+        let values = try destinationURL.resourceValues(forKeys: [.fileSizeKey])
+        let fileSize = Int64(values.fileSize ?? 0)
+        let downloadedBitRate = AvailableTrackKeepPolicy.downloadedBitRate(fromQualityLabel: qualityLabel)
+
+        downloadedSongs[song.id] = DownloadedSong(
+            songId: song.id,
+            title: song.title,
+            artist: song.artist,
+            album: song.album,
+            coverArt: song.coverArt,
+            filePath: filename,
+            downloadedAt: Date(),
+            fileSize: fileSize,
+            downloadedBitRate: downloadedBitRate
+        )
+        songMetadata[song.id] = song
+        activeDownloads.removeValue(forKey: song.id)
+        failedDownloads.removeValue(forKey: song.id)
+        downloadQueue.removeAll { $0.id == song.id }
+        saveMetadata()
+        saveSongMetadata()
+        saveIncompleteDownloads()
+        Task {
+            await StoredAlbumArtworkCache.persistIfEnabled(coverArtId: song.coverArt)
+        }
+        print("✅ Kept available track as download: \(song.title)")
     }
 
     private func handleDownloadFinishedMoveFailed(downloadTask: URLSessionDownloadTask, error: Error) {

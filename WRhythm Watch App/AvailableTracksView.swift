@@ -87,6 +87,7 @@ struct BufferedTracksListView: View {
 
 private struct BufferedTracksListContent: View {
     @ObservedObject private var player = AudioPlayer.shared
+    @ObservedObject private var downloadManager = DownloadManager.shared
     let availableSongs: [Song]
     let previousSongs: [Song]
     let nextSongs: [Song]
@@ -165,29 +166,52 @@ private struct BufferedTracksListContent: View {
         if !songs.isEmpty {
             WRhythmCard {
                 VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
-                    WRhythmSectionHeader(title: title)
-                    SlidingRenderWindowForEach(songs, estimatedRowHeight: 58) { index, song in
+                    HStack {
+                        WRhythmSectionHeader(title: title)
+                        Spacer()
                         Button {
-                            player.playAvailableTracksQueue(readySongs, startingAt: availableIndex(for: song, fallback: index))
+                            player.keepAllAvailableTracks()
                         } label: {
-                            WRhythmMediaRow(
-                                title: song.title,
-                                subtitle: song.artist,
-                                detail: song.album,
-                                coverArtId: song.coverArt,
-                                artworkSize: 42
-                            ) {
-                                VStack(alignment: .trailing, spacing: 6) {
+                            Label("Keep All", systemImage: "tray.and.arrow.down.fill")
+                                .labelStyle(.titleAndIcon)
+                                .font(WRhythmTypography.metadata.weight(.semibold))
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(WRhythmTheme.accent)
+                    }
+
+                    SlidingRenderWindowForEach(songs, estimatedRowHeight: 58) { index, song in
+                        HStack(spacing: WRhythmSpacing.xs) {
+                            Button {
+                                player.playAvailableTracksQueue(readySongs, startingAt: availableIndex(for: song, fallback: index))
+                            } label: {
+                                WRhythmMediaRow(
+                                    title: song.title,
+                                    subtitle: song.artist,
+                                    detail: song.album,
+                                    coverArtId: song.coverArt,
+                                    artworkSize: 42
+                                ) {
                                     if let qualityLabel = qualityLabels[song.id] {
                                         AvailableTrackQualityBadge(label: qualityLabel)
                                     }
-                                    Image(systemName: "play.fill")
+                                }
+                            }
+                            .buttonStyle(.plain)
+
+                            Button {
+                                player.keepAvailableTrack(song)
+                            } label: {
+                                VStack(alignment: .trailing, spacing: 6) {
+                                    Image(systemName: downloadManager.isDownloaded(song.id) ? "checkmark.circle.fill" : "tray.and.arrow.down")
                                         .font(WRhythmTypography.metadata.weight(.semibold))
                                         .foregroundStyle(WRhythmTheme.accent)
                                 }
                             }
+                            .buttonStyle(.plain)
+                            .disabled(downloadManager.isDownloaded(song.id))
+                            .accessibilityLabel(downloadManager.isDownloaded(song.id) ? "Kept \(song.title)" : "Keep \(song.title)")
                         }
-                        .buttonStyle(.plain)
 
                         if song.id != songs.last?.id {
                             Divider()

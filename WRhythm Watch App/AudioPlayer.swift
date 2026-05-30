@@ -2618,6 +2618,33 @@ class AudioPlayer: NSObject, ObservableObject {
         return preparedPrebuffers.first { $0.value.song.id == song.id }?.value.qualityLabel
     }
 
+    private func preparedPrebufferMatchingAvailableSong(_ song: Song) -> PreparedPrebuffer? {
+        if let prebuffer = preparedPrebuffers[prebufferKey(for: song)] {
+            return prebuffer
+        }
+        return preparedPrebuffers.first { $0.value.song.id == song.id }?.value
+    }
+
+    func keepAvailableTrack(_ song: Song) {
+        guard let prebuffer = preparedPrebufferMatchingAvailableSong(song) else { return }
+        do {
+            try DownloadManager.shared.keepAvailableTrack(
+                song: prebuffer.song,
+                sourceURL: prebuffer.url,
+                qualityLabel: prebuffer.qualityLabel
+            )
+            updatePrebufferedTrackCount()
+        } catch {
+            print("❌ Failed to keep available track \(song.title): \(WRhythmLogRedactor.errorSummary(error))")
+        }
+    }
+
+    func keepAllAvailableTracks() {
+        for song in availablePrebufferedSongs {
+            keepAvailableTrack(song)
+        }
+    }
+
     @MainActor
     func cacheArtworkForAvailableTracks() async {
         let coverArtIds = Set(

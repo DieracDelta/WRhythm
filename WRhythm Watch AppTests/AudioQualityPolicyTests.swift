@@ -52,6 +52,15 @@ struct AudioQualityPolicyTests {
         #expect(PrebufferQualityPresentationPolicy.downloadedQualityLabel(downloadedBitRate: 192) == "192 kbps")
     }
 
+    @Test func availableTrackKeepPolicyDerivesDurableDownloadMetadata() {
+        #expect(AvailableTrackKeepPolicy.destinationFileName(songId: "song-1", sourceExtension: "mp3") == "song-1.mp3")
+        #expect(AvailableTrackKeepPolicy.destinationFileName(songId: "song-1", sourceExtension: "") == "song-1.audio")
+        #expect(AvailableTrackKeepPolicy.destinationFileName(songId: "song-1", sourceExtension: "../flac") == "song-1.audio")
+        #expect(AvailableTrackKeepPolicy.downloadedBitRate(fromQualityLabel: "Original") == 0)
+        #expect(AvailableTrackKeepPolicy.downloadedBitRate(fromQualityLabel: "192 kbps") == 192)
+        #expect(AvailableTrackKeepPolicy.downloadedBitRate(fromQualityLabel: "Downloaded") == 0)
+    }
+
     @Test func prebufferQualityLabelsReflectPlaybackTranscoding() {
         #expect(PrebufferQualityPresentationPolicy.streamingQualityLabel(
             streamingQuality: .original,

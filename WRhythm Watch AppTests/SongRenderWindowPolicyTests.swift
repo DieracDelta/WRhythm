@@ -45,4 +45,17 @@ struct SongRenderWindowPolicyTests {
 
         #expect(range == 0..<0)
     }
+
+    @Test func hiddenRowsUseSmallScrollSentinelInsteadOfLargeBlankSpacer() {
+        #expect(SongRenderWindowPolicy.hiddenSpacerRows(hiddenRows: 0, storedLimit: 50) == 0)
+        #expect(SongRenderWindowPolicy.hiddenSpacerRows(hiddenRows: 1, storedLimit: 50) == 1)
+        #expect(SongRenderWindowPolicy.hiddenSpacerRows(hiddenRows: 500, storedLimit: 50) == 1)
+    }
+
+    @Test func spacerAppearanceMovesAnchorByPageInsteadOfSingleRow() {
+        let range = 100..<150
+
+        #expect(SongRenderWindowPolicy.anchorAfterTopSpacerAppears(visibleRange: range, storedLimit: 50) == 75)
+        #expect(SongRenderWindowPolicy.anchorAfterBottomSpacerAppears(visibleRange: range, totalCount: 300, storedLimit: 50) == 175)
+    }
 }
