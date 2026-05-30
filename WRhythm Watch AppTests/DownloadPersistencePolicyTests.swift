@@ -140,6 +140,32 @@ struct DownloadPersistencePolicyTests {
         #expect(DownloadsPresentationPolicy.showsEmptyState(visibleDownloadCount: 0))
     }
 
+    @Test func downloadedMetadataWithoutQualityStillLoadsAsOriginalQuality() throws {
+        let json = """
+        {
+          "song-1": {
+            "songId": "song-1",
+            "title": "Downloaded Track",
+            "artist": "Artist",
+            "album": "Album",
+            "coverArt": "cover",
+            "filePath": "song-1.mp3",
+            "downloadedAt": "2026-05-30T14:00:00Z",
+            "fileSize": 12345
+          }
+        }
+        """
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        let decoded = try decoder.decode([String: DownloadedSong].self, from: Data(json.utf8))
+
+        let song = try #require(decoded["song-1"])
+        #expect(song.downloadedBitRate == AudioQuality.original.downloadedBitRate)
+        #expect(song.title == "Downloaded Track")
+    }
+
     private func makeSong(id: String, title: String) -> Song {
         Song(
             id: id,

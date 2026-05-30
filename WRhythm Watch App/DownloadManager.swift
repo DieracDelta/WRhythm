@@ -207,6 +207,18 @@ struct DownloadedSong: Codable, Sendable {
     let fileSize: Int64
     let downloadedBitRate: Int
 
+    enum CodingKeys: String, CodingKey {
+        case songId
+        case title
+        case artist
+        case album
+        case coverArt
+        case filePath
+        case downloadedAt
+        case fileSize
+        case downloadedBitRate
+    }
+
     init(songId: String, title: String, artist: String?, album: String?, coverArt: String?, filePath: String, downloadedAt: Date, fileSize: Int64, downloadedBitRate: Int) {
         self.songId = songId
         self.title = title
@@ -217,6 +229,19 @@ struct DownloadedSong: Codable, Sendable {
         self.downloadedAt = downloadedAt
         self.fileSize = fileSize
         self.downloadedBitRate = downloadedBitRate
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.songId = try container.decode(String.self, forKey: .songId)
+        self.title = try container.decode(String.self, forKey: .title)
+        self.artist = try container.decodeIfPresent(String.self, forKey: .artist)
+        self.album = try container.decodeIfPresent(String.self, forKey: .album)
+        self.coverArt = try container.decodeIfPresent(String.self, forKey: .coverArt)
+        self.filePath = try container.decode(String.self, forKey: .filePath)
+        self.downloadedAt = try container.decode(Date.self, forKey: .downloadedAt)
+        self.fileSize = try container.decode(Int64.self, forKey: .fileSize)
+        self.downloadedBitRate = try container.decodeIfPresent(Int.self, forKey: .downloadedBitRate) ?? AudioQuality.original.downloadedBitRate
     }
 }
 
