@@ -14,6 +14,7 @@ extension Notification.Name {
 struct ContentView: View {
     @ObservedObject var api = NavidromeAPI.shared
     @ObservedObject var player = AudioPlayer.shared
+    @ObservedObject var downloadManager = DownloadManager.shared
     @State private var hasPresentedInitialLoading = false
 #if os(macOS)
     @State private var selectedMacDestination: MacDestination? = .nowPlaying
@@ -65,11 +66,28 @@ struct ContentView: View {
         }
 #endif
 #if os(iOS)
+        .safeAreaInset(edge: .top) {
+            if let notice = downloadManager.downloadNotice {
+                DownloadNoticeBanner(message: notice.message) {
+                    selectedTab = 4
+                    downloadManager.clearDownloadNotice(notice.id)
+                }
+                .padding(.horizontal, WRhythmSpacing.md)
+                .padding(.top, WRhythmSpacing.xs)
+            }
+        }
         .safeAreaInset(edge: .bottom) {
             if player.playlistGenIsGenerating {
                 PlaylistGenerationStatusBanner()
                     .padding(.horizontal, WRhythmSpacing.md)
                     .padding(.bottom, WRhythmSpacing.sm)
+            }
+        }
+        .onChange(of: downloadManager.downloadNotice?.id) { _, noticeID in
+            guard let noticeID else { return }
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 4_000_000_000)
+                downloadManager.clearDownloadNotice(noticeID)
             }
         }
 #endif
@@ -168,6 +186,43 @@ struct ContentView: View {
 #Preview {
     ContentView()
 }
+
+#if os(iOS)
+private struct DownloadNoticeBanner: View {
+    let message: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: WRhythmSpacing.sm) {
+                Image(systemName: "arrow.down.circle.fill")
+                    .font(WRhythmTypography.rowSubtitle)
+                    .foregroundStyle(WRhythmTheme.downloads)
+
+                Text(message)
+                    .font(WRhythmTypography.metadataEmphasis)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+
+                Spacer(minLength: WRhythmSpacing.xs)
+
+                Image(systemName: "chevron.right")
+                    .font(WRhythmTypography.metadata)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, WRhythmSpacing.md)
+            .padding(.vertical, WRhythmSpacing.sm)
+            .background(.regularMaterial, in: Capsule(style: .continuous))
+            .overlay {
+                Capsule(style: .continuous)
+                    .strokeBorder(WRhythmTheme.downloads.opacity(0.35), lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(message)
+    }
+}
+#endif
 
 private struct PlaylistGenerationStatusBanner: View {
     @ObservedObject private var player = AudioPlayer.shared

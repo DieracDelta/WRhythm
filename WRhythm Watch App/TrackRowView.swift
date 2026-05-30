@@ -10,6 +10,7 @@ import SwiftUI
 struct TrackRowView: View {
     let song: Song
     let isDownloaded: Bool
+    let downloadStatus: DownloadRowStatus
     let isStarred: Bool
     let isCurrentAndPlaying: Bool
     let offlineMode: Bool
@@ -21,6 +22,7 @@ struct TrackRowView: View {
     init(
         song: Song,
         isDownloaded: Bool,
+        downloadStatus: DownloadRowStatus = .none,
         isStarred: Bool,
         isCurrentAndPlaying: Bool,
         offlineMode: Bool,
@@ -31,6 +33,7 @@ struct TrackRowView: View {
     ) {
         self.song = song
         self.isDownloaded = isDownloaded
+        self.downloadStatus = downloadStatus
         self.isStarred = isStarred
         self.isCurrentAndPlaying = isCurrentAndPlaying
         self.offlineMode = offlineMode
@@ -52,7 +55,20 @@ struct TrackRowView: View {
                 isPlaying: isCurrentAndPlaying
             ) {
                 HStack(spacing: WRhythmSpacing.xs) {
-                    if isDownloaded {
+                    switch downloadStatus {
+                    case .downloading(let progress):
+                        DownloadStatusPill(
+                            systemImage: nil,
+                            text: "\(Int(progress * 100))%",
+                            tint: WRhythmTheme.downloads
+                        )
+                    case .queued:
+                        DownloadStatusPill(
+                            systemImage: "clock",
+                            text: "Queued",
+                            tint: WRhythmTheme.warning
+                        )
+                    case .downloaded:
                         if !offlineMode {
                             WRhythmRowIconButton(
                                 systemImage: "arrow.down.circle.fill",
@@ -66,13 +82,15 @@ struct TrackRowView: View {
                                 .font(WRhythmTypography.metadata)
                                 .foregroundColor(WRhythmTheme.success)
                         }
-                    } else if !offlineMode {
-                        WRhythmRowIconButton(
-                            systemImage: "arrow.down.circle",
-                            tint: WRhythmTheme.secondaryAccent,
-                            accessibilityLabel: "Download song",
-                            action: onDownload
-                        )
+                    case .none:
+                        if !offlineMode {
+                            WRhythmRowIconButton(
+                                systemImage: "arrow.down.circle",
+                                tint: WRhythmTheme.secondaryAccent,
+                                accessibilityLabel: "Download song",
+                                action: onDownload
+                            )
+                        }
                     }
 
                     if !offlineMode {
@@ -114,6 +132,7 @@ extension TrackRowView {
         self.init(
             song: song,
             isDownloaded: downloadManager.isDownloaded(song.id),
+            downloadStatus: downloadManager.downloadStatus(for: song.id),
             isStarred: downloadManager.starredSongIds.contains(song.id),
             isCurrentAndPlaying: player.currentSong?.id == song.id && player.isPlaying,
             offlineMode: offlineMode,
@@ -122,5 +141,33 @@ extension TrackRowView {
             onDelete: { downloadManager.deleteSong(song.id) },
             onToggleFavorite: { await TrackActions.toggleFavoriteAsync(song) }
         )
+    }
+}
+
+private struct DownloadStatusPill: View {
+    let systemImage: String?
+    let text: String
+    let tint: Color
+
+    var body: some View {
+        HStack(spacing: 3) {
+            if let systemImage {
+                Image(systemName: systemImage)
+                    .font(.caption2)
+            } else {
+                ProgressView()
+                    .controlSize(.mini)
+                    .scaleEffect(0.62)
+            }
+
+            Text(text)
+                .font(WRhythmTypography.metadata)
+                .monospacedDigit()
+        }
+        .foregroundStyle(tint)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 4)
+        .background(tint.opacity(0.14), in: Capsule(style: .continuous))
+        .accessibilityLabel(text)
     }
 }

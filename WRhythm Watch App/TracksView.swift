@@ -396,20 +396,32 @@ struct TracksView: View {
                 isPlaying: player.currentSong?.id == song.id && player.isPlaying
             ) {
                 HStack(spacing: 8) {
-                    if downloadManager.isDownloading(song.id) {
+                    switch downloadManager.downloadStatus(for: song.id) {
+                    case .downloading(let progress):
                         ProgressView()
                             .scaleEffect(0.6)
-                    } else if downloadManager.isDownloaded(song.id) {
+                        Text("\(Int(progress * 100))%")
+                            .font(WRhythmTypography.metadata)
+                            .foregroundColor(WRhythmTheme.downloads)
+                            .monospacedDigit()
+                    case .queued:
+                        Label("Queued", systemImage: "clock")
+                            .font(WRhythmTypography.metadata)
+                            .foregroundColor(WRhythmTheme.warning)
+                            .labelStyle(.iconOnly)
+                    case .downloaded:
                         Image(systemName: "arrow.down.circle.fill")
                             .font(WRhythmTypography.metadata)
                             .foregroundColor(WRhythmTheme.success)
-                    } else if !offlineMode {
-                        WRhythmRowIconButton(
-                            systemImage: "arrow.down.circle",
-                            tint: WRhythmTheme.secondaryAccent,
-                            accessibilityLabel: "Download song"
-                        ) {
-                            DownloadManager.shared.downloadSong(song)
+                    case .none:
+                        if !offlineMode {
+                            WRhythmRowIconButton(
+                                systemImage: "arrow.down.circle",
+                                tint: WRhythmTheme.secondaryAccent,
+                                accessibilityLabel: "Download song"
+                            ) {
+                                DownloadManager.shared.downloadSong(song)
+                            }
                         }
                     }
 

@@ -30,8 +30,32 @@ final class SerialFileWriteQueue: @unchecked Sendable {
         }
     }
 
+    nonisolated func writeImmediately(_ data: Data, to url: URL, label: String) {
+        queue.sync {
+            do {
+                try data.write(to: url, options: .atomic)
+                print("💾 \(label)")
+            } catch {
+                print("❌ Failed to write \(label): \(error)")
+            }
+        }
+    }
+
     nonisolated func removeItem(at url: URL, label: String) {
         queue.async {
+            do {
+                if FileManager.default.fileExists(atPath: url.path) {
+                    try FileManager.default.removeItem(at: url)
+                    print("🗑️ \(label)")
+                }
+            } catch {
+                print("❌ Failed to remove \(label): \(error)")
+            }
+        }
+    }
+
+    nonisolated func removeItemImmediately(at url: URL, label: String) {
+        queue.sync {
             do {
                 if FileManager.default.fileExists(atPath: url.path) {
                     try FileManager.default.removeItem(at: url)
@@ -250,6 +274,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
     @Published var pendingUnstarChanges: Set<String> = []  // Songs to unstar on server
     @Published var activeDownloads: [String: Double] = [:] // songId -> progress (0-1)
     @Published var failedDownloads: [String: FailedDownload] = [:]
+    @Published var downloadNotice: DownloadUserNotice?
     @Published var downloadBytesReceived: [String: Int64] = [:] // songId -> bytes downloaded
     @Published var maxConcurrentDownloads: Int = UserDefaults.standard.integer(forKey: "maxConcurrentDownloads") == 0 ? 8 : UserDefaults.standard.integer(forKey: "maxConcurrentDownloads") {
         didSet {
@@ -424,7 +449,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
         let url = metadataURL
         do {
             let data = try JSONEncoder().encode(songsToSave)
-            Self.metadataWriteQueue.write(data, to: url, label: "Saved download metadata")
+            Self.metadataWriteQueue.writeImmediately(data, to: url, label: "Saved download metadata")
         } catch {
             print("❌ Failed to encode download metadata: \(error)")
         }
@@ -451,7 +476,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
         let url = songMetadataURL
         do {
             let data = try JSONEncoder().encode(metadataToSave)
-            Self.metadataWriteQueue.write(data, to: url, label: "Saved song metadata (\(metadataToSave.count) entries)")
+            Self.metadataWriteQueue.writeImmediately(data, to: url, label: "Saved song metadata (\(metadataToSave.count) entries)")
         } catch {
             print("❌ Failed to encode song metadata: \(error)")
         }
@@ -594,12 +619,17 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
 
         do {
             let data = try Data(contentsOf: incompleteDownloadsURL)
-            let songIds = try JSONDecoder().decode([String].self, from: data)
-            print("📥 Loaded \(songIds.count) incomplete downloads")
+            let completedSongIds = Set(downloadedSongs.keys.filter { isDownloaded($0) })
+            let songs = try DownloadRequestPersistencePolicy.decodeIncompleteDownloads(
+                from: data,
+                songMetadata: songMetadata,
+                downloadedSongIds: completedSongIds
+            )
+            print("📥 Loaded \(songs.count) incomplete downloads")
 
-            // Re-queue songs that have metadata but weren't completed
-            for songId in songIds {
-                if let song = songMetadata[songId], !isDownloaded(songId) {
+            for song in songs where !isDownloaded(song.id) {
+                songMetadata[song.id] = song
+                if !downloadQueue.contains(where: { $0.id == song.id }) {
                     downloadQueue.append(song)
                     print("📥 Re-queued incomplete download: \(song.title)")
                 }
@@ -608,6 +638,8 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
             // Start processing if we have items
             if !downloadQueue.isEmpty {
                 sessionTotalCount = downloadQueue.count
+                saveSongMetadata()
+                saveIncompleteDownloads()
                 processQueue()
             }
         } catch {
@@ -616,20 +648,25 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
     }
 
     private func saveIncompleteDownloads() {
-        // Collect all song IDs that are in queue or actively downloading
-        let incompleteIds = downloadQueue.map(\.id) + Array(activeDownloads.keys)
+        let activeSongs = Dictionary(uniqueKeysWithValues: activeDownloads.keys.compactMap { songId in
+            songMetadata[songId].map { (songId, $0) }
+        })
 
         let url = incompleteDownloadsURL
         do {
-            let data = try JSONEncoder().encode(incompleteIds)
-            Self.metadataWriteQueue.write(data, to: url, label: "Saved \(incompleteIds.count) incomplete downloads")
+            let data = try DownloadRequestPersistencePolicy.encodeIncompleteDownloads(
+                queuedSongs: downloadQueue,
+                activeSongs: activeSongs
+            )
+            let incompleteCount = downloadQueue.count + activeSongs.count
+            Self.metadataWriteQueue.writeImmediately(data, to: url, label: "Saved \(incompleteCount) incomplete downloads")
         } catch {
             print("❌ Failed to encode incomplete downloads: \(error)")
         }
     }
 
     private func clearIncompleteDownloads() {
-        Self.metadataWriteQueue.removeItem(at: incompleteDownloadsURL, label: "Cleared incomplete downloads")
+        Self.metadataWriteQueue.removeItemImmediately(at: incompleteDownloadsURL, label: "Cleared incomplete downloads")
     }
 
     // MARK: - Migration State (Codec Change Recovery)
@@ -969,6 +1006,30 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
         return activeDownloads[songId] != nil || downloadQueue.contains(where: { $0.id == songId })
     }
 
+    func downloadStatus(for songId: String) -> DownloadRowStatus {
+        DownloadStatusPresentationPolicy.status(
+            songId: songId,
+            isDownloaded: isDownloaded(songId),
+            activeProgress: activeDownloads[songId],
+            queuedSongIds: Set(downloadQueue.map(\.id))
+        )
+    }
+
+    func clearDownloadNotice(_ noticeID: UUID? = nil) {
+        guard let noticeID else {
+            downloadNotice = nil
+            return
+        }
+
+        if downloadNotice?.id == noticeID {
+            downloadNotice = nil
+        }
+    }
+
+    private func showDownloadNotice(_ kind: DownloadNoticeKind) {
+        downloadNotice = DownloadUserNotice(message: DownloadNoticePresentationPolicy.message(for: kind))
+    }
+
     // MARK: - Download Control
 
     func pauseDownloads() {
@@ -1102,12 +1163,15 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
         }
 
         downloadQueue.append(song)
+        songMetadata[song.id] = song
 
         // Update session total count to include this new song
         sessionTotalCount += 1
 
         print("📋 Added to queue: \(song.title) (queue size: \(downloadQueue.count))")
+        saveSongMetadata()
         saveIncompleteDownloads()
+        showDownloadNotice(.song(title: song.title))
         processQueue()
     }
 
@@ -1134,6 +1198,8 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
                 print("❌ Failed to get stream URL for: \(song.title)")
                 songMetadata[song.id] = song
                 failedDownloads[song.id] = FailedDownload(song: song, errorDescription: "Could not build stream URL")
+                saveSongMetadata()
+                saveIncompleteDownloads()
                 continue
             }
 
@@ -1147,6 +1213,8 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
             downloadTasks[song.id] = task
             taskToSongId[task] = song.id
             songMetadata[song.id] = song
+            saveSongMetadata()
+            saveIncompleteDownloads()
             task.resume()
 
             print("▶️ [\(timestamp)] Download task resumed for: \(song.title)")
@@ -1334,6 +1402,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
             downloadTotalBytes.removeValue(forKey: song.id)
             downloadTasks.removeValue(forKey: song.id)
             taskToSongId.removeValue(forKey: downloadTask)
+            saveIncompleteDownloads()
 
             // Process next item in queue even on error
             processQueue()
@@ -1392,7 +1461,10 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
 
             // Only process next item if not paused
             if !isPaused {
+                saveIncompleteDownloads()
                 processQueue()
+            } else {
+                saveIncompleteDownloads()
             }
         }
     }
@@ -1410,6 +1482,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
 
     func downloadAlbum(_ album: Album) {
         print("📥 Downloading album: \(album.name)")
+        var queuedCount = 0
         // Add all songs to the queue first, then process
         for song in album.song {
             guard !isDownloaded(song.id) && !isDownloading(song.id) else {
@@ -1423,8 +1496,14 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
             }
 
             downloadQueue.append(song)
+            songMetadata[song.id] = song
             sessionTotalCount += 1
+            queuedCount += 1
             print("📋 Added to queue: \(song.title)")
+        }
+        if queuedCount > 0 {
+            saveSongMetadata()
+            showDownloadNotice(.album(name: album.name, queuedCount: queuedCount))
         }
         saveIncompleteDownloads()
         processQueue()
@@ -1433,6 +1512,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
     func downloadPlaylist(_ playlist: Playlist) {
         print("📥 Downloading playlist: \(playlist.name)")
         guard let songs = playlist.entry else { return }
+        var queuedCount = 0
         // Add all songs to the queue first, then process
         for song in songs {
             guard !isDownloaded(song.id) && !isDownloading(song.id) else {
@@ -1446,8 +1526,14 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
             }
 
             downloadQueue.append(song)
+            songMetadata[song.id] = song
             sessionTotalCount += 1
+            queuedCount += 1
             print("📋 Added to queue: \(song.title)")
+        }
+        if queuedCount > 0 {
+            saveSongMetadata()
+            showDownloadNotice(.playlist(name: playlist.name, queuedCount: queuedCount))
         }
         saveIncompleteDownloads()
         processQueue()
@@ -1473,6 +1559,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
         if failedDownloads.removeValue(forKey: songId) != nil {
             songMetadata.removeValue(forKey: songId)
             saveSongMetadata()
+            saveIncompleteDownloads()
             return
         }
 
@@ -1495,7 +1582,10 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
 
             // Process next in queue
             if !isPaused {
+                saveIncompleteDownloads()
                 processQueue()
+            } else {
+                saveIncompleteDownloads()
             }
             return
         }
@@ -1511,6 +1601,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
             }
 
             print("🛑 Removed from queue: \(song.title)")
+            saveIncompleteDownloads()
         }
     }
 
@@ -1535,6 +1626,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
 
         // Re-add to queue
         downloadQueue.insert(song, at: 0) // Add to front of queue
+        saveIncompleteDownloads()
         processQueue()
     }
 
