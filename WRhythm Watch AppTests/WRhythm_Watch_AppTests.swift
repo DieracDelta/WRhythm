@@ -83,6 +83,14 @@ struct WRhythm_Watch_AppTests {
 
         #expect(filename.hasPrefix("metrics-"))
         #expect(filename.hasSuffix("-2.json"))
+        #expect(filename.contains(":") == false)
+        #expect(filename.contains("/") == false)
+    }
+
+    @Test func metricKitPayloadFilenameSanitizerRemovesExportHostileCharacters() {
+        let filename = MetricKitPayloadFilePolicy.sanitizedFilename("metrics-2026-05-29T23:50:31.891Z-0.json")
+
+        #expect(filename == "metrics-2026-05-29T23-50-31.891Z-0.json")
     }
 
 }

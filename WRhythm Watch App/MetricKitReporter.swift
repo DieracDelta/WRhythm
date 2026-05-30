@@ -7,8 +7,21 @@ import Foundation
 
 struct MetricKitPayloadFilePolicy: Sendable {
     static func filename(prefix: String, receivedAt: Date, index: Int) -> String {
-        let timestamp = ISO8601DateFormatter.wrhythmMetricKitFilename.string(from: receivedAt)
+        let timestamp = safeTimestamp(for: receivedAt)
         return "\(prefix)-\(timestamp)-\(index).json"
+    }
+
+    static func sanitizedFilename(_ filename: String) -> String {
+        filename
+            .replacingOccurrences(of: ":", with: "-")
+            .replacingOccurrences(of: "/", with: "-")
+    }
+
+    static func safeTimestamp(for date: Date) -> String {
+        ISO8601DateFormatter.wrhythmMetricKitFilename
+            .string(from: date)
+            .replacingOccurrences(of: ":", with: "-")
+            .replacingOccurrences(of: "/", with: "-")
     }
 }
 
@@ -37,6 +50,7 @@ final class MetricKitReporter: NSObject, MXMetricManagerSubscriber {
     func start() {
         guard !hasStarted else { return }
         hasStarted = true
+        sanitizeExistingPayloadFilenames()
         MXMetricManager.shared.add(self)
         print("📈 MetricKit reporter started. Payloads will be saved to: \(payloadDirectory.path)")
     }
@@ -88,6 +102,30 @@ final class MetricKitReporter: NSObject, MXMetricManagerSubscriber {
                 print("📈 Saved MetricKit \(prefix) payload: \(url.path)")
             } catch {
                 print("⚠️ Failed to save MetricKit \(prefix) payload: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func sanitizeExistingPayloadFilenames() {
+        guard let contents = try? fileManager.contentsOfDirectory(
+            at: payloadDirectory,
+            includingPropertiesForKeys: nil
+        ) else {
+            return
+        }
+
+        for url in contents where url.pathExtension == "json" {
+            let safeName = MetricKitPayloadFilePolicy.sanitizedFilename(url.lastPathComponent)
+            guard safeName != url.lastPathComponent else { continue }
+
+            let destination = url.deletingLastPathComponent().appendingPathComponent(safeName, isDirectory: false)
+            guard !fileManager.fileExists(atPath: destination.path) else { continue }
+
+            do {
+                try fileManager.moveItem(at: url, to: destination)
+                print("📈 Renamed MetricKit payload for export: \(destination.lastPathComponent)")
+            } catch {
+                print("⚠️ Failed to rename MetricKit payload: \(error.localizedDescription)")
             }
         }
     }
