@@ -12,6 +12,43 @@ private struct DownloadTaskHandle: @unchecked Sendable {
     let task: URLSessionTask
 }
 
+nonisolated private struct DownloadCompletionContext: Sendable {
+    let songId: String
+    let fileName: String
+    let destinationURL: URL
+    let downloadedBitRate: Int
+}
+
+nonisolated private struct CompletedDownloadFile: Sendable {
+    let songId: String
+    let fileName: String
+    let fileSize: Int64
+    let downloadedBitRate: Int
+}
+
+nonisolated private final class DownloadCompletionContextStore: @unchecked Sendable {
+    private let lock = NSLock()
+    private var contextsByTaskIdentifier: [Int: DownloadCompletionContext] = [:]
+
+    nonisolated func set(_ context: DownloadCompletionContext, for taskIdentifier: Int) {
+        lock.lock()
+        defer { lock.unlock() }
+        contextsByTaskIdentifier[taskIdentifier] = context
+    }
+
+    nonisolated func removeContext(for taskIdentifier: Int) -> DownloadCompletionContext? {
+        lock.lock()
+        defer { lock.unlock() }
+        return contextsByTaskIdentifier.removeValue(forKey: taskIdentifier)
+    }
+
+    nonisolated func removeAll() {
+        lock.lock()
+        defer { lock.unlock() }
+        contextsByTaskIdentifier.removeAll()
+    }
+}
+
 final class SerialFileWriteQueue: @unchecked Sendable {
     private let queue: DispatchQueue
 
@@ -290,6 +327,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
     static let shared = DownloadManager()
     private nonisolated static let delegateEventSubmitter = SyncDelegateEventSubmitter(label: "WRhythm.DownloadDelegateEvents")
     private nonisolated static let metadataWriteQueue = SerialFileWriteQueue(label: "WRhythm.DownloadMetadataWrites")
+    private nonisolated static let completionContextStore = DownloadCompletionContextStore()
 
     @Published var downloadedSongs: [String: DownloadedSong] = [:]
     @Published var cachedPlaylists: [CachedPlaylist] = []
@@ -415,6 +453,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
         super.init()
         loadMetadata()
         loadSongMetadata()
+        reconcileDownloadedFilesFromDisk()
         loadPlaylistsMetadata()
         loadRadioPlaylists()
         loadStarredSongs()
@@ -504,6 +543,39 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
             Self.metadataWriteQueue.writeImmediately(data, to: url, label: "Saved song metadata (\(metadataToSave.count) entries)")
         } catch {
             print("❌ Failed to encode song metadata: \(error)")
+        }
+    }
+
+    private func reconcileDownloadedFilesFromDisk() {
+        do {
+            let fileURLs = try fileManager.contentsOfDirectory(
+                at: downloadsDirectory,
+                includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
+                options: [.skipsHiddenFiles]
+            )
+            let candidates = try fileURLs.compactMap { fileURL -> DownloadedFileCandidate? in
+                let values = try fileURL.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey, .isDirectoryKey])
+                guard values.isDirectory != true else { return nil }
+                return DownloadedFileCandidate(
+                    fileName: fileURL.lastPathComponent,
+                    fileSize: Int64(values.fileSize ?? 0),
+                    modifiedAt: values.contentModificationDate
+                )
+            }
+
+            let reconciled = DownloadedFileReconciliationPolicy.reconciledDownloads(
+                existingDownloads: downloadedSongs,
+                songMetadata: songMetadata,
+                files: candidates,
+                now: Date()
+            )
+
+            guard reconciled.count != downloadedSongs.count else { return }
+            downloadedSongs = reconciled
+            saveMetadata()
+            print("📥 Reconciled \(reconciled.count) downloaded songs from disk")
+        } catch {
+            print("❌ Failed to reconcile downloaded files: \(error)")
         }
     }
 
@@ -1085,6 +1157,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
         activeDownloads.removeAll()
         downloadTasks.removeAll()
         taskToSongId.removeAll()
+        Self.completionContextStore.removeAll()
         downloadBytesReceived.removeAll()
         downloadTotalBytes.removeAll()
 
@@ -1116,6 +1189,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
         activeDownloads.removeAll()
         downloadTasks.removeAll()
         taskToSongId.removeAll()
+        Self.completionContextStore.removeAll()
         downloadBytesReceived.removeAll()
         downloadTotalBytes.removeAll()
         pendingProgressUpdates.removeAll()
@@ -1147,6 +1221,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
         failedDownloads.removeAll()
         downloadTasks.removeAll()
         taskToSongId.removeAll()
+        Self.completionContextStore.removeAll()
         // Only remove metadata for songs that aren't already downloaded
         let downloadedIds = Set(downloadedSongs.keys)
         songMetadata = songMetadata.filter { downloadedIds.contains($0.key) }
@@ -1238,6 +1313,17 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
 
             let task = downloadSession.downloadTask(with: streamURL)
             task.taskDescription = song.id
+            let filename = "\(song.id).\(quality.localFileExtension(for: song))"
+            let destinationURL = downloadsDirectory.appendingPathComponent(filename)
+            Self.completionContextStore.set(
+                DownloadCompletionContext(
+                    songId: song.id,
+                    fileName: filename,
+                    destinationURL: destinationURL,
+                    downloadedBitRate: quality.downloadedBitRate
+                ),
+                for: task.taskIdentifier
+            )
 
             activeDownloads[song.id] = 0
             downloadTasks[song.id] = task
@@ -1339,104 +1425,126 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
 
     nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
         let taskHandle = DownloadTaskHandle(task: downloadTask)
+        let taskIdentifier = downloadTask.taskIdentifier
+        guard let context = Self.completionContextStore.removeContext(for: taskIdentifier) else {
+            Self.enqueueDelegateEvent {
+                guard let downloadTask = taskHandle.task as? URLSessionDownloadTask else { return }
+                DownloadManager.shared.handleDownloadFinishedMoveFailed(
+                    downloadTask: downloadTask,
+                    error: CocoaError(.fileNoSuchFile)
+                )
+            }
+            return
+        }
+
+        let movedFile: CompletedDownloadFile
+        do {
+            let fileSize = try CompletedDownloadFileMovePolicy.moveTemporaryDownload(
+                from: location,
+                to: context.destinationURL
+            )
+            movedFile = CompletedDownloadFile(
+                songId: context.songId,
+                fileName: context.fileName,
+                fileSize: fileSize,
+                downloadedBitRate: context.downloadedBitRate
+            )
+        } catch {
+            Self.enqueueDelegateEvent {
+                guard let downloadTask = taskHandle.task as? URLSessionDownloadTask else { return }
+                DownloadManager.shared.handleDownloadFinishedMoveFailed(downloadTask: downloadTask, error: error)
+            }
+            return
+        }
+
         Self.enqueueDelegateEvent {
             guard let downloadTask = taskHandle.task as? URLSessionDownloadTask else { return }
-            DownloadManager.shared.handleDownloadFinished(downloadTask: downloadTask, location: location)
+            DownloadManager.shared.handleDownloadFinished(downloadTask: downloadTask, movedFile: movedFile)
         }
     }
 
-    private func handleDownloadFinished(downloadTask: URLSessionDownloadTask, location: URL) {
-        guard let songId = songId(for: downloadTask),
-              let song = songMetadata[songId] else {
+    private func handleDownloadFinished(downloadTask: URLSessionDownloadTask, movedFile: CompletedDownloadFile) {
+        let resolvedSongId = songId(for: downloadTask) ?? movedFile.songId
+        guard let song = songMetadata[resolvedSongId] else {
             print("❌ No song info for completed download")
             return
         }
 
-        let quality = audioQuality
-        let filename = "\(song.id).\(quality.localFileExtension(for: song))"
-        let destinationURL = downloadsDirectory.appendingPathComponent(filename)
+        let downloadedSong = DownloadedSong(
+            songId: song.id,
+            title: song.title,
+            artist: song.artist,
+            album: song.album,
+            coverArt: song.coverArt,
+            filePath: movedFile.fileName,
+            downloadedAt: Date(),
+            fileSize: movedFile.fileSize,
+            downloadedBitRate: movedFile.downloadedBitRate
+        )
 
-        do {
-            // Remove existing file if present
-            if fileManager.fileExists(atPath: destinationURL.path) {
-                try fileManager.removeItem(at: destinationURL)
-            }
-
-            try fileManager.moveItem(at: location, to: destinationURL)
-
-            // Get file size
-            let attributes = try fileManager.attributesOfItem(atPath: destinationURL.path)
-            let fileSize = attributes[.size] as? Int64 ?? 0
-
-            // Save metadata with current audio quality
-            let downloadedSong = DownloadedSong(
-                songId: song.id,
-                title: song.title,
-                artist: song.artist,
-                album: song.album,
-                coverArt: song.coverArt,
-                filePath: filename,
-                downloadedAt: Date(),
-                fileSize: fileSize,
-                downloadedBitRate: quality.downloadedBitRate
-            )
-
-            // Apply any pending progress updates before removing
-            if let pendingProgress = pendingProgressUpdates[song.id] {
-                activeDownloads[song.id] = pendingProgress
-                pendingProgressUpdates.removeValue(forKey: song.id)
-            }
-
-            // Add completed bytes and count to session totals
-            sessionBytesDownloaded += fileSize
-            sessionCompletedCount += 1
-
-            downloadedSongs[song.id] = downloadedSong
-            activeDownloads.removeValue(forKey: song.id)
-            failedDownloads.removeValue(forKey: song.id)
-            downloadBytesReceived.removeValue(forKey: song.id)
-            downloadTotalBytes.removeValue(forKey: song.id)
-            downloadTasks.removeValue(forKey: song.id)
-            taskToSongId.removeValue(forKey: downloadTask)
-            // Keep songMetadata for offline mode - don't remove it!
-            // songMetadata.removeValue(forKey: song.id)
-            saveMetadata()
-            saveSongMetadata()
-            Task {
-                await StoredAlbumArtworkCache.persistIfEnabled(coverArtId: song.coverArt)
-            }
-
-            let timestamp = Date.now.formatted(.iso8601)
-            print("✅ [\(timestamp)] Downloaded: \(song.title) (\(formatBytes(fileSize)))")
-            print("📊 [\(timestamp)] Active downloads: \(activeDownloads.count), Queue: \(downloadQueue.count)")
-
-            // Reset session counters if all downloads are done
-            if activeDownloads.isEmpty && downloadQueue.isEmpty {
-                print("🏁 [\(timestamp)] All downloads complete - resetting session counters")
-                sessionBytesDownloaded = 0
-                sessionBytesTotal = 0
-                sessionCompletedCount = 0
-                sessionTotalCount = 0
-                clearIncompleteDownloads()
-            } else {
-                saveIncompleteDownloads()
-            }
-
-            // Process next item in queue
-            processQueue()
-        } catch {
-            print("❌ Failed to save downloaded file: \(error)")
-            failedDownloads[song.id] = FailedDownload(song: song, errorDescription: error.localizedDescription)
-            activeDownloads.removeValue(forKey: song.id)
-            downloadBytesReceived.removeValue(forKey: song.id)
-            downloadTotalBytes.removeValue(forKey: song.id)
-            downloadTasks.removeValue(forKey: song.id)
-            taskToSongId.removeValue(forKey: downloadTask)
-            saveIncompleteDownloads()
-
-            // Process next item in queue even on error
-            processQueue()
+        // Apply any pending progress updates before removing
+        if let pendingProgress = pendingProgressUpdates[song.id] {
+            activeDownloads[song.id] = pendingProgress
+            pendingProgressUpdates.removeValue(forKey: song.id)
         }
+
+        // Add completed bytes and count to session totals
+        sessionBytesDownloaded += movedFile.fileSize
+        sessionCompletedCount += 1
+
+        downloadedSongs[song.id] = downloadedSong
+        activeDownloads.removeValue(forKey: song.id)
+        failedDownloads.removeValue(forKey: song.id)
+        downloadBytesReceived.removeValue(forKey: song.id)
+        downloadTotalBytes.removeValue(forKey: song.id)
+        downloadTasks.removeValue(forKey: song.id)
+        taskToSongId.removeValue(forKey: downloadTask)
+        // Keep songMetadata for offline mode - don't remove it!
+        // songMetadata.removeValue(forKey: song.id)
+        saveMetadata()
+        saveSongMetadata()
+        Task {
+            await StoredAlbumArtworkCache.persistIfEnabled(coverArtId: song.coverArt)
+        }
+
+        let timestamp = Date.now.formatted(.iso8601)
+        print("✅ [\(timestamp)] Downloaded: \(song.title) (\(formatBytes(movedFile.fileSize)))")
+        print("📊 [\(timestamp)] Active downloads: \(activeDownloads.count), Queue: \(downloadQueue.count)")
+
+        // Reset session counters if all downloads are done
+        if activeDownloads.isEmpty && downloadQueue.isEmpty {
+            print("🏁 [\(timestamp)] All downloads complete - resetting session counters")
+            sessionBytesDownloaded = 0
+            sessionBytesTotal = 0
+            sessionCompletedCount = 0
+            sessionTotalCount = 0
+            clearIncompleteDownloads()
+        } else {
+            saveIncompleteDownloads()
+        }
+
+        // Process next item in queue
+        processQueue()
+    }
+
+    private func handleDownloadFinishedMoveFailed(downloadTask: URLSessionDownloadTask, error: Error) {
+        guard let songId = songId(for: downloadTask),
+              let song = songMetadata[songId] else {
+            print("❌ Failed to save downloaded file, and no song info was available: \(error)")
+            return
+        }
+
+        print("❌ Failed to save downloaded file: \(error)")
+        failedDownloads[song.id] = FailedDownload(song: song, errorDescription: error.localizedDescription)
+        activeDownloads.removeValue(forKey: song.id)
+        downloadBytesReceived.removeValue(forKey: song.id)
+        downloadTotalBytes.removeValue(forKey: song.id)
+        downloadTasks.removeValue(forKey: song.id)
+        taskToSongId.removeValue(forKey: downloadTask)
+        saveIncompleteDownloads()
+
+        // Process next item in queue even on error
+        processQueue()
     }
 
     nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
@@ -1476,6 +1584,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
             downloadTotalBytes.removeValue(forKey: songId)
             downloadTasks.removeValue(forKey: songId)
             taskToSongId.removeValue(forKey: downloadTask)
+            _ = Self.completionContextStore.removeContext(for: downloadTask.taskIdentifier)
 
             // Only remove metadata if it's not a cancellation error
             // For cancellations (pause/cancel), we keep metadata so retry works
@@ -1611,6 +1720,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
             downloadTotalBytes.removeValue(forKey: songId)
             downloadTasks.removeValue(forKey: songId)
             taskToSongId.removeValue(forKey: task)
+            _ = Self.completionContextStore.removeContext(for: task.taskIdentifier)
             songMetadata.removeValue(forKey: songId)
 
             // Decrement session total since we're cancelling
@@ -1660,6 +1770,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
             downloadBytesReceived.removeValue(forKey: songId)
             downloadTasks.removeValue(forKey: songId)
             taskToSongId.removeValue(forKey: task)
+            _ = Self.completionContextStore.removeContext(for: task.taskIdentifier)
         }
 
         // Re-add to queue
@@ -1769,6 +1880,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
         failedDownloads.removeAll()
         downloadTasks.removeAll()
         taskToSongId.removeAll()
+        Self.completionContextStore.removeAll()
         downloadBytesReceived.removeAll()
         downloadTotalBytes.removeAll()
         pendingProgressUpdates.removeAll()

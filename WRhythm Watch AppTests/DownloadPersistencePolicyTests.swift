@@ -166,6 +166,54 @@ struct DownloadPersistencePolicyTests {
         #expect(song.title == "Downloaded Track")
     }
 
+    @Test func completedFilesOnDiskBecomeVisibleDownloadsEvenWhenDownloadMetadataIsMissing() {
+        let song = makeSong(id: "disk-only-song", title: "Disk Only Track")
+        let modifiedAt = Date(timeIntervalSince1970: 1_790_000_000)
+
+        let reconciled = DownloadedFileReconciliationPolicy.reconciledDownloads(
+            existingDownloads: [:],
+            songMetadata: [song.id: song],
+            files: [
+                DownloadedFileCandidate(
+                    fileName: "disk-only-song.mp3",
+                    fileSize: 55_000,
+                    modifiedAt: modifiedAt
+                )
+            ],
+            now: Date(timeIntervalSince1970: 1_790_000_100)
+        )
+
+        let downloaded = reconciled[song.id]
+        #expect(downloaded?.title == "Disk Only Track")
+        #expect(downloaded?.filePath == "disk-only-song.mp3")
+        #expect(downloaded?.fileSize == 55_000)
+        #expect(downloaded?.downloadedAt == modifiedAt)
+        #expect(DownloadsPresentationPolicy.showsEmptyState(visibleDownloadCount: reconciled.count) == false)
+    }
+
+    @Test func completedDownloadTempFileIsMovedBeforeDelegateLocationExpires() throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("wrhythm-download-move-\(UUID().uuidString)", isDirectory: true)
+        let sourceDirectory = tempDirectory.appendingPathComponent("source", isDirectory: true)
+        let destinationDirectory = tempDirectory.appendingPathComponent("Downloads", isDirectory: true)
+        try FileManager.default.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDirectory) }
+
+        let sourceURL = sourceDirectory.appendingPathComponent("CFNetworkDownload_test.tmp")
+        let destinationURL = destinationDirectory.appendingPathComponent("song.flac")
+        let payload = Data("downloaded audio bytes".utf8)
+        try payload.write(to: sourceURL)
+
+        let fileSize = try CompletedDownloadFileMovePolicy.moveTemporaryDownload(
+            from: sourceURL,
+            to: destinationURL
+        )
+
+        #expect(fileSize == Int64(payload.count))
+        #expect(FileManager.default.fileExists(atPath: destinationURL.path))
+        #expect(FileManager.default.fileExists(atPath: sourceURL.path) == false)
+    }
+
     private func makeSong(id: String, title: String) -> Song {
         Song(
             id: id,

@@ -143,6 +143,76 @@ struct DownloadsPresentationPolicy: Sendable {
     }
 }
 
+struct DownloadedFileCandidate: Equatable, Sendable {
+    let fileName: String
+    let fileSize: Int64
+    let modifiedAt: Date?
+}
+
+struct DownloadedFileReconciliationPolicy: Sendable {
+    static func reconciledDownloads(
+        existingDownloads: [String: DownloadedSong],
+        songMetadata: [String: Song],
+        files: [DownloadedFileCandidate],
+        now: Date
+    ) -> [String: DownloadedSong] {
+        var reconciled = existingDownloads
+
+        for file in files {
+            guard let songId = songId(fromDownloadedFileName: file.fileName),
+                  reconciled[songId] == nil,
+                  let song = songMetadata[songId]
+            else {
+                continue
+            }
+
+            reconciled[songId] = DownloadedSong(
+                songId: song.id,
+                title: song.title,
+                artist: song.artist,
+                album: song.album,
+                coverArt: song.coverArt,
+                filePath: file.fileName,
+                downloadedAt: file.modifiedAt ?? now,
+                fileSize: file.fileSize,
+                downloadedBitRate: AudioQuality.original.downloadedBitRate
+            )
+        }
+
+        return reconciled
+    }
+
+    static func songId(fromDownloadedFileName fileName: String) -> String? {
+        let trimmedName = fileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else { return nil }
+
+        let url = URL(fileURLWithPath: trimmedName)
+        let songId = url.deletingPathExtension().lastPathComponent
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return songId.isEmpty ? nil : songId
+    }
+}
+
+nonisolated struct CompletedDownloadFileMovePolicy: Sendable {
+    static func moveTemporaryDownload(
+        from sourceURL: URL,
+        to destinationURL: URL,
+        fileManager: FileManager = .default
+    ) throws -> Int64 {
+        let destinationDirectory = destinationURL.deletingLastPathComponent()
+        try fileManager.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
+
+        if fileManager.fileExists(atPath: destinationURL.path) {
+            try fileManager.removeItem(at: destinationURL)
+        }
+
+        try fileManager.moveItem(at: sourceURL, to: destinationURL)
+
+        let attributes = try fileManager.attributesOfItem(atPath: destinationURL.path)
+        return attributes[.size] as? Int64 ?? 0
+    }
+}
+
 struct DownloadUserNotice: Identifiable, Equatable, Sendable {
     let id: UUID
     let message: String
