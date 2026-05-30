@@ -16,13 +16,16 @@ struct DownloadsView: View {
 
     var body: some View {
         WRhythmScreen {
-            let sortedSongs = Array(downloadManager.downloadedSongs.values.sorted(by: { $0.downloadedAt > $1.downloadedAt }))
+            let sortedSongs = DownloadsPresentationPolicy.sortedVisibleDownloads(
+                Array(downloadManager.downloadedSongs.values),
+                fileExists: downloadManager.hasDownloadedFile
+            )
 
             if downloadManager.getTotalPendingDownloads() > 0 || !downloadManager.failedDownloads.isEmpty || downloadManager.isPaused {
                 downloadStatusCard
             }
 
-            if sortedSongs.isEmpty {
+            if DownloadsPresentationPolicy.showsEmptyState(visibleDownloadCount: sortedSongs.count) {
 #if os(iOS)
                 PhoneDownloadsEmptyView(message: emptyDownloadsMessage)
 #else
@@ -256,7 +259,11 @@ struct DownloadsView: View {
 
     private var navigationTitleText: String {
 #if os(iOS)
-        downloadManager.downloadedSongs.isEmpty ? "" : "Downloads"
+        let visibleCount = DownloadsPresentationPolicy.sortedVisibleDownloads(
+            Array(downloadManager.downloadedSongs.values),
+            fileExists: downloadManager.hasDownloadedFile
+        ).count
+        return DownloadsPresentationPolicy.showsEmptyState(visibleDownloadCount: visibleCount) ? "" : "Downloads"
 #else
         "Downloads"
 #endif

@@ -101,6 +101,45 @@ struct DownloadPersistencePolicyTests {
         #expect(DownloadNoticePresentationPolicy.message(for: .playlist(name: "Playlist", queuedCount: 3)) == "Downloading Playlist: 3 tracks. See Downloads.")
     }
 
+    @Test func completedBackgroundTaskCanResolveSongIdFromTaskDescriptionWhenObjectMappingIsGone() {
+        let task = NSObject()
+
+        let resolved = DownloadTaskIdentityPolicy.songId(
+            for: task,
+            mappedSongId: nil,
+            taskDescription: "song-from-background-session"
+        )
+
+        #expect(resolved == "song-from-background-session")
+    }
+
+    @Test func completedBackgroundTaskPrefersLiveMappingWhenPresent() {
+        let task = NSObject()
+
+        let resolved = DownloadTaskIdentityPolicy.songId(
+            for: task,
+            mappedSongId: "live-mapping",
+            taskDescription: "stale-description"
+        )
+
+        #expect(resolved == "live-mapping")
+    }
+
+    @Test func downloadsViewShowsCompletedDownloadsOnlyWhenTheirFilesStillExist() {
+        let oldDownload = makeDownloadedSong(id: "old", title: "Old", downloadedAt: Date(timeIntervalSince1970: 10))
+        let newestDownload = makeDownloadedSong(id: "new", title: "New", downloadedAt: Date(timeIntervalSince1970: 20))
+        let missingFileDownload = makeDownloadedSong(id: "missing", title: "Missing", downloadedAt: Date(timeIntervalSince1970: 30))
+
+        let visible = DownloadsPresentationPolicy.sortedVisibleDownloads(
+            [oldDownload, missingFileDownload, newestDownload],
+            fileExists: { $0.songId != "missing" }
+        )
+
+        #expect(visible.map(\.songId) == ["new", "old"])
+        #expect(DownloadsPresentationPolicy.showsEmptyState(visibleDownloadCount: visible.count) == false)
+        #expect(DownloadsPresentationPolicy.showsEmptyState(visibleDownloadCount: 0))
+    }
+
     private func makeSong(id: String, title: String) -> Song {
         Song(
             id: id,
@@ -119,6 +158,20 @@ struct DownloadPersistencePolicyTests {
             duration: 180,
             bitRate: 192,
             path: nil
+        )
+    }
+
+    private func makeDownloadedSong(id: String, title: String, downloadedAt: Date) -> DownloadedSong {
+        DownloadedSong(
+            songId: id,
+            title: title,
+            artist: "Artist",
+            album: "Album",
+            coverArt: "cover",
+            filePath: "\(id).mp3",
+            downloadedAt: downloadedAt,
+            fileSize: 123,
+            downloadedBitRate: 192
         )
     }
 }

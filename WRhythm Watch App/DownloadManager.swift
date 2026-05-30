@@ -1001,6 +1001,10 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
         return fileManager.fileExists(atPath: downloadsDirectory.appendingPathComponent(downloaded.filePath).path)
     }
 
+    func hasDownloadedFile(_ downloadedSong: DownloadedSong) -> Bool {
+        fileManager.fileExists(atPath: downloadsDirectory.appendingPathComponent(downloadedSong.filePath).path)
+    }
+
     func isDownloading(_ songId: String) -> Bool {
         // Check if actively downloading or queued
         return activeDownloads[songId] != nil || downloadQueue.contains(where: { $0.id == songId })
@@ -1208,6 +1212,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
             print("📥 [\(timestamp)] Starting download (\(activeDownloads.count + 1)/\(limitText)): \(song.title) @ \(audioQuality.shortDescription)")
 
             let task = downloadSession.downloadTask(with: streamURL)
+            task.taskDescription = song.id
 
             activeDownloads[song.id] = 0
             downloadTasks[song.id] = task
@@ -1236,7 +1241,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
     }
 
     private func handleDownloadProgress(downloadTask: URLSessionDownloadTask, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
-        guard let songId = taskToSongId[downloadTask],
+        guard let songId = songId(for: downloadTask),
               let song = songMetadata[songId] else {
             return
         }
@@ -1316,7 +1321,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
     }
 
     private func handleDownloadFinished(downloadTask: URLSessionDownloadTask, location: URL) {
-        guard let songId = taskToSongId[downloadTask],
+        guard let songId = songId(for: downloadTask),
               let song = songMetadata[songId] else {
             print("❌ No song info for completed download")
             return
@@ -1418,7 +1423,7 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
 
     private func handleDownloadCompleted(task: URLSessionTask, error: Error?) {
         guard let downloadTask = task as? URLSessionDownloadTask,
-              let songId = taskToSongId[downloadTask] else {
+              let songId = songId(for: downloadTask) else {
             if let error = error {
                 let timestamp = Date.now.formatted(.iso8601)
                 print("❌ [\(timestamp)] Download task completed with error but no song mapping")
@@ -1467,6 +1472,14 @@ final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDeleg
                 saveIncompleteDownloads()
             }
         }
+    }
+
+    private func songId(for downloadTask: URLSessionDownloadTask) -> String? {
+        DownloadTaskIdentityPolicy.songId(
+            for: downloadTask,
+            mappedSongId: taskToSongId[downloadTask],
+            taskDescription: downloadTask.taskDescription
+        )
     }
 
     nonisolated func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {

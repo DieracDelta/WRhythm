@@ -104,6 +104,45 @@ struct DownloadNoticePresentationPolicy: Sendable {
     }
 }
 
+struct DownloadTaskIdentityPolicy: Sendable {
+    static func songId<Task: AnyObject>(
+        for task: Task,
+        mappedSongId: String?,
+        taskDescription: String?
+    ) -> String? {
+        if let mappedSongId {
+            return mappedSongId
+        }
+
+        guard let taskDescription,
+              !taskDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            return nil
+        }
+
+        return taskDescription
+    }
+}
+
+struct DownloadsPresentationPolicy: Sendable {
+    @MainActor
+    static func sortedVisibleDownloads(
+        _ downloads: [DownloadedSong],
+        fileExists: @MainActor (DownloadedSong) -> Bool
+    ) -> [DownloadedSong] {
+        var visibleDownloads: [DownloadedSong] = []
+        for download in downloads where fileExists(download) {
+            visibleDownloads.append(download)
+        }
+
+        return visibleDownloads.sorted { $0.downloadedAt > $1.downloadedAt }
+    }
+
+    static func showsEmptyState(visibleDownloadCount: Int) -> Bool {
+        visibleDownloadCount == 0
+    }
+}
+
 struct DownloadUserNotice: Identifiable, Equatable, Sendable {
     let id: UUID
     let message: String
