@@ -91,6 +91,10 @@ struct SongRenderWindowPolicy: Sendable {
         resetToken(scope: "artist:\(artistId):albums", sortIdentifier: mode)
     }
 
+    static func playlistGenQueueResetToken(songIds: [String]) -> String {
+        resetToken(scope: "playlist-gen:queue", sortIdentifier: songIds.joined(separator: ","))
+    }
+
     static func anchorAfterTopSpacerAppears(visibleRange: Range<Int>, storedLimit: Int) -> Int {
         guard let limit = effectiveLimit(storedLimit), visibleRange.lowerBound > 0 else { return 0 }
         return max(0, visibleRange.lowerBound - max(1, limit / 2))

@@ -178,6 +178,15 @@ struct SongRenderWindowPolicyTests {
         #expect(SongRenderWindowPolicy.artistAlbumResetToken(artistId: "artist-2", mode: "online") != baseline)
     }
 
+    @Test func playlistGenQueueResetTokenChangesWhenQueueIdentityOrOrderChanges() {
+        let baseline = SongRenderWindowPolicy.playlistGenQueueResetToken(songIds: ["song-1", "song-2", "song-3"])
+
+        #expect(SongRenderWindowPolicy.playlistGenQueueResetToken(songIds: ["song-1", "song-2", "song-3"]) == baseline)
+        #expect(SongRenderWindowPolicy.playlistGenQueueResetToken(songIds: ["song-1", "song-3", "song-2"]) != baseline)
+        #expect(SongRenderWindowPolicy.playlistGenQueueResetToken(songIds: ["song-1", "song-2"]) != baseline)
+        #expect(SongRenderWindowPolicy.playlistGenQueueResetToken(songIds: ["song-1", "song-2", "song-4"]) != baseline)
+    }
+
     @Test func pagesToLoadOnlyRequestsMissingVisiblePages() {
         let pages = SongRenderWindowPolicy.pagesToLoad(
             totalCount: 1_000,

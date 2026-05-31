@@ -48,7 +48,13 @@ struct RadioPlaylistsView: View {
                         Section("Current Playlist Gen") {
                             CurrentPlaylistGenSummary()
 
-                            ForEach(Array(player.playlistGenQueue.enumerated()), id: \.element.id) { index, song in
+                            SlidingRenderWindowForEach(
+                                player.playlistGenQueue,
+                                estimatedRowHeight: 64,
+                                resetToken: SongRenderWindowPolicy.playlistGenQueueResetToken(
+                                    songIds: player.playlistGenQueue.map(\.id)
+                                )
+                            ) { index, song in
                                 TrackRowView(song: song, player: player, downloadManager: downloadManager, offlineMode: false) {
                                     player.playQueue(player.playlistGenQueue, startingAt: index, clearGeneratedPlaylist: false)
                                 }
