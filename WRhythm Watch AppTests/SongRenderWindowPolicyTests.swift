@@ -232,7 +232,89 @@ struct SongRenderWindowPolicyTests {
         #expect(SongRenderWindowPolicy.prebufferDownloadStatusesResetToken(statusIds: ["song-1", "song-2"]) != baseline)
         #expect(
             SongRenderWindowPolicy.prebufferDownloadStatusesResetToken(statusIds: ["song-1", "song-2", "song-4"])
-                != baseline
+            != baseline
+        )
+    }
+
+    @Test func downloadedAlbumSectionsResetTokenChangesWhenAlbumIdentityOrderOrQueryChanges() {
+        let baseline = SongRenderWindowPolicy.downloadedAlbumSectionsResetToken(
+            albumSectionIds: ["album-1", "album-2", "album-3"],
+            query: "darren"
+        )
+
+        #expect(
+            SongRenderWindowPolicy.downloadedAlbumSectionsResetToken(
+                albumSectionIds: ["album-1", "album-2", "album-3"],
+                query: "darren"
+            ) == baseline
+        )
+        #expect(
+            SongRenderWindowPolicy.downloadedAlbumSectionsResetToken(
+                albumSectionIds: ["album-1", "album-2", "album-3"],
+                query: " darren "
+            ) == baseline
+        )
+        #expect(
+            SongRenderWindowPolicy.downloadedAlbumSectionsResetToken(
+                albumSectionIds: ["album-1", "album-3", "album-2"],
+                query: "darren"
+            ) != baseline
+        )
+        #expect(
+            SongRenderWindowPolicy.downloadedAlbumSectionsResetToken(
+                albumSectionIds: ["album-1", "album-2"],
+                query: "darren"
+            ) != baseline
+        )
+        #expect(
+            SongRenderWindowPolicy.downloadedAlbumSectionsResetToken(
+                albumSectionIds: ["album-1", "album-2", "album-4"],
+                query: "darren"
+            ) != baseline
+        )
+        #expect(
+            SongRenderWindowPolicy.downloadedAlbumSectionsResetToken(
+                albumSectionIds: ["album-1", "album-2", "album-3"],
+                query: "blondie"
+            ) != baseline
+        )
+    }
+
+    @Test func downloadedAlbumSongsResetTokenChangesWhenAlbumOrSongIdentityChanges() {
+        let baseline = SongRenderWindowPolicy.downloadedAlbumSongsResetToken(
+            albumSectionId: "album-1",
+            songIds: ["song-1", "song-2", "song-3"]
+        )
+
+        #expect(
+            SongRenderWindowPolicy.downloadedAlbumSongsResetToken(
+                albumSectionId: "album-1",
+                songIds: ["song-1", "song-2", "song-3"]
+            ) == baseline
+        )
+        #expect(
+            SongRenderWindowPolicy.downloadedAlbumSongsResetToken(
+                albumSectionId: "album-2",
+                songIds: ["song-1", "song-2", "song-3"]
+            ) != baseline
+        )
+        #expect(
+            SongRenderWindowPolicy.downloadedAlbumSongsResetToken(
+                albumSectionId: "album-1",
+                songIds: ["song-1", "song-3", "song-2"]
+            ) != baseline
+        )
+        #expect(
+            SongRenderWindowPolicy.downloadedAlbumSongsResetToken(
+                albumSectionId: "album-1",
+                songIds: ["song-1", "song-2"]
+            ) != baseline
+        )
+        #expect(
+            SongRenderWindowPolicy.downloadedAlbumSongsResetToken(
+                albumSectionId: "album-1",
+                songIds: ["song-1", "song-2", "song-4"]
+            ) != baseline
         )
     }
 

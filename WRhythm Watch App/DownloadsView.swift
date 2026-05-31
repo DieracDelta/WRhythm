@@ -58,7 +58,15 @@ struct DownloadsView: View {
                         message: nil
                     )
                 } else {
-                    SlidingRenderWindowForEach(albumSections, estimatedRowHeight: 82, spacing: WRhythmSpacing.xs) { _, section in
+                    SlidingRenderWindowForEach(
+                        albumSections,
+                        estimatedRowHeight: 82,
+                        spacing: WRhythmSpacing.xs,
+                        resetToken: SongRenderWindowPolicy.downloadedAlbumSectionsResetToken(
+                            albumSectionIds: albumSections.map(\.id),
+                            query: searchText
+                        )
+                    ) { _, section in
                         downloadedAlbumRow(section)
                     }
                 }
@@ -393,7 +401,14 @@ private struct DownloadedAlbumTracksView: View {
 
                     Divider()
 
-                    SlidingRenderWindowForEach(section.songs, estimatedRowHeight: 64) { _, downloadedSong in
+                    SlidingRenderWindowForEach(
+                        section.songs,
+                        estimatedRowHeight: 64,
+                        resetToken: SongRenderWindowPolicy.downloadedAlbumSongsResetToken(
+                            albumSectionId: section.id,
+                            songIds: section.songs.map(\.songId)
+                        )
+                    ) { _, downloadedSong in
                         HStack(spacing: WRhythmSpacing.xs) {
                             Button {
                                 player.playSong(song(from: downloadedSong))
