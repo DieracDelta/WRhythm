@@ -187,6 +187,15 @@ struct SongRenderWindowPolicyTests {
         #expect(SongRenderWindowPolicy.playlistGenQueueResetToken(songIds: ["song-1", "song-2", "song-4"]) != baseline)
     }
 
+    @Test func sidebarQueueResetTokenChangesWhenQueueIdentityOrOrderChanges() {
+        let baseline = SongRenderWindowPolicy.sidebarQueueResetToken(songIds: ["song-1", "song-2", "song-3"])
+
+        #expect(SongRenderWindowPolicy.sidebarQueueResetToken(songIds: ["song-1", "song-2", "song-3"]) == baseline)
+        #expect(SongRenderWindowPolicy.sidebarQueueResetToken(songIds: ["song-1", "song-3", "song-2"]) != baseline)
+        #expect(SongRenderWindowPolicy.sidebarQueueResetToken(songIds: ["song-1", "song-2"]) != baseline)
+        #expect(SongRenderWindowPolicy.sidebarQueueResetToken(songIds: ["song-1", "song-2", "song-4"]) != baseline)
+    }
+
     @Test func pagesToLoadOnlyRequestsMissingVisiblePages() {
         let pages = SongRenderWindowPolicy.pagesToLoad(
             totalCount: 1_000,

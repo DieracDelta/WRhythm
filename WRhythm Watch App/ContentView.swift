@@ -346,7 +346,11 @@ struct MacSidebar: View {
                     Text("No queued songs")
                         .foregroundColor(.secondary)
                 } else {
-                    ForEach(queueItems(displayedQueue)) { item in
+                    SlidingRenderWindowForEach(
+                        queueItems(displayedQueue),
+                        estimatedRowHeight: 50,
+                        resetToken: SongRenderWindowPolicy.sidebarQueueResetToken(songIds: displayedQueue.map(\.id))
+                    ) { _, item in
                         Button(action: {
                             selection = .nowPlaying
                             if deviceSyncManager.sharedSession != nil {
@@ -385,7 +389,11 @@ struct MacSidebar: View {
                         Text("No queued songs")
                             .foregroundColor(.secondary)
                     } else {
-                        ForEach(queueItems(remoteQueue)) { item in
+                        SlidingRenderWindowForEach(
+                            queueItems(remoteQueue),
+                            estimatedRowHeight: 50,
+                            resetToken: SongRenderWindowPolicy.sidebarQueueResetToken(songIds: remoteQueue.map(\.id))
+                        ) { _, item in
                             Button(action: {
                                 selection = .nowPlaying
                                 deviceSyncManager.playRemoteQueueItem(remote, at: item.index)
