@@ -137,7 +137,13 @@ private struct BufferedTracksListContent: View {
             WRhythmCard {
                 VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
                     WRhythmSectionHeader(title: "Downloading")
-                    SlidingRenderWindowForEach(downloadStatuses, estimatedRowHeight: 58) { _, status in
+                    SlidingRenderWindowForEach(
+                        downloadStatuses,
+                        estimatedRowHeight: 58,
+                        resetToken: SongRenderWindowPolicy.prebufferDownloadStatusesResetToken(
+                            statusIds: downloadStatuses.map(\.id)
+                        )
+                    ) { _, status in
                         WRhythmMediaRow(
                             title: status.song.title,
                             subtitle: status.song.artist,
@@ -190,7 +196,11 @@ private struct BufferedTracksListContent: View {
                         .disabled(player.isKeepingAvailableTracks)
                     }
 
-                    SlidingRenderWindowForEach(songs, estimatedRowHeight: 58) { index, song in
+                    SlidingRenderWindowForEach(
+                        songs,
+                        estimatedRowHeight: 58,
+                        resetToken: SongRenderWindowPolicy.availableTracksResetToken(songIds: songs.map(\.id))
+                    ) { index, song in
                         HStack(spacing: WRhythmSpacing.xs) {
                             Button {
                                 player.playAvailableTracksQueue(readySongs, startingAt: availableIndex(for: song, fallback: index))

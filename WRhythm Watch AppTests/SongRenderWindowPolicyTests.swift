@@ -207,6 +207,35 @@ struct SongRenderWindowPolicyTests {
         )
     }
 
+    @Test func availableTracksResetTokenChangesWhenSongIdentityOrOrderChanges() {
+        let baseline = SongRenderWindowPolicy.availableTracksResetToken(songIds: ["song-1", "song-2", "song-3"])
+
+        #expect(SongRenderWindowPolicy.availableTracksResetToken(songIds: ["song-1", "song-2", "song-3"]) == baseline)
+        #expect(SongRenderWindowPolicy.availableTracksResetToken(songIds: ["song-1", "song-3", "song-2"]) != baseline)
+        #expect(SongRenderWindowPolicy.availableTracksResetToken(songIds: ["song-1", "song-2"]) != baseline)
+        #expect(SongRenderWindowPolicy.availableTracksResetToken(songIds: ["song-1", "song-2", "song-4"]) != baseline)
+    }
+
+    @Test func prebufferDownloadStatusesResetTokenChangesWhenStatusIdentityOrOrderChanges() {
+        let baseline = SongRenderWindowPolicy.prebufferDownloadStatusesResetToken(
+            statusIds: ["song-1", "song-2", "song-3"]
+        )
+
+        #expect(
+            SongRenderWindowPolicy.prebufferDownloadStatusesResetToken(statusIds: ["song-1", "song-2", "song-3"])
+                == baseline
+        )
+        #expect(
+            SongRenderWindowPolicy.prebufferDownloadStatusesResetToken(statusIds: ["song-1", "song-3", "song-2"])
+                != baseline
+        )
+        #expect(SongRenderWindowPolicy.prebufferDownloadStatusesResetToken(statusIds: ["song-1", "song-2"]) != baseline)
+        #expect(
+            SongRenderWindowPolicy.prebufferDownloadStatusesResetToken(statusIds: ["song-1", "song-2", "song-4"])
+                != baseline
+        )
+    }
+
     @Test func sidebarQueueResetTokenChangesWhenQueueIdentityOrOrderChanges() {
         let baseline = SongRenderWindowPolicy.sidebarQueueResetToken(songIds: ["song-1", "song-2", "song-3"])
 
