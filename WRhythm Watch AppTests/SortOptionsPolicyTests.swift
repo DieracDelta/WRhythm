@@ -47,6 +47,12 @@ struct SortOptionsPolicyTests {
         #expect(AlbumSortOption.mostTracks.isServerOrderedAlbumList == false)
     }
 
+    @Test func albumSortMenuOnlyShowsGloballyCorrectPagedSorts() {
+        #expect(Array(AlbumSortOption.allCases) == [.titleAscending, .artistAscending, .newest])
+        #expect(AlbumSortOption.allCases.allSatisfy { $0.isServerOrderedAlbumList })
+        #expect(AlbumSortOption.allCases.allSatisfy { !$0.requiresCompleteAlbumList })
+    }
+
     @Test func artistSortsByNameAndAlbumCount() {
         let artists = [
             Artist(id: "a", name: "Zed", albumCount: 2, coverArt: nil),

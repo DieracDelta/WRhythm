@@ -171,69 +171,6 @@ final class LibraryDataManager: ObservableObject {
         fetchMoreAlbums()
     }
 
-    func fetchAllAlbums(forceRefresh: Bool = false, type: String = "newest") {
-        if isLoadingAlbums {
-            guard forceRefresh || albumListType != type else { return }
-            albumsFetchTask?.cancel()
-            isLoadingAlbums = false
-        }
-        if !albums.isEmpty && !hasMoreAlbums && !forceRefresh && albumListType == type { return }
-
-        albums = []
-        albumOffset = 0
-        hasMoreAlbums = true
-        hasEarlierAlbums = false
-        albumListType = type
-        albumsErrorMessage = ""
-        albumsFetchTask?.cancel()
-        albumsFetchGeneration += 1
-        resetAlbumPageCache()
-        isLoadingAlbums = true
-
-        let generation = albumsFetchGeneration
-        albumsFetchTask = Task { @MainActor in
-            do {
-                let batchSize = 500
-                var offset = 0
-                var allAlbums: [AlbumSummary] = []
-
-                while true {
-                    let fetchedAlbums = try await NavidromeAPI.shared.getAlbumList(
-                        type: type,
-                        size: batchSize,
-                        offset: offset
-                    )
-                    guard AsyncResultOwnershipPolicy.shouldApply(
-                        capturedGeneration: generation,
-                        currentGeneration: self.albumsFetchGeneration,
-                        isCancelled: Task.isCancelled
-                    ) else { return }
-
-                    allAlbums.append(contentsOf: fetchedAlbums)
-                    offset += fetchedAlbums.count
-
-                    if fetchedAlbums.count < batchSize {
-                        break
-                    }
-                }
-
-                self.albums = allAlbums
-                self.albumOffset = allAlbums.count
-                self.hasMoreAlbums = false
-                self.hasEarlierAlbums = false
-                self.isLoadingAlbums = false
-            } catch {
-                guard AsyncResultOwnershipPolicy.shouldApply(
-                    capturedGeneration: generation,
-                    currentGeneration: self.albumsFetchGeneration,
-                    isCancelled: Task.isCancelled
-                ) else { return }
-                self.albumsErrorMessage = error.localizedDescription
-                self.isLoadingAlbums = false
-            }
-        }
-    }
-    
     func fetchMoreAlbums() {
         guard !isLoadingAlbums && hasMoreAlbums else { return }
         

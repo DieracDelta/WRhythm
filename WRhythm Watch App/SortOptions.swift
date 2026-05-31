@@ -54,6 +54,10 @@ enum AlbumSortOption: String, WRhythmSortOption {
     case newest
     case mostTracks
 
+    static var allCases: [AlbumSortOption] {
+        [.titleAscending, .artistAscending, .newest]
+    }
+
     var title: String {
         switch self {
         case .titleAscending: "Title A-Z"

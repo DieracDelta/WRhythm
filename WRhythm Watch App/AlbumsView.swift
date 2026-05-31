@@ -266,11 +266,7 @@ struct AlbumsView: View {
     }
 
     private func loadAlbums(forceRefresh: Bool) {
-        if sortOption.requiresCompleteAlbumList {
-            libraryDataManager.fetchAllAlbums(forceRefresh: forceRefresh, type: sortOption.serverAlbumListType)
-        } else {
-            libraryDataManager.fetchInitialAlbums(forceRefresh: forceRefresh, type: sortOption.serverAlbumListType)
-        }
+        libraryDataManager.fetchInitialAlbums(forceRefresh: forceRefresh, type: sortOption.serverAlbumListType)
     }
 
     private func shouldFetchEarlierAlbumPage(for album: AlbumSummary) -> Bool {
