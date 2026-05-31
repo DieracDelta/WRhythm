@@ -132,6 +132,15 @@ struct SongRenderWindowPolicyTests {
         #expect(SongRenderWindowPolicy.resetToken(scope: "artists", sortIdentifier: "title", query: "queen") != baseline)
     }
 
+    @Test func trackSearchResetTokenChangesWhenModeOrQueryChanges() {
+        let baseline = SongRenderWindowPolicy.trackSearchResetToken(mode: "online", query: "blondie")
+
+        #expect(SongRenderWindowPolicy.trackSearchResetToken(mode: "online", query: "blondie") == baseline)
+        #expect(SongRenderWindowPolicy.trackSearchResetToken(mode: "online", query: " blondie ") == baseline)
+        #expect(SongRenderWindowPolicy.trackSearchResetToken(mode: "offline", query: "blondie") != baseline)
+        #expect(SongRenderWindowPolicy.trackSearchResetToken(mode: "online", query: "abba") != baseline)
+    }
+
     @Test func pagesToLoadOnlyRequestsMissingVisiblePages() {
         let pages = SongRenderWindowPolicy.pagesToLoad(
             totalCount: 1_000,

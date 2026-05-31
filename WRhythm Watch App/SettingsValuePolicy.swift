@@ -79,6 +79,10 @@ struct SongRenderWindowPolicy: Sendable {
         return "\(scope)|\(sortIdentifier)|\(normalizedQuery)"
     }
 
+    static func trackSearchResetToken(mode: String, query: String) -> String {
+        resetToken(scope: "tracks:\(mode)", sortIdentifier: "title", query: query)
+    }
+
     static func anchorAfterTopSpacerAppears(visibleRange: Range<Int>, storedLimit: Int) -> Int {
         guard let limit = effectiveLimit(storedLimit), visibleRange.lowerBound > 0 else { return 0 }
         return max(0, visibleRange.lowerBound - max(1, limit / 2))

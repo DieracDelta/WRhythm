@@ -262,7 +262,11 @@ struct TracksView: View {
 
                         if !displayedSongs.isEmpty {
                             Section(header: Text("Songs")) {
-                                ForEach(displayedSongs) { song in
+                                SlidingRenderWindowForEach(
+                                    displayedSongs,
+                                    estimatedRowHeight: 64,
+                                    resetToken: SongRenderWindowPolicy.trackSearchResetToken(mode: "offline", query: searchText)
+                                ) { _, song in
                                     songRow(song: song)
                                 }
                             }
@@ -340,7 +344,11 @@ struct TracksView: View {
 
                     if !searchResults.isEmpty {
                         Section(header: Text("Songs")) {
-                            ForEach(searchResults) { song in
+                            SlidingRenderWindowForEach(
+                                searchResults,
+                                estimatedRowHeight: 64,
+                                resetToken: SongRenderWindowPolicy.trackSearchResetToken(mode: "online", query: searchText)
+                            ) { _, song in
                                 songRow(song: song)
                             }
                         }
