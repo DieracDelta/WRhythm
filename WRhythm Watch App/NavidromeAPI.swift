@@ -159,7 +159,17 @@ final class NavidromeAPI: ObservableObject {
     }
 
     private func applyCredentials(_ credentials: SyncedCredentials, notifySync: Bool = true) {
-        self.baseURL = normalizedBaseURL(credentials.baseURL)
+        let normalizedIncomingBaseURL = normalizedBaseURL(credentials.baseURL)
+        if AccountIdentityPolicy.shouldClearLocalData(
+            existingBaseURL: baseURL,
+            existingUsername: username,
+            incomingBaseURL: normalizedIncomingBaseURL,
+            incomingUsername: credentials.username
+        ) {
+            AccountLocalDataCleaner.clearAll(reason: .accountChanged)
+        }
+
+        self.baseURL = normalizedIncomingBaseURL
         self.username = credentials.username
         self.password = credentials.password
 
@@ -225,19 +235,15 @@ final class NavidromeAPI: ObservableObject {
     func logout() {
         print("🔓 Starting logout process...")
 
-        // 1. Stop any active audio playback
-        AudioPlayer.shared.stop()
-        print("🔓 Stopped audio playback")
+        // 1. Delete account-bound user data (playback, sync state, downloads, metadata, caches, etc.)
+        AccountLocalDataCleaner.clearAll(reason: .logout)
+        print("🔓 Deleted account-bound local data")
 
-        // 2. Delete all user data (downloads, metadata, etc.)
-        DownloadManager.shared.deleteAllUserData()
-        print("🔓 Deleted all user data")
-
-        // 3. Reset offline mode to false (user must log in to use app)
+        // 2. Reset offline mode to false (user must log in to use app)
         UserDefaults.standard.set(false, forKey: "offlineMode")
         print("🔓 Reset offline mode to false")
 
-        // 4. Clear credentials from UserDefaults
+        // 3. Clear credentials from UserDefaults
         UserDefaults.standard.removeObject(forKey: "navidrome_url")
         UserDefaults.standard.removeObject(forKey: "navidrome_username")
         UserDefaults.standard.removeObject(forKey: "navidrome_password")
@@ -247,7 +253,7 @@ final class NavidromeAPI: ObservableObject {
         UserDefaults.standard.set(clearedAt, forKey: Self.credentialClearedAtKey)
         print("🔓 Cleared credentials")
 
-        // 5. Clear API state
+        // 4. Clear API state
         self.baseURL = ""
         self.username = ""
         self.password = ""
@@ -255,6 +261,9 @@ final class NavidromeAPI: ObservableObject {
         self.credentialClearedAt = clearedAt
         self.credentialSyncAuthorizedAt = .distantPast
         self.isAuthenticated = false
+        self.transcodingSupported = nil
+        self.sonicSimilaritySupported = nil
+        self.audioMuseAlchemySupported = nil
         DeviceSyncManager.shared.disableCredentialSyncAfterLocalLogout()
         DeviceSyncManager.shared.credentialsDidChange()
 

@@ -76,10 +76,53 @@ final class LibraryDataManager: ObservableObject {
     private var playlistsFetchGeneration = 0
     private var albumsFetchGeneration = 0
     private var starredFetchGeneration = 0
+    private var cancellables = Set<AnyCancellable>()
     private var albumPageCache = PagedCollectionCache<AlbumSummary>(
         pageSize: LibraryDataManager.albumPageSize,
         maxLoadedPages: LibraryDataManager.albumMaxLoadedPages()
     )
+
+    init() {
+        NotificationCenter.default.publisher(for: .wrhythmAccountLocalDataDidReset)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.clearAccountBoundData()
+            }
+            .store(in: &cancellables)
+    }
+
+    func clearAccountBoundData() {
+        artistsFetchTask?.cancel()
+        playlistsFetchTask?.cancel()
+        albumsFetchTask?.cancel()
+        starredFetchTask?.cancel()
+
+        artistsFetchGeneration += 1
+        playlistsFetchGeneration += 1
+        albumsFetchGeneration += 1
+        starredFetchGeneration += 1
+
+        artists = []
+        playlists = []
+        albums = []
+        starred = nil
+
+        isLoadingArtists = false
+        isLoadingPlaylists = false
+        isLoadingAlbums = false
+        isLoadingStarred = false
+
+        artistsErrorMessage = ""
+        playlistsErrorMessage = ""
+        albumsErrorMessage = ""
+        starredErrorMessage = ""
+
+        albumOffset = 0
+        hasMoreAlbums = true
+        hasEarlierAlbums = false
+        albumListType = "newest"
+        resetAlbumPageCache()
+    }
     
     // MARK: - Artists Methods
     func fetchArtists(forceRefresh: Bool = false) {

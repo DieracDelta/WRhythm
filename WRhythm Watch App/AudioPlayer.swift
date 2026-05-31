@@ -2917,6 +2917,41 @@ class AudioPlayer: NSObject, ObservableObject {
         print("⏹️ Playback stopped and queue cleared")
     }
 
+    func clearAccountBoundPlaybackState() {
+        playbackRetryTask?.cancel()
+        playbackRetryTask = nil
+        playbackRetryAttemptsBySongID.removeAll()
+        playlistGenTask?.cancel()
+        playlistGenTask = nil
+        keepAvailableTracksTask?.cancel()
+        keepAvailableTracksTask = nil
+        isKeepingAvailableTracks = false
+        playbackError = nil
+        currentBufferPercent = nil
+
+        stop()
+        cancelPrebufferWork()
+        preparedPrebuffers.removeAll()
+        prebufferURLs.removeAll()
+        prebufferDownloadStatuses = []
+        prebufferedSongs = []
+        retainedPrebufferedSongs = []
+        availablePrebufferedSongs = []
+        availablePrebufferedTrackQualityLabels = [:]
+        prebufferedTrackCount = 0
+        prebufferingTrackCount = 0
+        prebufferingProgressPercent = nil
+        availableTracksQueueRestoreState = nil
+        UserDefaults.standard.removeObject(forKey: Self.persistedPlaybackStateKey)
+        try? FileManager.default.removeItem(at: prebufferDirectory)
+#if os(iOS) || os(watchOS) || os(macOS)
+        nowPlayingArtworkTask?.cancel()
+        nowPlayingArtworkTask = nil
+        nowPlayingArtworkSongID = nil
+        nowPlayingArtworkCache.removeAll()
+#endif
+    }
+
     func togglePlayPause() {
         if !DeviceSyncManager.shared.isLocalPlaybackOutput {
             DeviceSyncManager.shared.toggleSelectedPlaybackTarget()

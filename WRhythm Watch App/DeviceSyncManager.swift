@@ -2206,6 +2206,16 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         maybeSendCredentialsToInterestedPeers()
     }
 
+    func clearAccountBoundPlaybackState() {
+        sharedSession = nil
+        selectedPlaybackTargetID = localDeviceID
+        pendingTargetedCommands.removeAll()
+        pendingTargetedCommandDeadlines.removeAll()
+        pendingTargetedCommandRetryAttempts.removeAll()
+        remoteCommandApplicationState = RemoteCommandApplicationState()
+        updateConnectedDeviceNames()
+    }
+
     func requestCredentialSyncNow() {
         guard credentialSyncEnabled else { return }
         NavidromeAPI.shared.authorizeCredentialImportFromTrustedSync()

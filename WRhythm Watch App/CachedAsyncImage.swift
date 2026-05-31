@@ -300,6 +300,13 @@ final class ImageCache {
         decodedCoverArtCache.setObject(image, forKey: coverArtId as NSString)
     }
 
+    func clearAll() {
+        decodedCache.removeAllObjects()
+        decodedCoverArtCache.removeAllObjects()
+        inFlightRequests.removeAll()
+        URLCache.shared.removeAllCachedResponses()
+    }
+
     private func cacheImage(_ image: PlatformImage, data: Data, response: URLResponse?, for url: URL, coverArtId: String? = nil) {
         cacheImage(image, forCoverArtId: coverArtId)
         decodedCache.setObject(image, forKey: cacheKey(for: url))
