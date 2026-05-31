@@ -58,6 +58,7 @@ final class LibraryDataManager: ObservableObject {
     @Published var albumsErrorMessage = ""
     @Published var albumOffset = 0
     @Published var hasMoreAlbums = true
+    @Published var hasEarlierAlbums = false
     @Published var albumListType = "newest"
     
     // MARK: - Favourites
@@ -65,7 +66,8 @@ final class LibraryDataManager: ObservableObject {
     @Published var isLoadingStarred = false
     @Published var starredErrorMessage = ""
     
-    private let pageSize = 20
+    private static let albumPageSize = 20
+    private let pageSize = LibraryDataManager.albumPageSize
     private var artistsFetchTask: Task<Void, Never>?
     private var playlistsFetchTask: Task<Void, Never>?
     private var albumsFetchTask: Task<Void, Never>?
@@ -74,6 +76,10 @@ final class LibraryDataManager: ObservableObject {
     private var playlistsFetchGeneration = 0
     private var albumsFetchGeneration = 0
     private var starredFetchGeneration = 0
+    private var albumPageCache = PagedCollectionCache<AlbumSummary>(
+        pageSize: LibraryDataManager.albumPageSize,
+        maxLoadedPages: LibraryDataManager.albumMaxLoadedPages()
+    )
     
     // MARK: - Artists Methods
     func fetchArtists(forceRefresh: Bool = false) {
@@ -155,10 +161,12 @@ final class LibraryDataManager: ObservableObject {
         albums = []
         albumOffset = 0
         hasMoreAlbums = true
+        hasEarlierAlbums = false
         albumListType = type
         albumsErrorMessage = ""
         albumsFetchTask?.cancel()
         albumsFetchGeneration += 1
+        resetAlbumPageCache()
         
         fetchMoreAlbums()
     }
@@ -174,10 +182,12 @@ final class LibraryDataManager: ObservableObject {
         albums = []
         albumOffset = 0
         hasMoreAlbums = true
+        hasEarlierAlbums = false
         albumListType = type
         albumsErrorMessage = ""
         albumsFetchTask?.cancel()
         albumsFetchGeneration += 1
+        resetAlbumPageCache()
         isLoadingAlbums = true
 
         let generation = albumsFetchGeneration
@@ -210,6 +220,7 @@ final class LibraryDataManager: ObservableObject {
                 self.albums = allAlbums
                 self.albumOffset = allAlbums.count
                 self.hasMoreAlbums = false
+                self.hasEarlierAlbums = false
                 self.isLoadingAlbums = false
             } catch {
                 guard AsyncResultOwnershipPolicy.shouldApply(
@@ -228,7 +239,8 @@ final class LibraryDataManager: ObservableObject {
         
         isLoadingAlbums = true
         let generation = albumsFetchGeneration
-        let offset = albumOffset
+        let pageIndex = albumPageCache.nextPageIndex
+        let offset = pageIndex * pageSize
         
         albumsFetchTask = Task { @MainActor in
             do {
@@ -241,13 +253,13 @@ final class LibraryDataManager: ObservableObject {
                     capturedGeneration: generation,
                     currentGeneration: self.albumsFetchGeneration,
                     isCancelled: Task.isCancelled
-                ), self.albumOffset == offset else { return }
-                if fetchedAlbums.count < self.pageSize {
-                    self.hasMoreAlbums = false
-                }
-
-                self.albums.append(contentsOf: fetchedAlbums)
-                self.albumOffset += fetchedAlbums.count
+                ), self.albumPageCache.nextPageIndex == pageIndex else { return }
+                self.albumPageCache.storePage(
+                    index: pageIndex,
+                    elements: fetchedAlbums,
+                    hasMoreAfterPage: fetchedAlbums.count >= self.pageSize
+                )
+                self.syncAlbumWindowFromCache()
                 self.isLoadingAlbums = false
             } catch {
                 guard AsyncResultOwnershipPolicy.shouldApply(
@@ -259,6 +271,71 @@ final class LibraryDataManager: ObservableObject {
                 self.isLoadingAlbums = false
             }
         }
+    }
+
+    func fetchPreviousAlbums() {
+        guard !isLoadingAlbums, let pageIndex = albumPageCache.previousPageIndex else { return }
+
+        isLoadingAlbums = true
+        let generation = albumsFetchGeneration
+        let offset = pageIndex * pageSize
+
+        albumsFetchTask = Task { @MainActor in
+            do {
+                let fetchedAlbums = try await NavidromeAPI.shared.getAlbumList(
+                    type: self.albumListType,
+                    size: self.pageSize,
+                    offset: offset
+                )
+                guard AsyncResultOwnershipPolicy.shouldApply(
+                    capturedGeneration: generation,
+                    currentGeneration: self.albumsFetchGeneration,
+                    isCancelled: Task.isCancelled
+                ), self.albumPageCache.previousPageIndex == pageIndex else { return }
+
+                self.albumPageCache.storePage(
+                    index: pageIndex,
+                    elements: fetchedAlbums,
+                    hasMoreAfterPage: true
+                )
+                self.syncAlbumWindowFromCache()
+                self.isLoadingAlbums = false
+            } catch {
+                guard AsyncResultOwnershipPolicy.shouldApply(
+                    capturedGeneration: generation,
+                    currentGeneration: self.albumsFetchGeneration,
+                    isCancelled: Task.isCancelled
+                ) else { return }
+                self.albumsErrorMessage = error.localizedDescription
+                self.isLoadingAlbums = false
+            }
+        }
+    }
+
+    private static func albumMaxLoadedPages() -> Int? {
+        let storedValue = UserDefaults.standard.object(forKey: SongRenderWindowPolicy.userDefaultsKey) as? Int
+            ?? SongRenderWindowPolicy.defaultLimit
+        guard let limit = SongRenderWindowPolicy.effectiveLimit(storedValue) else {
+            return nil
+        }
+
+        let visiblePages = Int(ceil(Double(limit) / Double(albumPageSize)))
+        return max(3, visiblePages + 2)
+    }
+
+    private func resetAlbumPageCache() {
+        albumPageCache = PagedCollectionCache(
+            pageSize: pageSize,
+            maxLoadedPages: Self.albumMaxLoadedPages()
+        )
+        syncAlbumWindowFromCache()
+    }
+
+    private func syncAlbumWindowFromCache() {
+        albums = albumPageCache.elements
+        albumOffset = albumPageCache.nextOffset
+        hasMoreAlbums = albumPageCache.hasMoreAfter
+        hasEarlierAlbums = albumPageCache.hasLoadedPreviousPage
     }
     
     // MARK: - Favourites Methods

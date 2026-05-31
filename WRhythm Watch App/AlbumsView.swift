@@ -215,6 +215,11 @@ struct AlbumsView: View {
                     )
 #endif
 
+                    if libraryDataManager.hasEarlierAlbums, libraryDataManager.isLoadingAlbums {
+                        ProgressView("Loading earlier albums")
+                            .frame(maxWidth: .infinity)
+                    }
+
                     WRhythmCard {
                         SlidingRenderWindowForEach(sortedFilteredAlbums, estimatedRowHeight: 64, resetToken: sortOption) { _, album in
                             NavigationLink(destination: AlbumDetailView(albumId: album.id)) {
@@ -230,7 +235,11 @@ struct AlbumsView: View {
                             .buttonStyle(.plain)
                             .wrhythmAlbumActions(albumId: album.id, albumName: album.name)
                             .onAppear {
-                                if album.id == libraryDataManager.albums.last?.id && libraryDataManager.hasMoreAlbums && !libraryDataManager.isLoadingAlbums {
+                                if shouldFetchEarlierAlbumPage(for: album) {
+                                    libraryDataManager.fetchPreviousAlbums()
+                                }
+
+                                if shouldFetchLaterAlbumPage(for: album) {
                                     libraryDataManager.fetchMoreAlbums()
                                 }
                             }
@@ -262,6 +271,26 @@ struct AlbumsView: View {
         } else {
             libraryDataManager.fetchInitialAlbums(forceRefresh: forceRefresh, type: sortOption.serverAlbumListType)
         }
+    }
+
+    private func shouldFetchEarlierAlbumPage(for album: AlbumSummary) -> Bool {
+        guard searchText.isEmpty,
+              sortOption.isServerOrderedAlbumList,
+              libraryDataManager.hasEarlierAlbums,
+              !libraryDataManager.isLoadingAlbums else {
+            return false
+        }
+        return album.id == libraryDataManager.albums.first?.id
+    }
+
+    private func shouldFetchLaterAlbumPage(for album: AlbumSummary) -> Bool {
+        guard searchText.isEmpty,
+              sortOption.isServerOrderedAlbumList,
+              libraryDataManager.hasMoreAlbums,
+              !libraryDataManager.isLoadingAlbums else {
+            return false
+        }
+        return album.id == libraryDataManager.albums.last?.id
     }
 
     private func sortedDownloadedAlbums(_ albums: [(id: String, name: String, artist: String?, coverArt: String?)]) -> [(id: String, name: String, artist: String?, coverArt: String?)] {
