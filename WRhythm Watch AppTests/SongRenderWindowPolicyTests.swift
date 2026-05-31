@@ -141,6 +141,14 @@ struct SongRenderWindowPolicyTests {
         #expect(SongRenderWindowPolicy.trackSearchResetToken(mode: "online", query: "abba") != baseline)
     }
 
+    @Test func artistAlbumResetTokenChangesWhenArtistOrModeChanges() {
+        let baseline = SongRenderWindowPolicy.artistAlbumResetToken(artistId: "artist-1", mode: "online")
+
+        #expect(SongRenderWindowPolicy.artistAlbumResetToken(artistId: "artist-1", mode: "online") == baseline)
+        #expect(SongRenderWindowPolicy.artistAlbumResetToken(artistId: "artist-1", mode: "offline") != baseline)
+        #expect(SongRenderWindowPolicy.artistAlbumResetToken(artistId: "artist-2", mode: "online") != baseline)
+    }
+
     @Test func pagesToLoadOnlyRequestsMissingVisiblePages() {
         let pages = SongRenderWindowPolicy.pagesToLoad(
             totalCount: 1_000,

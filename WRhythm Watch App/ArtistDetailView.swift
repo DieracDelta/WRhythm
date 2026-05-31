@@ -99,7 +99,7 @@ struct ArtistDetailView: View {
                     message: "Download music while online to access this artist offline"
                 )
             } else {
-                albumSection(albums: albums)
+                albumSection(albums: albums, mode: "offline")
             }
         }
     }
@@ -150,38 +150,38 @@ struct ArtistDetailView: View {
                 }
             }
 
-            albumSection(albums: albums)
+            albumSection(albums: albums, mode: "online")
         }
     }
 
-    private func albumSection(albums: [AlbumSummary]) -> some View {
-        VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
+    private func albumSection(albums: [AlbumSummary], mode: String) -> some View {
+        let resetToken = SongRenderWindowPolicy.artistAlbumResetToken(artistId: artistId, mode: mode)
+
+        return VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
             WRhythmSectionHeader(
                 title: "Albums",
                 subtitle: "\(albums.count) album\(albums.count == 1 ? "" : "s")"
             )
 
             WRhythmCard(padding: WRhythmSpacing.sm) {
-                VStack(spacing: 0) {
-                    ForEach(albums) { album in
-                        NavigationLink(destination: AlbumDetailView(albumId: album.id)) {
-                            WRhythmCollectionRow(
-                                title: album.name,
-                                subtitle: album.year.map(String.init),
-                                coverArtId: album.coverArt,
-                                fallbackSystemImage: "square.stack",
-                                tint: WRhythmTheme.album
-                            ) {
-                                if isAlbumDownloaded(album.id) {
-                                        Image(systemName: "arrow.down.circle.fill")
-                                            .font(WRhythmTypography.metadata)
-                                            .foregroundColor(WRhythmTheme.success)
-                                }
+                SlidingRenderWindowForEach(albums, estimatedRowHeight: 64, resetToken: resetToken) { _, album in
+                    NavigationLink(destination: AlbumDetailView(albumId: album.id)) {
+                        WRhythmCollectionRow(
+                            title: album.name,
+                            subtitle: album.year.map(String.init),
+                            coverArtId: album.coverArt,
+                            fallbackSystemImage: "square.stack",
+                            tint: WRhythmTheme.album
+                        ) {
+                            if isAlbumDownloaded(album.id) {
+                                Image(systemName: "arrow.down.circle.fill")
+                                    .font(WRhythmTypography.metadata)
+                                    .foregroundColor(WRhythmTheme.success)
                             }
                         }
-                        .buttonStyle(.plain)
-                        .wrhythmAlbumActions(albumId: album.id, albumName: album.name)
                     }
+                    .buttonStyle(.plain)
+                    .wrhythmAlbumActions(albumId: album.id, albumName: album.name)
                 }
             }
         }
