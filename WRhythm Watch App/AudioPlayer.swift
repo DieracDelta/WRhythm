@@ -3384,7 +3384,7 @@ class AudioPlayer: NSObject, ObservableObject {
                 url: currentPlaybackURL,
                 error: nil,
                 technicalDetails: "WRhythm retried playback \(attempt) times after \(reason) and stopped retrying.",
-                recoverySuggestion: "Try playing the track again. If this repeats, lower streaming quality or verify the source file can be streamed by Navidrome."
+                recoverySuggestion: "Try playing the track again. If this repeats, lower streaming quality or verify the server implements the Subsonic API and can stream this source file."
             )
             player.pause()
             isBuffering = false
