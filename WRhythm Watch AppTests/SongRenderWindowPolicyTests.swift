@@ -318,6 +318,33 @@ struct SongRenderWindowPolicyTests {
         )
     }
 
+    @Test func activeDownloadIdsResetTokenChangesWhenIdentityChangesButNotDictionaryOrder() {
+        let baseline = SongRenderWindowPolicy.activeDownloadIdsResetToken(songIds: ["song-1", "song-2", "song-3"])
+
+        #expect(SongRenderWindowPolicy.activeDownloadIdsResetToken(songIds: ["song-1", "song-2", "song-3"]) == baseline)
+        #expect(SongRenderWindowPolicy.activeDownloadIdsResetToken(songIds: ["song-1", "song-3", "song-2"]) == baseline)
+        #expect(SongRenderWindowPolicy.activeDownloadIdsResetToken(songIds: ["song-1", "song-2"]) != baseline)
+        #expect(SongRenderWindowPolicy.activeDownloadIdsResetToken(songIds: ["song-1", "song-2", "song-4"]) != baseline)
+    }
+
+    @Test func queuedDownloadIdsResetTokenChangesWhenIdentityOrOrderChanges() {
+        let baseline = SongRenderWindowPolicy.queuedDownloadIdsResetToken(songIds: ["song-1", "song-2", "song-3"])
+
+        #expect(SongRenderWindowPolicy.queuedDownloadIdsResetToken(songIds: ["song-1", "song-2", "song-3"]) == baseline)
+        #expect(SongRenderWindowPolicy.queuedDownloadIdsResetToken(songIds: ["song-1", "song-3", "song-2"]) != baseline)
+        #expect(SongRenderWindowPolicy.queuedDownloadIdsResetToken(songIds: ["song-1", "song-2"]) != baseline)
+        #expect(SongRenderWindowPolicy.queuedDownloadIdsResetToken(songIds: ["song-1", "song-2", "song-4"]) != baseline)
+    }
+
+    @Test func failedDownloadIdsResetTokenChangesWhenIdentityOrOrderChanges() {
+        let baseline = SongRenderWindowPolicy.failedDownloadIdsResetToken(songIds: ["song-1", "song-2", "song-3"])
+
+        #expect(SongRenderWindowPolicy.failedDownloadIdsResetToken(songIds: ["song-1", "song-2", "song-3"]) == baseline)
+        #expect(SongRenderWindowPolicy.failedDownloadIdsResetToken(songIds: ["song-1", "song-3", "song-2"]) != baseline)
+        #expect(SongRenderWindowPolicy.failedDownloadIdsResetToken(songIds: ["song-1", "song-2"]) != baseline)
+        #expect(SongRenderWindowPolicy.failedDownloadIdsResetToken(songIds: ["song-1", "song-2", "song-4"]) != baseline)
+    }
+
     @Test func sidebarQueueResetTokenChangesWhenQueueIdentityOrOrderChanges() {
         let baseline = SongRenderWindowPolicy.sidebarQueueResetToken(songIds: ["song-1", "song-2", "song-3"])
 

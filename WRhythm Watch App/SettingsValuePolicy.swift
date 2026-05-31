@@ -115,6 +115,18 @@ struct SongRenderWindowPolicy: Sendable {
         resetToken(scope: "downloads:album:\(albumSectionId)", sortIdentifier: songIds.joined(separator: ","))
     }
 
+    static func activeDownloadIdsResetToken(songIds: [String]) -> String {
+        resetToken(scope: "downloads:active", sortIdentifier: songIds.sorted().joined(separator: ","))
+    }
+
+    static func queuedDownloadIdsResetToken(songIds: [String]) -> String {
+        resetToken(scope: "downloads:queued", sortIdentifier: songIds.joined(separator: ","))
+    }
+
+    static func failedDownloadIdsResetToken(songIds: [String]) -> String {
+        resetToken(scope: "downloads:failed", sortIdentifier: songIds.joined(separator: ","))
+    }
+
     static func sidebarQueueResetToken(songIds: [String]) -> String {
         resetToken(scope: "mac-sidebar:queue", sortIdentifier: songIds.joined(separator: ","))
     }

@@ -74,9 +74,14 @@ struct ActiveDownloadsView: View {
                     if !downloadManager.activeDownloads.isEmpty {
                         WRhythmSectionHeader(title: "Active", subtitle: "Current transfers")
 
-                        let activeSongIds = Array(downloadManager.activeDownloads.keys)
+                        let activeSongIds = downloadManager.activeDownloads.keys.sorted()
                         VStack(spacing: WRhythmSpacing.xs) {
-                            SlidingRenderWindowForEach(activeSongIds, estimatedRowHeight: 86, spacing: WRhythmSpacing.xs) { _, songId in
+                            SlidingRenderWindowForEach(
+                                activeSongIds,
+                                estimatedRowHeight: 86,
+                                spacing: WRhythmSpacing.xs,
+                                resetToken: SongRenderWindowPolicy.activeDownloadIdsResetToken(songIds: activeSongIds)
+                            ) { _, songId in
                                 ActiveDownloadRow(songId: songId, song: findSongInfo(songId))
                             }
                         }
@@ -86,7 +91,14 @@ struct ActiveDownloadsView: View {
                         WRhythmSectionHeader(title: "Queued", subtitle: "\(downloadManager.downloadQueue.count) waiting")
 
                         VStack(spacing: WRhythmSpacing.xs) {
-                            SlidingRenderWindowForEach(downloadManager.downloadQueue, estimatedRowHeight: 64, spacing: WRhythmSpacing.xs) { _, song in
+                            SlidingRenderWindowForEach(
+                                downloadManager.downloadQueue,
+                                estimatedRowHeight: 64,
+                                spacing: WRhythmSpacing.xs,
+                                resetToken: SongRenderWindowPolicy.queuedDownloadIdsResetToken(
+                                    songIds: downloadManager.downloadQueue.map(\.id)
+                                )
+                            ) { _, song in
                                 QueuedDownloadRow(song: song)
                             }
                         }
@@ -97,7 +109,14 @@ struct ActiveDownloadsView: View {
 
                         let failedDownloads = Array(downloadManager.failedDownloads.values.sorted(by: { $0.failedAt > $1.failedAt }))
                         VStack(spacing: WRhythmSpacing.xs) {
-                            SlidingRenderWindowForEach(failedDownloads, estimatedRowHeight: 64, spacing: WRhythmSpacing.xs) { _, failed in
+                            SlidingRenderWindowForEach(
+                                failedDownloads,
+                                estimatedRowHeight: 64,
+                                spacing: WRhythmSpacing.xs,
+                                resetToken: SongRenderWindowPolicy.failedDownloadIdsResetToken(
+                                    songIds: failedDownloads.map(\.songId)
+                                )
+                            ) { _, failed in
                                 FailedDownloadRow(failedDownload: failed)
                             }
                         }
