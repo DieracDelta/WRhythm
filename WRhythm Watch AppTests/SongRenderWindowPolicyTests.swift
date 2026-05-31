@@ -106,12 +106,12 @@ struct SongRenderWindowPolicyTests {
         #expect(slots.last?.index == 9_924)
     }
 
-    @Test func fullRangePagedModeKeepsFiniteQueuesReachableWithoutEarlierSentinelWindowing() {
+    @Test func fullRangeLoadedModeKeepsFiniteQueuesActionableWithoutEarlierPlaceholderRows() {
         let range = SongRenderWindowPolicy.renderRange(
             totalCount: 120,
             anchorIndex: 35,
             storedLimit: 20,
-            renderMode: .fullRangePaged
+            renderMode: .fullRangeLoaded
         )
         let slots = SongRenderWindowPolicy.renderSlots(
             totalCount: 120,
@@ -119,7 +119,7 @@ struct SongRenderWindowPolicyTests {
             storedLimit: 20,
             pageSize: 25,
             loadedPageIndices: [1],
-            renderMode: .fullRangePaged
+            renderMode: .fullRangeLoaded
         )
 
         #expect(SongRenderWindowPolicy.visibleRange(totalCount: 120, anchorIndex: 35, storedLimit: 20) == 25..<45)
@@ -127,7 +127,7 @@ struct SongRenderWindowPolicyTests {
         #expect(slots.count == 120)
         #expect(slots.first?.index == 0)
         #expect(slots.last?.index == 119)
-        #expect(slots.filter(\.isLoaded).map(\.index) == Array(25..<50))
+        #expect(slots.allSatisfy(\.isLoaded))
     }
 
     @Test func largeClientCollectionsRenderOnlyConfiguredWindow() {

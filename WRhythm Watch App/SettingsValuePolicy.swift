@@ -30,7 +30,7 @@ struct ConcurrentDownloadSettingsPolicy: Sendable {
 struct SongRenderWindowPolicy: Sendable {
     enum RenderMode: Sendable {
         case slidingWindow
-        case fullRangePaged
+        case fullRangeLoaded
     }
 
     struct RenderSlot: Identifiable, Equatable, Sendable {
@@ -83,7 +83,7 @@ struct SongRenderWindowPolicy: Sendable {
         switch renderMode {
         case .slidingWindow:
             return visibleRange(totalCount: totalCount, anchorIndex: anchorIndex, storedLimit: storedLimit)
-        case .fullRangePaged:
+        case .fullRangeLoaded:
             return totalCount > 0 ? 0..<totalCount : 0..<0
         }
     }
@@ -273,7 +273,12 @@ struct SongRenderWindowPolicy: Sendable {
         guard !range.isEmpty else { return [] }
 
         return range.map { index in
-            RenderSlot(index: index, isLoaded: loadedPageIndices.contains(pageIndex(forRow: index, pageSize: pageSize)))
+            switch renderMode {
+            case .slidingWindow:
+                RenderSlot(index: index, isLoaded: loadedPageIndices.contains(pageIndex(forRow: index, pageSize: pageSize)))
+            case .fullRangeLoaded:
+                RenderSlot(index: index, isLoaded: true)
+            }
         }
     }
 }

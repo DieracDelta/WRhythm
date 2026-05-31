@@ -101,7 +101,7 @@ struct PhoneQueueView: View {
                             currentIndex: currentIndex
                         ),
                         anchorIndexHint: currentIndex,
-                        renderMode: .fullRangePaged
+                        renderMode: .fullRangeLoaded
                     ) { _, item in
                         Button(action: {
                             play(item.index)

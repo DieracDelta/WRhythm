@@ -354,7 +354,7 @@ struct MacSidebar: View {
                             currentIndex: displayedCurrentIndex
                         ),
                         anchorIndexHint: displayedCurrentIndex,
-                        renderMode: .fullRangePaged
+                        renderMode: .fullRangeLoaded
                     ) { _, item in
                         Button(action: {
                             selection = .nowPlaying
@@ -402,7 +402,7 @@ struct MacSidebar: View {
                                 currentIndex: remote.currentIndex
                             ),
                             anchorIndexHint: remote.currentIndex,
-                            renderMode: .fullRangePaged
+                            renderMode: .fullRangeLoaded
                         ) { _, item in
                             Button(action: {
                                 selection = .nowPlaying
