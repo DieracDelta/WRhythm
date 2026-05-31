@@ -9,8 +9,8 @@
 /* Begin PBXBuildFile section */
 		26632C3C2EFB21FF003C8ABA /* WRhythm Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 26632C3B2EFB21FF003C8ABA /* WRhythm Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		F10000022F00000000000001 /* AppIconMac.icns in Resources */ = {isa = PBXBuildFile; fileRef = F10000012F00000000000001 /* AppIconMac.icns */; };
-		F20000012F01000000000001 /* PlaybackSyncPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000072F01000000000001 /* PlaybackSyncPolicyTests.swift */; };
-		F20000022F01000000000001 /* PlaybackSyncPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000072F01000000000001 /* PlaybackSyncPolicyTests.swift */; };
+		F20000012F01000000000001 /* WRhythm Watch AppTests/PlaybackSyncPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000072F01000000000001 /* WRhythm Watch AppTests/PlaybackSyncPolicyTests.swift */; };
+		F20000022F01000000000001 /* WRhythm Watch AppTests/PlaybackSyncPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000072F01000000000001 /* WRhythm Watch AppTests/PlaybackSyncPolicyTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -74,7 +74,7 @@
 		F10000012F00000000000001 /* AppIconMac.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = AppIconMac.icns; sourceTree = "<group>"; };
 		F20000052F01000000000001 /* WRhythm iPhoneTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "WRhythm iPhoneTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		F20000062F01000000000001 /* WRhythm macOSTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "WRhythm macOSTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
-		F20000072F01000000000001 /* PlaybackSyncPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WRhythm Watch AppTests/PlaybackSyncPolicyTests.swift"; sourceTree = "<group>"; };
+		F20000072F01000000000001 /* WRhythm Watch AppTests/PlaybackSyncPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WRhythm Watch AppTests/PlaybackSyncPolicyTests.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -185,7 +185,7 @@
 		F20000082F01000000000001 /* SharedPolicyTests */ = {
 			isa = PBXGroup;
 			children = (
-				F20000072F01000000000001 /* PlaybackSyncPolicyTests.swift */,
+				F20000072F01000000000001 /* WRhythm Watch AppTests/PlaybackSyncPolicyTests.swift */,
 			);
 			name = SharedPolicyTests;
 			sourceTree = "<group>";
@@ -502,7 +502,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				F20000012F01000000000001 /* PlaybackSyncPolicyTests.swift in Sources */,
+				F20000012F01000000000001 /* WRhythm Watch AppTests/PlaybackSyncPolicyTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -510,7 +510,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				F20000022F01000000000001 /* PlaybackSyncPolicyTests.swift in Sources */,
+				F20000022F01000000000001 /* WRhythm Watch AppTests/PlaybackSyncPolicyTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -756,8 +756,8 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited)";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "POWER_INFO $(inherited)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
@@ -787,8 +787,8 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited)";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "POWER_INFO $(inherited)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
@@ -889,6 +889,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "WRhythm-macOS.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 2;
 				DEAD_CODE_STRIPPING = YES;
@@ -903,12 +904,12 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
 				MARKETING_VERSION = 1.0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = com.restivollc.wrhythm.macos;
+				PRODUCT_BUNDLE_IDENTIFIER = com.restivollc.wrhythm;
 				PRODUCT_NAME = WRhythm;
 				SDKROOT = macosx;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited)";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "POWER_INFO $(inherited)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
@@ -919,6 +920,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "WRhythm-macOS.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 2;
 				DEAD_CODE_STRIPPING = YES;
@@ -933,12 +935,12 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
 				MARKETING_VERSION = 1.0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = com.restivollc.wrhythm.macos;
+				PRODUCT_BUNDLE_IDENTIFIER = com.restivollc.wrhythm;
 				PRODUCT_NAME = WRhythm;
 				SDKROOT = macosx;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited)";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "POWER_INFO $(inherited)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
