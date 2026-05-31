@@ -112,6 +112,11 @@ struct ArtistsView: View {
                 message: "Try a different search term"
             )
         } else {
+            let resetToken = SongRenderWindowPolicy.resetToken(
+                scope: "offlineArtists",
+                sortIdentifier: sortOption.rawValue,
+                query: searchText
+            )
             ScrollView {
                 VStack(spacing: WRhythmSpacing.sm) {
 #if os(iOS)
@@ -125,7 +130,7 @@ struct ArtistsView: View {
 #endif
 
                     WRhythmCard {
-                        SlidingRenderWindowForEach(sortedArtists, estimatedRowHeight: 64, resetToken: sortOption) { _, artist in
+                        SlidingRenderWindowForEach(sortedArtists, estimatedRowHeight: 64, resetToken: resetToken) { _, artist in
                             let albumCount = downloadedAlbumCount(for: artist.name)
                             NavigationLink(destination: ArtistDetailView(artistId: "offline-\(artist.name)", artistName: artist.name)) {
                                 WRhythmCollectionRow(
@@ -182,7 +187,11 @@ struct ArtistsView: View {
             }
         } else {
             let sortedArtists = sortOption.sorted(onlineArtistsToDisplay)
-            let resetToken = "\(sortOption.rawValue)|\(searchText)"
+            let resetToken = SongRenderWindowPolicy.resetToken(
+                scope: "artists",
+                sortIdentifier: sortOption.rawValue,
+                query: searchText
+            )
             ScrollView {
                 VStack(spacing: WRhythmSpacing.sm) {
 #if os(iOS)

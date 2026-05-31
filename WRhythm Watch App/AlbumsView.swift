@@ -135,6 +135,11 @@ struct AlbumsView: View {
                 message: "Try a different search term"
             )
         } else {
+            let resetToken = SongRenderWindowPolicy.resetToken(
+                scope: "offlineAlbums",
+                sortIdentifier: sortOption.rawValue,
+                query: searchText
+            )
             ScrollView {
                 VStack(spacing: WRhythmSpacing.sm) {
 #if os(iOS)
@@ -148,7 +153,7 @@ struct AlbumsView: View {
 #endif
 
                     WRhythmCard {
-                        SlidingRenderWindowForEach(sortedAlbums, estimatedRowHeight: 64, resetToken: sortOption) { _, album in
+                        SlidingRenderWindowForEach(sortedAlbums, estimatedRowHeight: 64, resetToken: resetToken) { _, album in
                             NavigationLink(destination: AlbumDetailView(albumId: album.id)) {
                                 WRhythmCollectionRow(
                                     title: album.name,
@@ -203,6 +208,11 @@ struct AlbumsView: View {
                 loadAlbums(forceRefresh: true)
             }
         } else {
+            let resetToken = SongRenderWindowPolicy.resetToken(
+                scope: "albums",
+                sortIdentifier: sortOption.rawValue,
+                query: searchText
+            )
             ScrollView {
                 VStack(spacing: WRhythmSpacing.sm) {
 #if os(iOS)
@@ -221,7 +231,7 @@ struct AlbumsView: View {
                     }
 
                     WRhythmCard {
-                        SlidingRenderWindowForEach(sortedFilteredAlbums, estimatedRowHeight: 64, resetToken: sortOption) { _, album in
+                        SlidingRenderWindowForEach(sortedFilteredAlbums, estimatedRowHeight: 64, resetToken: resetToken) { _, album in
                             NavigationLink(destination: AlbumDetailView(albumId: album.id)) {
                                 WRhythmCollectionRow(
                                     title: album.name,

@@ -122,6 +122,16 @@ struct SongRenderWindowPolicyTests {
         #expect(slots.filter { !$0.isLoaded }.count == 25)
     }
 
+    @Test func resetTokenChangesWhenSortQueryOrScopeChanges() {
+        let baseline = SongRenderWindowPolicy.resetToken(scope: "albums", sortIdentifier: "title", query: "queen")
+
+        #expect(SongRenderWindowPolicy.resetToken(scope: "albums", sortIdentifier: "title", query: "queen") == baseline)
+        #expect(SongRenderWindowPolicy.resetToken(scope: "albums", sortIdentifier: "title", query: " queen ") == baseline)
+        #expect(SongRenderWindowPolicy.resetToken(scope: "albums", sortIdentifier: "artist", query: "queen") != baseline)
+        #expect(SongRenderWindowPolicy.resetToken(scope: "albums", sortIdentifier: "title", query: "abba") != baseline)
+        #expect(SongRenderWindowPolicy.resetToken(scope: "artists", sortIdentifier: "title", query: "queen") != baseline)
+    }
+
     @Test func pagesToLoadOnlyRequestsMissingVisiblePages() {
         let pages = SongRenderWindowPolicy.pagesToLoad(
             totalCount: 1_000,

@@ -312,7 +312,12 @@ struct AlbumDetailView: View {
     }
 
     private func trackSection(songs: [Song]) -> some View {
-        VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
+        let resetToken = SongRenderWindowPolicy.resetToken(
+            scope: "album:\(albumId)",
+            sortIdentifier: songSortOption.rawValue
+        )
+
+        return VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
             WRhythmSectionHeader(
                 title: "Tracks",
                 subtitle: "\(songs.count) song\(songs.count == 1 ? "" : "s")"
@@ -321,7 +326,7 @@ struct AlbumDetailView: View {
             }
 
             WRhythmCard(padding: WRhythmSpacing.sm) {
-                SlidingRenderWindowForEach(songs, estimatedRowHeight: 64, resetToken: songSortOption) { index, song in
+                SlidingRenderWindowForEach(songs, estimatedRowHeight: 64, resetToken: resetToken) { index, song in
                     TrackRowView(song: song, player: player, downloadManager: downloadManager, offlineMode: offlineMode) {
                         player.playQueue(songs, startingAt: index)
                     }

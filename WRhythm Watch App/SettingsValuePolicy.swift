@@ -74,6 +74,11 @@ struct SongRenderWindowPolicy: Sendable {
         return min(hiddenRows, hiddenSpacerSentinelRows)
     }
 
+    static func resetToken(scope: String, sortIdentifier: String, query: String = "") -> String {
+        let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return "\(scope)|\(sortIdentifier)|\(normalizedQuery)"
+    }
+
     static func anchorAfterTopSpacerAppears(visibleRange: Range<Int>, storedLimit: Int) -> Int {
         guard let limit = effectiveLimit(storedLimit), visibleRange.lowerBound > 0 else { return 0 }
         return max(0, visibleRange.lowerBound - max(1, limit / 2))

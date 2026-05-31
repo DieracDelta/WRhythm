@@ -118,6 +118,11 @@ struct PlaylistsView: View {
     @ViewBuilder
     private var offlineContent: some View {
         let sortedPlaylists = sortedCachedPlaylists(filteredCachedPlaylists)
+        let resetToken = SongRenderWindowPolicy.resetToken(
+            scope: "offlinePlaylists",
+            sortIdentifier: sortOption.rawValue,
+            query: searchText
+        )
 
         if filteredCachedPlaylists.isEmpty {
             WRhythmEmptyState(
@@ -139,7 +144,7 @@ struct PlaylistsView: View {
 #endif
 
                     WRhythmCard {
-                        SlidingRenderWindowForEach(sortedPlaylists, estimatedRowHeight: 64, resetToken: sortOption) { _, playlist in
+                        SlidingRenderWindowForEach(sortedPlaylists, estimatedRowHeight: 64, resetToken: resetToken) { _, playlist in
                             NavigationLink(destination: PlaylistDetailView(playlistId: playlist.id, playlistName: playlist.name)) {
                                 WRhythmCollectionRow(
                                     title: playlist.name,
@@ -196,6 +201,11 @@ struct PlaylistsView: View {
             }
         } else {
             let sortedPlaylists = sortOption.sorted(filteredPlaylists)
+            let resetToken = SongRenderWindowPolicy.resetToken(
+                scope: "playlists",
+                sortIdentifier: sortOption.rawValue,
+                query: searchText
+            )
             ScrollView {
                 VStack(spacing: WRhythmSpacing.sm) {
 #if os(iOS)
@@ -209,7 +219,7 @@ struct PlaylistsView: View {
 #endif
 
                     WRhythmCard {
-                        SlidingRenderWindowForEach(sortedPlaylists, estimatedRowHeight: 64, resetToken: sortOption) { _, playlist in
+                        SlidingRenderWindowForEach(sortedPlaylists, estimatedRowHeight: 64, resetToken: resetToken) { _, playlist in
                             NavigationLink(destination: PlaylistDetailView(playlistId: playlist.id, playlistName: playlist.name)) {
                                 WRhythmCollectionRow(
                                     title: playlist.name,

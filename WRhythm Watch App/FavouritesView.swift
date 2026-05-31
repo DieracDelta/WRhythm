@@ -129,6 +129,11 @@ struct FavouritesView: View {
             )
         } else {
             let songsToShow = songSortOption.sorted(filteredSongs(offlineStarredSongs))
+            let songResetToken = SongRenderWindowPolicy.resetToken(
+                scope: "offlineFavouritesSongs",
+                sortIdentifier: songSortOption.rawValue,
+                query: searchText
+            )
             ScrollView {
                 VStack(spacing: 16) {
                     VStack(alignment: .leading, spacing: 8) {
@@ -155,7 +160,7 @@ struct FavouritesView: View {
                             }
                         }
 
-                        SlidingRenderWindowForEach(songsToShow, estimatedRowHeight: 64, resetToken: songSortOption) { index, song in
+                        SlidingRenderWindowForEach(songsToShow, estimatedRowHeight: 64, resetToken: songResetToken) { index, song in
                             TrackRowView(song: song, player: player, downloadManager: downloadManager, offlineMode: offlineMode) {
                                 player.playQueue(songsToShow, startingAt: index)
                             }
@@ -200,6 +205,21 @@ struct FavouritesView: View {
                 let songsToShow = songSortOption.sorted(filteredSongs(starred.song ?? []))
                 let albumsToShow = albumSortOption.sorted(filteredAlbums(starred.album ?? []))
                 let artistsToShow = artistSortOption.sorted(filteredArtists(starred.artist ?? []))
+                let songResetToken = SongRenderWindowPolicy.resetToken(
+                    scope: "favouritesSongs",
+                    sortIdentifier: songSortOption.rawValue,
+                    query: searchText
+                )
+                let albumResetToken = SongRenderWindowPolicy.resetToken(
+                    scope: "favouritesAlbums",
+                    sortIdentifier: albumSortOption.rawValue,
+                    query: searchText
+                )
+                let artistResetToken = SongRenderWindowPolicy.resetToken(
+                    scope: "favouritesArtists",
+                    sortIdentifier: artistSortOption.rawValue,
+                    query: searchText
+                )
                 if songsToShow.isEmpty && albumsToShow.isEmpty && artistsToShow.isEmpty {
                     WRhythmEmptyState(
                         systemImage: "magnifyingglass",
@@ -246,7 +266,7 @@ struct FavouritesView: View {
                                     }
                                 }
 
-                                SlidingRenderWindowForEach(songsToShow, estimatedRowHeight: 64, resetToken: songSortOption) { index, song in
+                                SlidingRenderWindowForEach(songsToShow, estimatedRowHeight: 64, resetToken: songResetToken) { index, song in
                                     TrackRowView(song: song, player: player, downloadManager: downloadManager, offlineMode: offlineMode) {
                                         player.playQueue(songsToShow, startingAt: index)
                                     }
@@ -263,7 +283,7 @@ struct FavouritesView: View {
                                     WRhythmSortMenu(selection: $albumSortOption)
                                 }
 
-                                SlidingRenderWindowForEach(albumsToShow, estimatedRowHeight: 64, resetToken: albumSortOption) { _, album in
+                                SlidingRenderWindowForEach(albumsToShow, estimatedRowHeight: 64, resetToken: albumResetToken) { _, album in
                                     NavigationLink(destination: AlbumDetailView(albumId: album.id)) {
                                         WRhythmCollectionRow(
                                             title: album.name,
@@ -288,7 +308,7 @@ struct FavouritesView: View {
                                     WRhythmSortMenu(selection: $artistSortOption)
                                 }
 
-                                SlidingRenderWindowForEach(artistsToShow, estimatedRowHeight: 64, resetToken: artistSortOption) { _, artist in
+                                SlidingRenderWindowForEach(artistsToShow, estimatedRowHeight: 64, resetToken: artistResetToken) { _, artist in
                                     NavigationLink(destination: ArtistDetailView(artistId: artist.id, artistName: artist.name)) {
                                         WRhythmCollectionRow(
                                             title: artist.name,
