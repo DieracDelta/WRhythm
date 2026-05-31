@@ -106,6 +106,30 @@ struct SongRenderWindowPolicyTests {
         #expect(slots.last?.index == 9_924)
     }
 
+    @Test func fullRangePagedModeKeepsFiniteQueuesReachableWithoutEarlierSentinelWindowing() {
+        let range = SongRenderWindowPolicy.renderRange(
+            totalCount: 120,
+            anchorIndex: 35,
+            storedLimit: 20,
+            renderMode: .fullRangePaged
+        )
+        let slots = SongRenderWindowPolicy.renderSlots(
+            totalCount: 120,
+            anchorIndex: 35,
+            storedLimit: 20,
+            pageSize: 25,
+            loadedPageIndices: [1],
+            renderMode: .fullRangePaged
+        )
+
+        #expect(SongRenderWindowPolicy.visibleRange(totalCount: 120, anchorIndex: 35, storedLimit: 20) == 25..<45)
+        #expect(range == 0..<120)
+        #expect(slots.count == 120)
+        #expect(slots.first?.index == 0)
+        #expect(slots.last?.index == 119)
+        #expect(slots.filter(\.isLoaded).map(\.index) == Array(25..<50))
+    }
+
     @Test func largeClientCollectionsRenderOnlyConfiguredWindow() {
         let totalArtistCount = 2_362
         let slots = SongRenderWindowPolicy.renderSlots(

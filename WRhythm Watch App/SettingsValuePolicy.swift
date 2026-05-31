@@ -28,6 +28,11 @@ struct ConcurrentDownloadSettingsPolicy: Sendable {
 }
 
 struct SongRenderWindowPolicy: Sendable {
+    enum RenderMode: Sendable {
+        case slidingWindow
+        case fullRangePaged
+    }
+
     struct RenderSlot: Identifiable, Equatable, Sendable {
         let index: Int
         let isLoaded: Bool
@@ -67,6 +72,20 @@ struct SongRenderWindowPolicy: Sendable {
         let proposedLowerBound = clampedAnchor - (limit / 2)
         let lowerBound = min(max(proposedLowerBound, 0), totalCount - limit)
         return lowerBound..<(lowerBound + limit)
+    }
+
+    static func renderRange(
+        totalCount: Int,
+        anchorIndex: Int,
+        storedLimit: Int,
+        renderMode: RenderMode = .slidingWindow
+    ) -> Range<Int> {
+        switch renderMode {
+        case .slidingWindow:
+            return visibleRange(totalCount: totalCount, anchorIndex: anchorIndex, storedLimit: storedLimit)
+        case .fullRangePaged:
+            return totalCount > 0 ? 0..<totalCount : 0..<0
+        }
     }
 
     static func hiddenSpacerRows(hiddenRows: Int, storedLimit: Int) -> Int {
@@ -242,9 +261,15 @@ struct SongRenderWindowPolicy: Sendable {
         anchorIndex: Int,
         storedLimit: Int,
         pageSize: Int = defaultPageSize,
-        loadedPageIndices: Set<Int>
+        loadedPageIndices: Set<Int>,
+        renderMode: RenderMode = .slidingWindow
     ) -> [RenderSlot] {
-        let range = visibleRange(totalCount: totalCount, anchorIndex: anchorIndex, storedLimit: storedLimit)
+        let range = renderRange(
+            totalCount: totalCount,
+            anchorIndex: anchorIndex,
+            storedLimit: storedLimit,
+            renderMode: renderMode
+        )
         guard !range.isEmpty else { return [] }
 
         return range.map { index in

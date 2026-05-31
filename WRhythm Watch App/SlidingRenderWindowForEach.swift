@@ -6,6 +6,7 @@ struct SlidingRenderWindowForEach<Element, Row: View>: View {
     private let spacing: CGFloat
     private let resetToken: AnyHashable
     private let anchorIndexHint: Int
+    private let renderMode: SongRenderWindowPolicy.RenderMode
     private let row: (Int, Element) -> Row
 
     @AppStorage(SongRenderWindowPolicy.userDefaultsKey) private var storedLimit = SongRenderWindowPolicy.defaultLimit
@@ -19,6 +20,7 @@ struct SlidingRenderWindowForEach<Element, Row: View>: View {
         spacing: CGFloat = 0,
         resetToken: some Hashable = 0,
         anchorIndexHint: Int = 0,
+        renderMode: SongRenderWindowPolicy.RenderMode = .slidingWindow,
         @ViewBuilder row: @escaping (Int, Element) -> Row
     ) {
         self.items = items
@@ -26,6 +28,7 @@ struct SlidingRenderWindowForEach<Element, Row: View>: View {
         self.spacing = spacing
         self.resetToken = AnyHashable(resetToken)
         self.anchorIndexHint = anchorIndexHint
+        self.renderMode = renderMode
         self.row = row
     }
 
@@ -42,13 +45,14 @@ struct SlidingRenderWindowForEach<Element, Row: View>: View {
             totalCount: items.count,
             anchorIndex: anchorIndex,
             storedLimit: storedLimit,
-            loadedPageIndices: loadedPageIndices
+            loadedPageIndices: loadedPageIndices,
+            renderMode: renderMode
         )
     }
 
     var body: some View {
         LazyVStack(spacing: spacing) {
-            if visibleRange.lowerBound > 0 {
+            if renderMode == .slidingWindow, visibleRange.lowerBound > 0 {
                 loadingSentinel(title: "Loading earlier")
                     .frame(height: spacerHeight(for: visibleRange.lowerBound))
                     .onAppear {
@@ -75,7 +79,7 @@ struct SlidingRenderWindowForEach<Element, Row: View>: View {
                 }
             }
 
-            if visibleRange.upperBound < items.count {
+            if renderMode == .slidingWindow, visibleRange.upperBound < items.count {
                 loadingSentinel(title: "Loading more")
                     .frame(height: spacerHeight(for: items.count - visibleRange.upperBound))
                     .onAppear {
