@@ -64,7 +64,13 @@ struct RadioPlaylistsView: View {
 
                     if !downloadManager.radioPlaylists.isEmpty {
                         Section("Downloaded Playlist Gen") {
-                            ForEach(downloadManager.radioPlaylists) { radio in
+                            SlidingRenderWindowForEach(
+                                downloadManager.radioPlaylists,
+                                estimatedRowHeight: 64,
+                                resetToken: SongRenderWindowPolicy.downloadedRadioPlaylistsResetToken(
+                                    playlistIds: downloadManager.radioPlaylists.map(\.id)
+                                )
+                            ) { _, radio in
                                 RadioPlaylistRow(radio: radio)
                             }
                         }

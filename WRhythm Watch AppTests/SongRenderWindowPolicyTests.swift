@@ -187,6 +187,26 @@ struct SongRenderWindowPolicyTests {
         #expect(SongRenderWindowPolicy.playlistGenQueueResetToken(songIds: ["song-1", "song-2", "song-4"]) != baseline)
     }
 
+    @Test func downloadedRadioPlaylistsResetTokenChangesWhenPlaylistIdentityOrOrderChanges() {
+        let baseline = SongRenderWindowPolicy.downloadedRadioPlaylistsResetToken(
+            playlistIds: ["radio-1", "radio-2", "radio-3"]
+        )
+
+        #expect(
+            SongRenderWindowPolicy.downloadedRadioPlaylistsResetToken(playlistIds: ["radio-1", "radio-2", "radio-3"])
+                == baseline
+        )
+        #expect(
+            SongRenderWindowPolicy.downloadedRadioPlaylistsResetToken(playlistIds: ["radio-1", "radio-3", "radio-2"])
+                != baseline
+        )
+        #expect(SongRenderWindowPolicy.downloadedRadioPlaylistsResetToken(playlistIds: ["radio-1", "radio-2"]) != baseline)
+        #expect(
+            SongRenderWindowPolicy.downloadedRadioPlaylistsResetToken(playlistIds: ["radio-1", "radio-2", "radio-4"])
+                != baseline
+        )
+    }
+
     @Test func sidebarQueueResetTokenChangesWhenQueueIdentityOrOrderChanges() {
         let baseline = SongRenderWindowPolicy.sidebarQueueResetToken(songIds: ["song-1", "song-2", "song-3"])
 

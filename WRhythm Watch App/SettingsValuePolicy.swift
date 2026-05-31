@@ -95,6 +95,10 @@ struct SongRenderWindowPolicy: Sendable {
         resetToken(scope: "playlist-gen:queue", sortIdentifier: songIds.joined(separator: ","))
     }
 
+    static func downloadedRadioPlaylistsResetToken(playlistIds: [String]) -> String {
+        resetToken(scope: "playlist-gen:downloaded", sortIdentifier: playlistIds.joined(separator: ","))
+    }
+
     static func sidebarQueueResetToken(songIds: [String]) -> String {
         resetToken(scope: "mac-sidebar:queue", sortIdentifier: songIds.joined(separator: ","))
     }
