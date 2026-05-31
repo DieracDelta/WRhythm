@@ -2067,6 +2067,24 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         return true
     }
 
+    @discardableResult
+    func clearSharedQueue() -> Bool {
+        guard syncModeEnabled, let sharedSession, !sharedSession.queue.isEmpty else { return false }
+        let didMutateLocalQueue = mutateLocalQueueIfBackingSharedSession {
+            AudioPlayer.shared.clearQueue()
+        }
+
+        publishSharedSession(makeSession(
+            queue: [],
+            currentIndex: 0,
+            position: sharedSession.estimatedPosition,
+            isPlaying: sharedSession.isPlaying,
+            outputDeviceID: sharedSession.outputDeviceID,
+            volume: sharedSession.volume
+        ), applyLocally: !didMutateLocalQueue)
+        return true
+    }
+
     private func mutateLocalQueueIfBackingSharedSession(_ mutation: () -> Bool) -> Bool {
         guard sharedSession?.outputDeviceID == localDeviceID,
               AudioPlayer.shared.queue.map(\.id) == sharedSession?.queue.map(\.id) else {

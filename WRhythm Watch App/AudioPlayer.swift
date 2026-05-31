@@ -1829,6 +1829,16 @@ class AudioPlayer: NSObject, ObservableObject {
         return true
     }
 
+    @discardableResult
+    func clearQueue() -> Bool {
+        guard !queue.isEmpty else { return false }
+        recordQueueIntentChange()
+        queue = []
+        currentIndex = 0
+        queueFinished = false
+        return true
+    }
+
     func mirrorQueueWithoutPlayback(_ songs: [Song], currentIndex index: Int, currentTime: TimeInterval = 0) {
         guard !songs.isEmpty else { return }
         recordQueueIntentChange()

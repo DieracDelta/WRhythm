@@ -111,6 +111,7 @@ enum StoredAlbumArtworkCache {
                 ImageCache.shared.cacheImage(image, for: remoteURL)
             }
             ImageCache.shared.cacheImage(image, for: localURL)
+            ImageCache.shared.cacheImage(image, forCoverArtId: coverArtId)
         }
     }
 
@@ -166,6 +167,7 @@ final class ImageCache {
     static let shared = ImageCache()
 
     private let decodedCache = NSCache<NSURL, PlatformImage>()
+    private let decodedCoverArtCache = NSCache<NSString, PlatformImage>()
     private var inFlightRequests: [NSURL: [@MainActor (PlatformImage?) -> Void]] = [:]
 
     private init() {
@@ -178,6 +180,7 @@ final class ImageCache {
         )
         URLCache.shared = cache
         decodedCache.countLimit = 1_000
+        decodedCoverArtCache.countLimit = 1_000
     }
 
     func cacheKey(for url: URL) -> NSURL {
@@ -216,6 +219,11 @@ final class ImageCache {
         return nil
     }
 
+    func getImage(forCoverArtId coverArtId: String?) -> PlatformImage? {
+        guard let coverArtId else { return nil }
+        return decodedCoverArtCache.object(forKey: coverArtId as NSString)
+    }
+
     func loadImage(
         for url: URL,
         storedCoverArtId: String? = nil,
@@ -241,7 +249,7 @@ final class ImageCache {
 
             Task { @MainActor in
                 if let data, let loadedImage {
-                    self.cacheImage(loadedImage, data: data, response: response, for: url)
+                    self.cacheImage(loadedImage, data: data, response: response, for: url, coverArtId: storedCoverArtId)
                     let responseStatusCode = (response as? HTTPURLResponse)?.statusCode
                     Task {
                         do {
@@ -287,7 +295,13 @@ final class ImageCache {
         cacheImage(image, data: data, response: nil, for: url)
     }
 
-    private func cacheImage(_ image: PlatformImage, data: Data, response: URLResponse?, for url: URL) {
+    func cacheImage(_ image: PlatformImage, forCoverArtId coverArtId: String?) {
+        guard let coverArtId else { return }
+        decodedCoverArtCache.setObject(image, forKey: coverArtId as NSString)
+    }
+
+    private func cacheImage(_ image: PlatformImage, data: Data, response: URLResponse?, for url: URL, coverArtId: String? = nil) {
+        cacheImage(image, forCoverArtId: coverArtId)
         decodedCache.setObject(image, forKey: cacheKey(for: url))
         let request = URLRequest(url: url, cachePolicy: .returnCacheDataElseLoad)
         let cacheResponse = response ?? HTTPURLResponse(
@@ -315,7 +329,8 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
 
     var body: some View {
         let cacheKey = url.map { ImageCache.shared.cacheKey(for: $0) }
-        let cachedImage = url.flatMap { ImageCache.shared.getImage(for: $0) }
+        let cachedImage = ImageCache.shared.getImage(forCoverArtId: storedCoverArtId)
+            ?? url.flatMap { ImageCache.shared.getImage(for: $0) }
         let stateImage = loadedCacheKey == cacheKey ? image : nil
 
         Group {
@@ -350,7 +365,8 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
         let cacheKey = ImageCache.shared.cacheKey(for: url)
 
         // Check cache first
-        if let cachedImage = ImageCache.shared.getImage(for: url) {
+        if let cachedImage = ImageCache.shared.getImage(forCoverArtId: storedCoverArtId)
+            ?? ImageCache.shared.getImage(for: url) {
             ImageCache.shared.persistCachedArtworkIfNeeded(for: url, storedCoverArtId: storedCoverArtId)
             self.image = cachedImage
             self.loadedCacheKey = cacheKey

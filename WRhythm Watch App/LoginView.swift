@@ -8,6 +8,12 @@
 import SwiftUI
 
 struct LoginView: View {
+    private enum LoginField: Hashable {
+        case serverURL
+        case username
+        case password
+    }
+
     @ObservedObject var api = NavidromeAPI.shared
     @ObservedObject var deviceSyncManager = DeviceSyncManager.shared
     @State private var serverURL = ""
@@ -17,6 +23,7 @@ struct LoginView: View {
     @State private var errorMessage = ""
     @State private var showError = false
     @State private var presentedSheet: LoginSheet?
+    @FocusState private var focusedField: LoginField?
 
     var body: some View {
         NavigationStack {
@@ -35,13 +42,16 @@ struct LoginView: View {
                             TextField("Server URL", text: $serverURL)
                                 .textContentType(.URL)
                                 .platformAutocapitalizationNever()
+                                .focused($focusedField, equals: .serverURL)
 
                             TextField("Username", text: $username)
                                 .textContentType(.username)
                                 .platformAutocapitalizationNever()
+                                .focused($focusedField, equals: .username)
 
                             SecureField("Password", text: $password)
                                 .textContentType(.password)
+                                .focused($focusedField, equals: .password)
                         }
                         .platformSearchTextFieldStyle()
 
@@ -120,6 +130,11 @@ struct LoginView: View {
         .onAppear {
             deviceSyncManager.requestCredentialSyncNow()
         }
+#if os(macOS)
+        .onExitCommand {
+            focusedField = nil
+        }
+#endif
     }
 
     private var credentialSyncStatusText: String {

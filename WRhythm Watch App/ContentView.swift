@@ -349,7 +349,11 @@ struct MacSidebar: View {
                     SlidingRenderWindowForEach(
                         queueItems(displayedQueue),
                         estimatedRowHeight: 50,
-                        resetToken: SongRenderWindowPolicy.sidebarQueueResetToken(songIds: displayedQueue.map(\.id))
+                        resetToken: SongRenderWindowPolicy.sidebarQueueResetToken(
+                            songIds: displayedQueue.map(\.id),
+                            currentIndex: displayedCurrentIndex
+                        ),
+                        anchorIndexHint: displayedCurrentIndex
                     ) { _, item in
                         Button(action: {
                             selection = .nowPlaying
@@ -392,7 +396,11 @@ struct MacSidebar: View {
                         SlidingRenderWindowForEach(
                             queueItems(remoteQueue),
                             estimatedRowHeight: 50,
-                            resetToken: SongRenderWindowPolicy.sidebarQueueResetToken(songIds: remoteQueue.map(\.id))
+                            resetToken: SongRenderWindowPolicy.sidebarQueueResetToken(
+                                songIds: remoteQueue.map(\.id),
+                                currentIndex: remote.currentIndex
+                            ),
+                            anchorIndexHint: remote.currentIndex
                         ) { _, item in
                             Button(action: {
                                 selection = .nowPlaying
@@ -505,9 +513,9 @@ struct MacSidebar: View {
 
     private func clearDisplayedQueue() {
         if QueuePresentationPolicy.mutationTarget(hasSharedSession: deviceSyncManager.sharedSession != nil) == .shared {
-            deviceSyncManager.clearSharedQueueKeepingCurrent()
+            deviceSyncManager.clearSharedQueue()
         } else {
-            player.clearQueueKeepingCurrent()
+            player.clearQueue()
         }
     }
 }

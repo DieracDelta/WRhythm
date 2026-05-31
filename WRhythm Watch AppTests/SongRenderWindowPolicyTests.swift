@@ -345,13 +345,24 @@ struct SongRenderWindowPolicyTests {
         #expect(SongRenderWindowPolicy.failedDownloadIdsResetToken(songIds: ["song-1", "song-2", "song-4"]) != baseline)
     }
 
-    @Test func sidebarQueueResetTokenChangesWhenQueueIdentityOrOrderChanges() {
-        let baseline = SongRenderWindowPolicy.sidebarQueueResetToken(songIds: ["song-1", "song-2", "song-3"])
+    @Test func sidebarQueueResetTokenChangesWhenQueueIdentityOrderOrCurrentIndexChanges() {
+        let baseline = SongRenderWindowPolicy.sidebarQueueResetToken(
+            songIds: ["song-1", "song-2", "song-3"],
+            currentIndex: 1
+        )
 
-        #expect(SongRenderWindowPolicy.sidebarQueueResetToken(songIds: ["song-1", "song-2", "song-3"]) == baseline)
-        #expect(SongRenderWindowPolicy.sidebarQueueResetToken(songIds: ["song-1", "song-3", "song-2"]) != baseline)
-        #expect(SongRenderWindowPolicy.sidebarQueueResetToken(songIds: ["song-1", "song-2"]) != baseline)
-        #expect(SongRenderWindowPolicy.sidebarQueueResetToken(songIds: ["song-1", "song-2", "song-4"]) != baseline)
+        #expect(SongRenderWindowPolicy.sidebarQueueResetToken(songIds: ["song-1", "song-2", "song-3"], currentIndex: 1) == baseline)
+        #expect(SongRenderWindowPolicy.sidebarQueueResetToken(songIds: ["song-1", "song-3", "song-2"], currentIndex: 1) != baseline)
+        #expect(SongRenderWindowPolicy.sidebarQueueResetToken(songIds: ["song-1", "song-2"], currentIndex: 1) != baseline)
+        #expect(SongRenderWindowPolicy.sidebarQueueResetToken(songIds: ["song-1", "song-2", "song-4"], currentIndex: 1) != baseline)
+        #expect(SongRenderWindowPolicy.sidebarQueueResetToken(songIds: ["song-1", "song-2", "song-3"], currentIndex: 2) != baseline)
+    }
+
+    @Test func renderWindowAnchorHintClampsToCollectionBounds() {
+        #expect(SongRenderWindowPolicy.clampedAnchorIndexHint(42, totalCount: 0) == 0)
+        #expect(SongRenderWindowPolicy.clampedAnchorIndexHint(-3, totalCount: 10) == 0)
+        #expect(SongRenderWindowPolicy.clampedAnchorIndexHint(3, totalCount: 10) == 3)
+        #expect(SongRenderWindowPolicy.clampedAnchorIndexHint(42, totalCount: 10) == 9)
     }
 
     @Test func pagesToLoadOnlyRequestsMissingVisiblePages() {

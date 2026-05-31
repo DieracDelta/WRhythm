@@ -6,6 +6,11 @@
 //
 
 import SwiftUI
+#if os(macOS)
+import AppKit
+#elseif os(iOS)
+import UIKit
+#endif
 
 struct SettingsView: View {
     @ObservedObject var api = NavidromeAPI.shared
@@ -246,11 +251,11 @@ struct SettingsView: View {
     @ViewBuilder
     private var accountSettingsContent: some View {
         if let serverURL = UserDefaults.standard.string(forKey: "navidrome_url") {
-            SettingsInfoRow(title: "Server", value: serverURL, systemImage: "server.rack")
+            SettingsInfoRow(title: "Server", value: serverURL, systemImage: "server.rack", isCopyable: true)
         }
 
         if let username = UserDefaults.standard.string(forKey: "navidrome_username") {
-            SettingsInfoRow(title: "Username", value: username, systemImage: "person.crop.circle")
+            SettingsInfoRow(title: "Username", value: username, systemImage: "person.crop.circle", isCopyable: true)
         }
 
         SettingsInfoRow(
@@ -672,6 +677,7 @@ private struct SettingsInfoRow: View {
     let title: String
     let value: String
     let systemImage: String
+    var isCopyable = false
 
     var body: some View {
         HStack(spacing: WRhythmSpacing.sm) {
@@ -686,9 +692,35 @@ private struct SettingsInfoRow: View {
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
+
+#if os(macOS) || os(iOS)
+            if isCopyable {
+                Spacer(minLength: WRhythmSpacing.sm)
+
+                Button(action: copyValue) {
+                    Image(systemName: "doc.on.doc")
+                        .imageScale(.medium)
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(WRhythmTheme.accent)
+                .accessibilityLabel("Copy \(title)")
+                .help("Copy \(title)")
+            }
+#endif
         }
         .padding(.vertical, 2)
     }
+
+#if os(macOS) || os(iOS)
+    private func copyValue() {
+#if os(macOS)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
+#elseif os(iOS)
+        UIPasteboard.general.string = value
+#endif
+    }
+#endif
 }
 
 private struct SettingsToggleLabel: View {

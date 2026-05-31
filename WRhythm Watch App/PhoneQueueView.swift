@@ -92,7 +92,16 @@ struct PhoneQueueView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.vertical, WRhythmSpacing.xs)
                 } else {
-                    SlidingRenderWindowForEach(queueItems(songs), estimatedRowHeight: 62, spacing: WRhythmSpacing.xs) { _, item in
+                    SlidingRenderWindowForEach(
+                        queueItems(songs),
+                        estimatedRowHeight: 62,
+                        spacing: WRhythmSpacing.xs,
+                        resetToken: SongRenderWindowPolicy.sidebarQueueResetToken(
+                            songIds: songs.map(\.id),
+                            currentIndex: currentIndex
+                        ),
+                        anchorIndexHint: currentIndex
+                    ) { _, item in
                         Button(action: {
                             play(item.index)
                         }) {
@@ -221,9 +230,9 @@ struct PhoneQueueView: View {
 
     private func clearDisplayedQueue() {
         if QueuePresentationPolicy.mutationTarget(hasSharedSession: deviceSyncManager.sharedSession != nil) == .shared {
-            deviceSyncManager.clearSharedQueueKeepingCurrent()
+            deviceSyncManager.clearSharedQueue()
         } else {
-            player.clearQueueKeepingCurrent()
+            player.clearQueue()
         }
     }
 }

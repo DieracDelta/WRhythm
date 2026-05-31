@@ -127,8 +127,13 @@ struct SongRenderWindowPolicy: Sendable {
         resetToken(scope: "downloads:failed", sortIdentifier: songIds.joined(separator: ","))
     }
 
-    static func sidebarQueueResetToken(songIds: [String]) -> String {
-        resetToken(scope: "mac-sidebar:queue", sortIdentifier: songIds.joined(separator: ","))
+    static func sidebarQueueResetToken(songIds: [String], currentIndex: Int) -> String {
+        resetToken(scope: "mac-sidebar:queue:\(currentIndex)", sortIdentifier: songIds.joined(separator: ","))
+    }
+
+    static func clampedAnchorIndexHint(_ hint: Int, totalCount: Int) -> Int {
+        guard totalCount > 0 else { return 0 }
+        return min(max(hint, 0), totalCount - 1)
     }
 
     static func anchorAfterTopSpacerAppears(visibleRange: Range<Int>, storedLimit: Int) -> Int {

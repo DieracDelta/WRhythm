@@ -5,6 +5,7 @@ struct SlidingRenderWindowForEach<Element, Row: View>: View {
     private let estimatedRowHeight: CGFloat
     private let spacing: CGFloat
     private let resetToken: AnyHashable
+    private let anchorIndexHint: Int
     private let row: (Int, Element) -> Row
 
     @AppStorage(SongRenderWindowPolicy.userDefaultsKey) private var storedLimit = SongRenderWindowPolicy.defaultLimit
@@ -17,12 +18,14 @@ struct SlidingRenderWindowForEach<Element, Row: View>: View {
         estimatedRowHeight: CGFloat = 64,
         spacing: CGFloat = 0,
         resetToken: some Hashable = 0,
+        anchorIndexHint: Int = 0,
         @ViewBuilder row: @escaping (Int, Element) -> Row
     ) {
         self.items = items
         self.estimatedRowHeight = estimatedRowHeight
         self.spacing = spacing
         self.resetToken = AnyHashable(resetToken)
+        self.anchorIndexHint = anchorIndexHint
         self.row = row
     }
 
@@ -86,6 +89,9 @@ struct SlidingRenderWindowForEach<Element, Row: View>: View {
             }
         }
         .onAppear {
+            if loadedPageIndices.isEmpty, pendingPageIndices.isEmpty {
+                anchorIndex = clampedAnchorIndexHint
+            }
             scheduleVisiblePages()
         }
         .onChange(of: items.count) { _, newCount in
@@ -105,17 +111,27 @@ struct SlidingRenderWindowForEach<Element, Row: View>: View {
             scheduleVisiblePages()
         }
         .onChange(of: resetToken) { _, _ in
-            anchorIndex = 0
+            anchorIndex = clampedAnchorIndexHint
+            loadedPageIndices = []
+            pendingPageIndices = []
+            scheduleVisiblePages()
+        }
+        .onChange(of: anchorIndexHint) { _, _ in
+            anchorIndex = clampedAnchorIndexHint
             loadedPageIndices = []
             pendingPageIndices = []
             scheduleVisiblePages()
         }
         .onChange(of: storedLimit) { _, _ in
-            anchorIndex = min(anchorIndex, max(0, items.count - 1))
+            anchorIndex = clampedAnchorIndexHint
             loadedPageIndices = []
             pendingPageIndices = []
             scheduleVisiblePages()
         }
+    }
+
+    private var clampedAnchorIndexHint: Int {
+        SongRenderWindowPolicy.clampedAnchorIndexHint(anchorIndexHint, totalCount: items.count)
     }
 
     private func spacerHeight(for hiddenRows: Int) -> CGFloat {
