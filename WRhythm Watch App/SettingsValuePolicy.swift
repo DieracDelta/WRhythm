@@ -83,6 +83,10 @@ struct SongRenderWindowPolicy: Sendable {
         resetToken(scope: "tracks:\(mode)", sortIdentifier: "title", query: query)
     }
 
+    static func searchResultGroupResetToken(mode: String, kind: String, query: String) -> String {
+        resetToken(scope: "search:\(mode):\(kind)", sortIdentifier: "title", query: query)
+    }
+
     static func artistAlbumResetToken(artistId: String, mode: String) -> String {
         resetToken(scope: "artist:\(artistId):albums", sortIdentifier: mode)
     }

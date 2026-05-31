@@ -204,8 +204,16 @@ struct TracksView: View {
 
                         if !offlinePlaylistResults.isEmpty {
                             Section(header: Text("Playlists")) {
-                                ForEach(offlinePlaylistResults, id: \.id) { playlist in
-                                NavigationLink(destination: PlaylistDetailView(playlistId: playlist.id, playlistName: playlist.name)) {
+                                SlidingRenderWindowForEach(
+                                    offlinePlaylistResults,
+                                    estimatedRowHeight: 64,
+                                    resetToken: SongRenderWindowPolicy.searchResultGroupResetToken(
+                                        mode: "offline",
+                                        kind: "playlists",
+                                        query: searchText
+                                    )
+                                ) { _, playlist in
+                                    NavigationLink(destination: PlaylistDetailView(playlistId: playlist.id, playlistName: playlist.name)) {
                                         WRhythmCollectionRow(
                                             title: playlist.name,
                                             subtitle: "\(playlist.songCount) songs",
@@ -222,7 +230,15 @@ struct TracksView: View {
 
                         if !offlineArtistResults.isEmpty {
                             Section(header: Text("Artists")) {
-                                ForEach(offlineArtistResults) { artist in
+                                SlidingRenderWindowForEach(
+                                    offlineArtistResults,
+                                    estimatedRowHeight: 64,
+                                    resetToken: SongRenderWindowPolicy.searchResultGroupResetToken(
+                                        mode: "offline",
+                                        kind: "artists",
+                                        query: searchText
+                                    )
+                                ) { _, artist in
                                     Button(action: {
                                         // Filter songs by this artist
                                         searchText = artist.name
@@ -242,7 +258,15 @@ struct TracksView: View {
 
                         if !offlineAlbumResults.isEmpty {
                             Section(header: Text("Albums")) {
-                                ForEach(offlineAlbumResults) { album in
+                                SlidingRenderWindowForEach(
+                                    offlineAlbumResults,
+                                    estimatedRowHeight: 64,
+                                    resetToken: SongRenderWindowPolicy.searchResultGroupResetToken(
+                                        mode: "offline",
+                                        kind: "albums",
+                                        query: searchText
+                                    )
+                                ) { _, album in
                                     Button(action: {
                                         // Filter songs by this album
                                         searchText = album.name
@@ -309,7 +333,15 @@ struct TracksView: View {
 
                     if !artistResults.isEmpty {
                         Section(header: Text("Artists")) {
-                            ForEach(artistResults) { artist in
+                            SlidingRenderWindowForEach(
+                                artistResults,
+                                estimatedRowHeight: 64,
+                                resetToken: SongRenderWindowPolicy.searchResultGroupResetToken(
+                                    mode: "online",
+                                    kind: "artists",
+                                    query: searchText
+                                )
+                            ) { _, artist in
                                 NavigationLink(destination: ArtistDetailView(artistId: artist.id, artistName: artist.name)) {
                                     WRhythmCollectionRow(
                                         title: artist.name,
@@ -326,7 +358,15 @@ struct TracksView: View {
 
                     if !albumResults.isEmpty {
                         Section(header: Text("Albums")) {
-                            ForEach(albumResults) { album in
+                            SlidingRenderWindowForEach(
+                                albumResults,
+                                estimatedRowHeight: 64,
+                                resetToken: SongRenderWindowPolicy.searchResultGroupResetToken(
+                                    mode: "online",
+                                    kind: "albums",
+                                    query: searchText
+                                )
+                            ) { _, album in
                                 NavigationLink(destination: AlbumDetailView(albumId: album.id)) {
                                     WRhythmCollectionRow(
                                         title: album.name,

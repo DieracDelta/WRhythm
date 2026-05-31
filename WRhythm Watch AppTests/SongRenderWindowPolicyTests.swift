@@ -141,6 +141,35 @@ struct SongRenderWindowPolicyTests {
         #expect(SongRenderWindowPolicy.trackSearchResetToken(mode: "online", query: "abba") != baseline)
     }
 
+    @Test func searchResultGroupResetTokenChangesWhenModeKindOrQueryChanges() {
+        let baseline = SongRenderWindowPolicy.searchResultGroupResetToken(
+            mode: "online",
+            kind: "artists",
+            query: "blondie"
+        )
+
+        #expect(
+            SongRenderWindowPolicy.searchResultGroupResetToken(mode: "online", kind: "artists", query: "blondie")
+                == baseline
+        )
+        #expect(
+            SongRenderWindowPolicy.searchResultGroupResetToken(mode: "online", kind: "artists", query: " blondie ")
+                == baseline
+        )
+        #expect(
+            SongRenderWindowPolicy.searchResultGroupResetToken(mode: "offline", kind: "artists", query: "blondie")
+                != baseline
+        )
+        #expect(
+            SongRenderWindowPolicy.searchResultGroupResetToken(mode: "online", kind: "albums", query: "blondie")
+                != baseline
+        )
+        #expect(
+            SongRenderWindowPolicy.searchResultGroupResetToken(mode: "online", kind: "artists", query: "abba")
+                != baseline
+        )
+    }
+
     @Test func artistAlbumResetTokenChangesWhenArtistOrModeChanges() {
         let baseline = SongRenderWindowPolicy.artistAlbumResetToken(artistId: "artist-1", mode: "online")
 
