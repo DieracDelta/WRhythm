@@ -58,4 +58,76 @@ struct SongRenderWindowPolicyTests {
         #expect(SongRenderWindowPolicy.anchorAfterTopSpacerAppears(visibleRange: range, storedLimit: 50) == 75)
         #expect(SongRenderWindowPolicy.anchorAfterBottomSpacerAppears(visibleRange: range, totalCount: 300, storedLimit: 50) == 175)
     }
+
+    @Test func pagedWindowLoadsPagesAroundAnchorAndEvictsDistantPages() {
+        let visiblePages = SongRenderWindowPolicy.visiblePageIndices(
+            totalCount: 1_000,
+            anchorIndex: 525,
+            storedLimit: 100,
+            pageSize: 25,
+            retainedPageRadius: 1
+        )
+        let retainedPages = SongRenderWindowPolicy.retainedPageIndices(
+            visiblePageIndices: visiblePages,
+            totalCount: 1_000,
+            pageSize: 25,
+            retainedPageRadius: 1
+        )
+
+        #expect(visiblePages == Set([19, 20, 21, 22]))
+        #expect(retainedPages == Set([18, 19, 20, 21, 22, 23]))
+    }
+
+    @Test func pagedWindowProducesPlaceholderSlotsForUnloadedPages() {
+        let slots = SongRenderWindowPolicy.renderSlots(
+            totalCount: 200,
+            anchorIndex: 60,
+            storedLimit: 60,
+            pageSize: 20,
+            loadedPageIndices: [3]
+        )
+
+        #expect(slots.count == 60)
+        #expect(slots.filter(\.isLoaded).map(\.index) == Array(60..<80))
+        #expect(slots.filter { !$0.isLoaded }.count == 40)
+    }
+
+    @Test func pagedWindowNeverRendersMoreThanTheConfiguredLimit() {
+        let slots = SongRenderWindowPolicy.renderSlots(
+            totalCount: 10_000,
+            anchorIndex: 9_900,
+            storedLimit: 50,
+            pageSize: 25,
+            loadedPageIndices: Set(0..<400)
+        )
+
+        #expect(slots.count == 50)
+        #expect(slots.first?.index == 9_875)
+        #expect(slots.last?.index == 9_924)
+    }
+
+    @Test func pagesToLoadOnlyRequestsMissingVisiblePages() {
+        let pages = SongRenderWindowPolicy.pagesToLoad(
+            totalCount: 1_000,
+            anchorIndex: 300,
+            storedLimit: 100,
+            pageSize: 25,
+            loadedPageIndices: [10, 11]
+        )
+
+        #expect(pages == [12, 13])
+    }
+
+    @Test func evictingLoadedPagesKeepsOnlyRetainedNeighborhood() {
+        let retained = SongRenderWindowPolicy.loadedPageIndicesAfterEviction(
+            loadedPageIndices: Set(0..<20),
+            totalCount: 1_000,
+            anchorIndex: 525,
+            storedLimit: 100,
+            pageSize: 25,
+            retainedPageRadius: 1
+        )
+
+        #expect(retained == Set([18, 19]))
+    }
 }

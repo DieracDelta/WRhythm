@@ -28,11 +28,20 @@ struct ConcurrentDownloadSettingsPolicy: Sendable {
 }
 
 struct SongRenderWindowPolicy: Sendable {
+    struct RenderSlot: Identifiable, Equatable, Sendable {
+        let index: Int
+        let isLoaded: Bool
+
+        var id: Int { index }
+    }
+
     static let userDefaultsKey = "songRenderWindowLimit"
     static let unlimitedSentinel = 0
     static let minimumLimit = 20
     static let defaultLimit = 250
     static let hiddenSpacerSentinelRows = 1
+    static let defaultPageSize = 25
+    static let defaultRetainedPageRadius = 1
 
     static func sanitizeLimit(_ value: Int) -> Int {
         value == unlimitedSentinel ? unlimitedSentinel : max(value, minimumLimit)
@@ -75,5 +84,109 @@ struct SongRenderWindowPolicy: Sendable {
             return max(0, totalCount - 1)
         }
         return min(max(0, totalCount - 1), visibleRange.upperBound + max(1, limit / 2))
+    }
+
+    static func pageIndex(forRow row: Int, pageSize: Int) -> Int {
+        guard pageSize > 0 else { return 0 }
+        return max(0, row) / pageSize
+    }
+
+    static func pageRange(pageIndex: Int, totalCount: Int, pageSize: Int) -> Range<Int> {
+        guard totalCount > 0, pageSize > 0 else { return 0..<0 }
+        let lowerBound = min(max(0, pageIndex * pageSize), totalCount)
+        let upperBound = min(totalCount, lowerBound + pageSize)
+        return lowerBound..<upperBound
+    }
+
+    static func visiblePageIndices(
+        totalCount: Int,
+        anchorIndex: Int,
+        storedLimit: Int,
+        pageSize: Int = defaultPageSize,
+        retainedPageRadius: Int = defaultRetainedPageRadius
+    ) -> Set<Int> {
+        guard totalCount > 0, pageSize > 0 else { return [] }
+        let range = visibleRange(totalCount: totalCount, anchorIndex: anchorIndex, storedLimit: storedLimit)
+        guard !range.isEmpty else { return [] }
+
+        let firstPage = pageIndex(forRow: range.lowerBound, pageSize: pageSize)
+        let lastPage = pageIndex(forRow: max(range.lowerBound, range.upperBound - 1), pageSize: pageSize)
+        return Set(firstPage...lastPage)
+    }
+
+    static func retainedPageIndices(
+        visiblePageIndices: Set<Int>,
+        totalCount: Int,
+        pageSize: Int = defaultPageSize,
+        retainedPageRadius: Int = defaultRetainedPageRadius
+    ) -> Set<Int> {
+        guard totalCount > 0, pageSize > 0, !visiblePageIndices.isEmpty else { return [] }
+
+        let maxPage = pageIndex(forRow: totalCount - 1, pageSize: pageSize)
+        let radius = max(0, retainedPageRadius)
+        var retained: Set<Int> = []
+
+        for page in visiblePageIndices {
+            let lowerBound = max(0, page - radius)
+            let upperBound = min(maxPage, page + radius)
+            retained.formUnion(lowerBound...upperBound)
+        }
+
+        return retained
+    }
+
+    static func pagesToLoad(
+        totalCount: Int,
+        anchorIndex: Int,
+        storedLimit: Int,
+        pageSize: Int = defaultPageSize,
+        loadedPageIndices: Set<Int>
+    ) -> [Int] {
+        let visiblePages = visiblePageIndices(
+            totalCount: totalCount,
+            anchorIndex: anchorIndex,
+            storedLimit: storedLimit,
+            pageSize: pageSize
+        )
+        return visiblePages.subtracting(loadedPageIndices).sorted()
+    }
+
+    static func loadedPageIndicesAfterEviction(
+        loadedPageIndices: Set<Int>,
+        totalCount: Int,
+        anchorIndex: Int,
+        storedLimit: Int,
+        pageSize: Int = defaultPageSize,
+        retainedPageRadius: Int = defaultRetainedPageRadius
+    ) -> Set<Int> {
+        let visiblePages = visiblePageIndices(
+            totalCount: totalCount,
+            anchorIndex: anchorIndex,
+            storedLimit: storedLimit,
+            pageSize: pageSize,
+            retainedPageRadius: retainedPageRadius
+        )
+        let retainedPages = retainedPageIndices(
+            visiblePageIndices: visiblePages,
+            totalCount: totalCount,
+            pageSize: pageSize,
+            retainedPageRadius: retainedPageRadius
+        )
+        return loadedPageIndices.intersection(retainedPages)
+    }
+
+    static func renderSlots(
+        totalCount: Int,
+        anchorIndex: Int,
+        storedLimit: Int,
+        pageSize: Int = defaultPageSize,
+        loadedPageIndices: Set<Int>
+    ) -> [RenderSlot] {
+        let range = visibleRange(totalCount: totalCount, anchorIndex: anchorIndex, storedLimit: storedLimit)
+        guard !range.isEmpty else { return [] }
+
+        return range.map { index in
+            RenderSlot(index: index, isLoaded: loadedPageIndices.contains(pageIndex(forRow: index, pageSize: pageSize)))
+        }
     }
 }
