@@ -106,6 +106,22 @@ struct SongRenderWindowPolicyTests {
         #expect(slots.last?.index == 9_924)
     }
 
+    @Test func largeClientCollectionsRenderOnlyConfiguredWindow() {
+        let totalArtistCount = 2_362
+        let slots = SongRenderWindowPolicy.renderSlots(
+            totalCount: totalArtistCount,
+            anchorIndex: 1_200,
+            storedLimit: 50,
+            pageSize: 25,
+            loadedPageIndices: [48]
+        )
+
+        #expect(slots.count == 50)
+        #expect(slots.map(\.index) == Array(1_175..<1_225))
+        #expect(slots.filter(\.isLoaded).map(\.index) == Array(1_200..<1_225))
+        #expect(slots.filter { !$0.isLoaded }.count == 25)
+    }
+
     @Test func pagesToLoadOnlyRequestsMissingVisiblePages() {
         let pages = SongRenderWindowPolicy.pagesToLoad(
             totalCount: 1_000,

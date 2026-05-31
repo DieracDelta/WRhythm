@@ -9,8 +9,6 @@ import SwiftUI
 
 struct ArtistsView: View {
     @EnvironmentObject var libraryDataManager: LibraryDataManager
-    @State private var displayedArtists: [Artist] = []
-    @State private var loadedCount = 0
     @State private var searchText = ""
     @State private var searchResults: [Artist] = []
     @State private var isSearching = false
@@ -19,32 +17,17 @@ struct ArtistsView: View {
     @State private var sortOption: ArtistSortOption = .nameAscending
     @ObservedObject var downloadManager = DownloadManager.shared
     @AppStorage("offlineMode") private var offlineMode = false
-    private let batchSize = 20
 
-    private var filteredDisplayedArtists: [Artist] {
-        if offlineMode {
-            let downloadedArtists = displayedArtists.filter { artist in
-                downloadManager.downloadedSongs.values.contains { song in
-                    song.artist == artist.name
-                }
-            }
-            guard !searchText.isEmpty else {
-                return downloadedArtists
-            }
-            return downloadedArtists.filter { artist in
-                artist.name.localizedCaseInsensitiveContains(searchText)
-            }
-        }
-
+    private var onlineArtistsToDisplay: [Artist] {
         if !searchText.isEmpty {
             return searchResults
         }
-        return displayedArtists
+        return libraryDataManager.artists
     }
 
     var body: some View {
         content
-            .navigationTitle(offlineMode ? "Artists (\(downloadManager.getDownloadedArtists().count))" : "Artists (\(filteredDisplayedArtists.count))")
+            .navigationTitle(offlineMode ? "Artists (\(downloadManager.getDownloadedArtists().count))" : "Artists (\(onlineArtistsToDisplay.count))")
             .wrhythmPageBackground()
             .toolbar {
                 ToolbarItemGroup(placement: .platformTopBarTrailing) {
@@ -92,14 +75,6 @@ struct ArtistsView: View {
             .onAppear {
                 if !offlineMode {
                     libraryDataManager.fetchArtists()
-                    if !libraryDataManager.artists.isEmpty && displayedArtists.isEmpty {
-                        loadMoreArtists()
-                    }
-                }
-            }
-            .onChange(of: libraryDataManager.artists) { _, newArtists in
-                if !newArtists.isEmpty && displayedArtists.isEmpty {
-                    loadMoreArtists()
                 }
             }
             .onDisappear {
@@ -183,7 +158,7 @@ struct ArtistsView: View {
 
     @ViewBuilder
     private var onlineContent: some View {
-        if libraryDataManager.isLoadingArtists {
+        if libraryDataManager.artists.isEmpty && libraryDataManager.isLoadingArtists {
             WRhythmLoadingState(
                 systemImage: "person.2",
                 title: "Loading artists",
@@ -196,19 +171,18 @@ struct ArtistsView: View {
             ) {
                 libraryDataManager.fetchArtists(forceRefresh: true)
             }
-        } else if displayedArtists.isEmpty && !libraryDataManager.artists.isEmpty {
-            ProgressView()
-        } else if displayedArtists.isEmpty {
+        } else if onlineArtistsToDisplay.isEmpty {
             WRhythmEmptyState(
                 systemImage: "person.2",
-                title: "No artists found",
+                title: searchText.isEmpty ? "No artists found" : "No artists match",
                 message: nil,
                 actionTitle: "Retry"
             ) {
                 libraryDataManager.fetchArtists(forceRefresh: true)
             }
         } else {
-            let sortedArtists = sortOption.sorted(filteredDisplayedArtists)
+            let sortedArtists = sortOption.sorted(onlineArtistsToDisplay)
+            let resetToken = "\(sortOption.rawValue)|\(searchText)"
             ScrollView {
                 VStack(spacing: WRhythmSpacing.sm) {
 #if os(iOS)
@@ -222,7 +196,7 @@ struct ArtistsView: View {
 #endif
 
                     WRhythmCard {
-                        SlidingRenderWindowForEach(sortedArtists, estimatedRowHeight: 64, resetToken: sortOption) { _, artist in
+                        SlidingRenderWindowForEach(sortedArtists, estimatedRowHeight: 64, resetToken: resetToken) { _, artist in
                             NavigationLink(destination: ArtistDetailView(artistId: artist.id, artistName: artist.name)) {
                                 WRhythmCollectionRow(
                                     title: artist.name,
@@ -234,11 +208,6 @@ struct ArtistsView: View {
                             }
                             .buttonStyle(.plain)
                             .wrhythmArtistActions(artistId: artist.id, artistName: artist.name)
-                            .onAppear {
-                                if artist.id == displayedArtists.last?.id {
-                                    loadMoreArtists()
-                                }
-                            }
 
                             if artist.id != sortedArtists.last?.id {
                                 Divider()
@@ -246,29 +215,10 @@ struct ArtistsView: View {
                             }
                         }
                     }
-
-                    if loadedCount < libraryDataManager.artists.count {
-                        ProgressView()
-                            .frame(maxWidth: .infinity)
-                            .onAppear {
-                                loadMoreArtists()
-                            }
-                    }
                 }
             }
             .wrhythmListSurface()
         }
-    }
-
-    private func loadMoreArtists() {
-        let artists = libraryDataManager.artists
-        guard loadedCount < artists.count else {
-            return
-        }
-
-        let nextBatch = artists[loadedCount..<min(loadedCount + batchSize, artists.count)]
-        displayedArtists.append(contentsOf: nextBatch)
-        loadedCount += nextBatch.count
     }
 
     private func artistCountText(_ count: Int) -> String {
