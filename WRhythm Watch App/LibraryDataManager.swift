@@ -59,11 +59,10 @@ nonisolated struct SearchPaginationPolicy: Sendable {
         resultCount >= sanitizedPageSize(pageSize)
     }
 
-    static func visiblePages(currentPage: Int, canGoNext: Bool, radius: Int = 2) -> [Int] {
+    static func visiblePages(currentPage: Int, canGoNext _: Bool, radius: Int = 2) -> [Int] {
         let currentPage = max(0, currentPage)
         let lowerBound = max(0, currentPage - max(0, radius))
-        let upperBound = currentPage + max(0, radius) + (canGoNext ? 1 : 0)
-        return Array(lowerBound...upperBound)
+        return Array(lowerBound...currentPage)
     }
 }
 

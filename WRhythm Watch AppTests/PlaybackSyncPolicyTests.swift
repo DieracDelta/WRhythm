@@ -1416,8 +1416,9 @@ struct PlaybackSyncPolicyTests {
         #expect(SearchPaginationPolicy.canGoPrevious(page: 1))
         #expect(!SearchPaginationPolicy.canGoNext(resultCount: 19, pageSize: 20))
         #expect(SearchPaginationPolicy.canGoNext(resultCount: 20, pageSize: 20))
-        #expect(SearchPaginationPolicy.visiblePages(currentPage: 0, canGoNext: true) == [0, 1, 2, 3])
-        #expect(SearchPaginationPolicy.visiblePages(currentPage: 5, canGoNext: false) == [3, 4, 5, 6, 7])
+        #expect(SearchPaginationPolicy.visiblePages(currentPage: 0, canGoNext: true) == [0])
+        #expect(SearchPaginationPolicy.visiblePages(currentPage: 5, canGoNext: true) == [3, 4, 5])
+        #expect(SearchPaginationPolicy.visiblePages(currentPage: 5, canGoNext: false) == [3, 4, 5])
     }
 
     @Test func remotePauseRoundTripCanApplyAndAcknowledgeAcrossDevices() {
