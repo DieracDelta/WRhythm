@@ -40,6 +40,33 @@ struct SearchRetryPolicy: Sendable {
     }
 }
 
+nonisolated struct SearchPaginationPolicy: Sendable {
+    static let defaultPageSize = 20
+
+    static func sanitizedPageSize(_ pageSize: Int) -> Int {
+        max(1, pageSize)
+    }
+
+    static func offset(forPage page: Int, pageSize: Int = defaultPageSize) -> Int {
+        max(0, page) * sanitizedPageSize(pageSize)
+    }
+
+    static func canGoPrevious(page: Int) -> Bool {
+        page > 0
+    }
+
+    static func canGoNext(resultCount: Int, pageSize: Int = defaultPageSize) -> Bool {
+        resultCount >= sanitizedPageSize(pageSize)
+    }
+
+    static func visiblePages(currentPage: Int, canGoNext: Bool, radius: Int = 2) -> [Int] {
+        let currentPage = max(0, currentPage)
+        let lowerBound = max(0, currentPage - max(0, radius))
+        let upperBound = currentPage + max(0, radius) + (canGoNext ? 1 : 0)
+        return Array(lowerBound...upperBound)
+    }
+}
+
 @MainActor
 final class LibraryDataManager: ObservableObject {
     // MARK: - Artists

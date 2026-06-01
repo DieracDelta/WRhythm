@@ -1096,12 +1096,29 @@ final class NavidromeAPI: ObservableObject {
         print("✅ Scrobble \(submission ? "submission" : "now-playing") sent for song: \(songId)")
     }
 
-    func search(query: String) async throws -> SearchResult {
-        guard let url = buildURL(endpoint: "search3", additionalParams: ["query": query]) else {
+    func search(
+        query: String,
+        artistCount: Int = SearchPaginationPolicy.defaultPageSize,
+        artistOffset: Int = 0,
+        albumCount: Int = SearchPaginationPolicy.defaultPageSize,
+        albumOffset: Int = 0,
+        songCount: Int = SearchPaginationPolicy.defaultPageSize,
+        songOffset: Int = 0
+    ) async throws -> SearchResult {
+        let params = [
+            "query": query,
+            "artistCount": String(SearchPaginationPolicy.sanitizedPageSize(artistCount)),
+            "artistOffset": String(max(0, artistOffset)),
+            "albumCount": String(SearchPaginationPolicy.sanitizedPageSize(albumCount)),
+            "albumOffset": String(max(0, albumOffset)),
+            "songCount": String(SearchPaginationPolicy.sanitizedPageSize(songCount)),
+            "songOffset": String(max(0, songOffset))
+        ]
+        guard let url = buildURL(endpoint: "search3", additionalParams: params) else {
             throw NavidromeError.invalidURL
         }
 
-        print("🔍 Searching for: \(query)")
+        print("🔍 Searching for: \(query) artists@\(max(0, artistOffset)) albums@\(max(0, albumOffset)) songs@\(max(0, songOffset))")
 
         let (data, response) = try await URLSession.shared.data(from: url)
 

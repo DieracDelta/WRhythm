@@ -8,6 +8,8 @@
 import SwiftUI
 
 struct TracksView: View {
+    private let searchPageSize = SearchPaginationPolicy.defaultPageSize
+
     @State private var searchText = ""
     @State private var searchResults: [Song] = []
     @State private var albumResults: [AlbumSummary] = []
@@ -16,6 +18,13 @@ struct TracksView: View {
     @State private var errorMessage = ""
     @State private var isRestoringCachedSearch = false
     @State private var restoredCachedSearchQueryToSkip: String?
+    @State private var artistPage = 0
+    @State private var albumPage = 0
+    @State private var songPage = 0
+    @State private var artistCanGoNext = false
+    @State private var albumCanGoNext = false
+    @State private var songCanGoNext = false
+    @State private var pagingKind: SearchResultPageKind?
 #if os(watchOS)
     @State private var presentedSheet: TracksSheet?
 #endif
@@ -298,7 +307,7 @@ struct TracksView: View {
                     }
                     .wrhythmListSurface()
                 }
-            } else if isSearching {
+            } else if isSearching && !hasOnlineSearchResults {
                 WRhythmLoadingState(
                     systemImage: "magnifyingglass",
                     title: "Searching",
@@ -330,81 +339,93 @@ struct TracksView: View {
 #if os(macOS)
         ScrollView {
             VStack(alignment: .leading, spacing: WRhythmSpacing.md) {
-                if !artistResults.isEmpty {
-                    searchResultSection(title: "Artists", count: artistResults.count) {
-                        SlidingRenderWindowForEach(
-                            artistResults,
-                            estimatedRowHeight: 64,
-                            resetToken: SongRenderWindowPolicy.searchResultGroupResetToken(
-                                mode: "online",
-                                kind: "artists",
-                                query: searchText
-                            )
-                        ) { _, artist in
-                            NavigationLink(destination: ArtistDetailView(artistId: artist.id, artistName: artist.name)) {
-                                WRhythmCollectionRow(
-                                    title: artist.name,
-                                    subtitle: artist.albumCount.map { "\($0) albums" },
-                                    coverArtId: artist.coverArt,
-                                    fallbackSystemImage: "person.fill",
-                                    tint: WRhythmTheme.artist
+                if shouldShowSearchSection(kind: .artists, resultCount: artistResults.count) {
+                    searchResultSection(title: "Artists", kind: .artists, count: artistResults.count) {
+                        if artistResults.isEmpty {
+                            emptySearchPageMessage(for: .artists)
+                        } else {
+                            SlidingRenderWindowForEach(
+                                artistResults,
+                                estimatedRowHeight: 64,
+                                resetToken: SongRenderWindowPolicy.searchResultGroupResetToken(
+                                    mode: "online",
+                                    kind: "artists",
+                                    query: searchText
                                 )
-                            }
-                            .buttonStyle(.plain)
-                            .wrhythmArtistActions(artistId: artist.id, artistName: artist.name)
+                            ) { _, artist in
+                                NavigationLink(destination: ArtistDetailView(artistId: artist.id, artistName: artist.name)) {
+                                    WRhythmCollectionRow(
+                                        title: artist.name,
+                                        subtitle: artist.albumCount.map { "\($0) albums" },
+                                        coverArtId: artist.coverArt,
+                                        fallbackSystemImage: "person.fill",
+                                        tint: WRhythmTheme.artist
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                                .wrhythmArtistActions(artistId: artist.id, artistName: artist.name)
 
-                            if artist.id != artistResults.last?.id {
-                                Divider()
-                                    .padding(.leading, 56)
+                                if artist.id != artistResults.last?.id {
+                                    Divider()
+                                        .padding(.leading, 56)
+                                }
                             }
                         }
                     }
                 }
 
-                if !albumResults.isEmpty {
-                    searchResultSection(title: "Albums", count: albumResults.count) {
-                        SlidingRenderWindowForEach(
-                            albumResults,
-                            estimatedRowHeight: 64,
-                            resetToken: SongRenderWindowPolicy.searchResultGroupResetToken(
-                                mode: "online",
-                                kind: "albums",
-                                query: searchText
-                            )
-                        ) { _, album in
-                            NavigationLink(destination: AlbumDetailView(albumId: album.id)) {
-                                WRhythmCollectionRow(
-                                    title: album.name,
-                                    subtitle: album.artist,
-                                    detail: album.year.map(String.init),
-                                    coverArtId: album.coverArt,
-                                    fallbackSystemImage: "square.stack",
-                                    tint: WRhythmTheme.album
+                if shouldShowSearchSection(kind: .albums, resultCount: albumResults.count) {
+                    searchResultSection(title: "Albums", kind: .albums, count: albumResults.count) {
+                        if albumResults.isEmpty {
+                            emptySearchPageMessage(for: .albums)
+                        } else {
+                            SlidingRenderWindowForEach(
+                                albumResults,
+                                estimatedRowHeight: 64,
+                                resetToken: SongRenderWindowPolicy.searchResultGroupResetToken(
+                                    mode: "online",
+                                    kind: "albums",
+                                    query: searchText
                                 )
-                            }
-                            .buttonStyle(.plain)
-                            .wrhythmAlbumActions(albumId: album.id, albumName: album.name)
+                            ) { _, album in
+                                NavigationLink(destination: AlbumDetailView(albumId: album.id)) {
+                                    WRhythmCollectionRow(
+                                        title: album.name,
+                                        subtitle: album.artist,
+                                        detail: album.year.map(String.init),
+                                        coverArtId: album.coverArt,
+                                        fallbackSystemImage: "square.stack",
+                                        tint: WRhythmTheme.album
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                                .wrhythmAlbumActions(albumId: album.id, albumName: album.name)
 
-                            if album.id != albumResults.last?.id {
-                                Divider()
-                                    .padding(.leading, 56)
+                                if album.id != albumResults.last?.id {
+                                    Divider()
+                                        .padding(.leading, 56)
+                                }
                             }
                         }
                     }
                 }
 
-                if !searchResults.isEmpty {
-                    searchResultSection(title: "Songs", count: searchResults.count) {
-                        SlidingRenderWindowForEach(
-                            searchResults,
-                            estimatedRowHeight: 64,
-                            resetToken: SongRenderWindowPolicy.trackSearchResetToken(mode: "online", query: searchText)
-                        ) { _, song in
-                            songRow(song: song)
+                if shouldShowSearchSection(kind: .songs, resultCount: searchResults.count) {
+                    searchResultSection(title: "Songs", kind: .songs, count: searchResults.count) {
+                        if searchResults.isEmpty {
+                            emptySearchPageMessage(for: .songs)
+                        } else {
+                            SlidingRenderWindowForEach(
+                                searchResults,
+                                estimatedRowHeight: 64,
+                                resetToken: SongRenderWindowPolicy.trackSearchResetToken(mode: "online", query: searchText)
+                            ) { _, song in
+                                songRow(song: song)
 
-                            if song.id != searchResults.last?.id {
-                                Divider()
-                                    .padding(.leading, 56)
+                                if song.id != searchResults.last?.id {
+                                    Divider()
+                                        .padding(.leading, 56)
+                                }
                             }
                         }
                     }
@@ -428,65 +449,86 @@ struct TracksView: View {
             )
 #endif
 
-            if !artistResults.isEmpty {
-                Section(header: Text("Artists")) {
-                    SlidingRenderWindowForEach(
-                        artistResults,
-                        estimatedRowHeight: 64,
-                        resetToken: SongRenderWindowPolicy.searchResultGroupResetToken(
-                            mode: "online",
-                            kind: "artists",
-                            query: searchText
-                        )
-                    ) { _, artist in
-                        NavigationLink(destination: ArtistDetailView(artistId: artist.id, artistName: artist.name)) {
-                            WRhythmCollectionRow(
-                                title: artist.name,
-                                subtitle: artist.albumCount.map { "\($0) albums" },
-                                coverArtId: artist.coverArt,
-                                fallbackSystemImage: "person.fill",
-                                tint: WRhythmTheme.artist
+            if shouldShowSearchSection(kind: .artists, resultCount: artistResults.count) {
+                Section(
+                    header: Text("Artists"),
+                    footer: searchPaginationControls(kind: .artists, resultCount: artistResults.count)
+                ) {
+                    if artistResults.isEmpty {
+                        emptySearchPageMessage(for: .artists)
+                    } else {
+                        SlidingRenderWindowForEach(
+                            artistResults,
+                            estimatedRowHeight: 64,
+                            resetToken: SongRenderWindowPolicy.searchResultGroupResetToken(
+                                mode: "online",
+                                kind: "artists",
+                                query: searchText
                             )
+                        ) { _, artist in
+                            NavigationLink(destination: ArtistDetailView(artistId: artist.id, artistName: artist.name)) {
+                                WRhythmCollectionRow(
+                                    title: artist.name,
+                                    subtitle: artist.albumCount.map { "\($0) albums" },
+                                    coverArtId: artist.coverArt,
+                                    fallbackSystemImage: "person.fill",
+                                    tint: WRhythmTheme.artist
+                                )
+                            }
+                            .wrhythmArtistActions(artistId: artist.id, artistName: artist.name)
                         }
-                        .wrhythmArtistActions(artistId: artist.id, artistName: artist.name)
                     }
                 }
             }
 
-            if !albumResults.isEmpty {
-                Section(header: Text("Albums")) {
-                    SlidingRenderWindowForEach(
-                        albumResults,
-                        estimatedRowHeight: 64,
-                        resetToken: SongRenderWindowPolicy.searchResultGroupResetToken(
-                            mode: "online",
-                            kind: "albums",
-                            query: searchText
-                        )
-                    ) { _, album in
-                        NavigationLink(destination: AlbumDetailView(albumId: album.id)) {
-                            WRhythmCollectionRow(
-                                title: album.name,
-                                subtitle: album.artist,
-                                detail: album.year.map(String.init),
-                                coverArtId: album.coverArt,
-                                fallbackSystemImage: "square.stack",
-                                tint: WRhythmTheme.album
+            if shouldShowSearchSection(kind: .albums, resultCount: albumResults.count) {
+                Section(
+                    header: Text("Albums"),
+                    footer: searchPaginationControls(kind: .albums, resultCount: albumResults.count)
+                ) {
+                    if albumResults.isEmpty {
+                        emptySearchPageMessage(for: .albums)
+                    } else {
+                        SlidingRenderWindowForEach(
+                            albumResults,
+                            estimatedRowHeight: 64,
+                            resetToken: SongRenderWindowPolicy.searchResultGroupResetToken(
+                                mode: "online",
+                                kind: "albums",
+                                query: searchText
                             )
+                        ) { _, album in
+                            NavigationLink(destination: AlbumDetailView(albumId: album.id)) {
+                                WRhythmCollectionRow(
+                                    title: album.name,
+                                    subtitle: album.artist,
+                                    detail: album.year.map(String.init),
+                                    coverArtId: album.coverArt,
+                                    fallbackSystemImage: "square.stack",
+                                    tint: WRhythmTheme.album
+                                )
+                            }
+                            .wrhythmAlbumActions(albumId: album.id, albumName: album.name)
                         }
-                        .wrhythmAlbumActions(albumId: album.id, albumName: album.name)
                     }
                 }
             }
 
-            if !searchResults.isEmpty {
-                Section(header: Text("Songs")) {
-                    SlidingRenderWindowForEach(
-                        searchResults,
-                        estimatedRowHeight: 64,
-                        resetToken: SongRenderWindowPolicy.trackSearchResetToken(mode: "online", query: searchText)
-                    ) { _, song in
-                        songRow(song: song)
+            if shouldShowSearchSection(kind: .songs, resultCount: searchResults.count) {
+                Section(
+                    header: Text("Songs"),
+                    footer: searchPaginationControls(kind: .songs, resultCount: searchResults.count)
+                ) {
+                    if searchResults.isEmpty {
+                        emptySearchPageMessage(for: .songs)
+                    } else {
+                        SlidingRenderWindowForEach(
+                            searchResults,
+                            estimatedRowHeight: 64,
+                            resetToken: SongRenderWindowPolicy.trackSearchResetToken(mode: "online", query: searchText)
+                        ) { _, song in
+                            songRow(song: song)
+                        }
                     }
                 }
             }
@@ -498,18 +540,21 @@ struct TracksView: View {
     @ViewBuilder
     private func searchResultSection<Content: View>(
         title: String,
+        kind: SearchResultPageKind,
         count: Int,
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
             WRhythmSectionHeader(
                 title: title,
-                subtitle: resultCountText(count)
+                subtitle: "\(resultCountText(count)) - page \(searchPage(for: kind) + 1)"
             )
 
             WRhythmCard(padding: WRhythmSpacing.sm) {
                 content()
             }
+
+            searchPaginationControls(kind: kind, resultCount: count)
         }
     }
 
@@ -619,6 +664,125 @@ struct TracksView: View {
         count == 1 ? "1 result" : "\(count) results"
     }
 
+    private var hasOnlineSearchResults: Bool {
+        !artistResults.isEmpty || !albumResults.isEmpty || !searchResults.isEmpty
+    }
+
+    private func shouldShowSearchSection(kind: SearchResultPageKind, resultCount: Int) -> Bool {
+        resultCount > 0 || searchPage(for: kind) > 0
+    }
+
+    private func emptySearchPageMessage(for kind: SearchResultPageKind) -> some View {
+        Text("No \(kind.label) on this page")
+            .font(WRhythmTypography.metadata)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, WRhythmSpacing.sm)
+    }
+
+    @ViewBuilder
+    private func searchPaginationControls(kind: SearchResultPageKind, resultCount: Int) -> some View {
+        let currentPage = searchPage(for: kind)
+        let canPrevious = SearchPaginationPolicy.canGoPrevious(page: currentPage)
+        let canNext = searchCanGoNext(for: kind)
+        let pages = SearchPaginationPolicy.visiblePages(currentPage: currentPage, canGoNext: canNext)
+
+        HStack(spacing: WRhythmSpacing.xs) {
+            Button {
+                goToSearchPage(currentPage - 1, kind: kind)
+            } label: {
+                Label("Previous \(kind.label) page", systemImage: "chevron.left")
+                    .labelStyle(.iconOnly)
+            }
+            .buttonStyle(.bordered)
+            .disabled(!canPrevious || isSearching)
+
+            ForEach(pages, id: \.self) { page in
+                Button {
+                    goToSearchPage(page, kind: kind)
+                } label: {
+                    Text("\(page + 1)")
+                        .font(page == currentPage ? WRhythmTypography.metadataEmphasis : WRhythmTypography.metadata)
+                        .monospacedDigit()
+                        .frame(minWidth: 24)
+                }
+                .buttonStyle(.bordered)
+                .tint(page == currentPage ? WRhythmTheme.accent : nil)
+                .disabled(page == currentPage || isSearching)
+            }
+
+            Button {
+                goToSearchPage(currentPage + 1, kind: kind)
+            } label: {
+                Label("Next \(kind.label) page", systemImage: "chevron.right")
+                    .labelStyle(.iconOnly)
+            }
+            .buttonStyle(.bordered)
+            .disabled(!canNext || isSearching)
+
+            if pagingKind == kind {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(WRhythmTheme.accent)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.top, WRhythmSpacing.xs)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(kind.label) search result pages")
+    }
+
+    private func searchPage(for kind: SearchResultPageKind) -> Int {
+        switch kind {
+        case .artists:
+            return artistPage
+        case .albums:
+            return albumPage
+        case .songs:
+            return songPage
+        }
+    }
+
+    private func searchCanGoNext(for kind: SearchResultPageKind) -> Bool {
+        switch kind {
+        case .artists:
+            return artistCanGoNext
+        case .albums:
+            return albumCanGoNext
+        case .songs:
+            return songCanGoNext
+        }
+    }
+
+    private func goToSearchPage(_ page: Int, kind: SearchResultPageKind) {
+        let page = max(0, page)
+        switch kind {
+        case .artists:
+            artistPage = page
+        case .albums:
+            albumPage = page
+        case .songs:
+            songPage = page
+        }
+        performSearch(query: searchText, debounce: false, resetPages: false, pagingKind: kind)
+    }
+
+    private func resetSearchPages() {
+        artistPage = 0
+        albumPage = 0
+        songPage = 0
+        artistCanGoNext = false
+        albumCanGoNext = false
+        songCanGoNext = false
+    }
+
+    private func updateSearchPageAvailability() {
+        artistCanGoNext = SearchPaginationPolicy.canGoNext(resultCount: artistResults.count, pageSize: searchPageSize)
+        albumCanGoNext = SearchPaginationPolicy.canGoNext(resultCount: albumResults.count, pageSize: searchPageSize)
+        songCanGoNext = SearchPaginationPolicy.canGoNext(resultCount: searchResults.count, pageSize: searchPageSize)
+    }
+
     private var navigationTitleText: String {
 #if os(iOS)
         offlineMode ? "Offline Search" : "Search"
@@ -717,7 +881,9 @@ struct TracksView: View {
         albumResults = []
         artistResults = []
         isSearching = false
+        pagingKind = nil
         errorMessage = ""
+        resetSearchPages()
     }
 
     private func loadCachedSearchIfNeeded() {
@@ -725,7 +891,9 @@ struct TracksView: View {
         guard let cached = SearchResultDiskCache.loadLastSearch() else { return }
 
         isRestoringCachedSearch = true
+        resetSearchPages()
         applySearchResult(cached.result)
+        updateSearchPageAvailability()
         restoredCachedSearchQueryToSkip = cached.query
         searchText = cached.query
         isSearching = false
@@ -743,7 +911,12 @@ struct TracksView: View {
         searchResults = result.song ?? []
     }
 
-    private func performSearch(query: String, debounce: Bool = true) {
+    private func performSearch(
+        query: String,
+        debounce: Bool = true,
+        resetPages: Bool = true,
+        pagingKind: SearchResultPageKind? = nil
+    ) {
         searchTask?.cancel()
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty else {
@@ -751,10 +924,19 @@ struct TracksView: View {
             albumResults = []
             artistResults = []
             isSearching = false
+            self.pagingKind = nil
+            resetSearchPages()
             return
         }
 
+        if resetPages {
+            resetSearchPages()
+            searchResults = []
+            albumResults = []
+            artistResults = []
+        }
         isSearching = true
+        self.pagingKind = pagingKind
         errorMessage = ""
 
         searchTask = Task { @MainActor in
@@ -769,15 +951,27 @@ struct TracksView: View {
             ) else { return } // Check if search text changed
 
             do {
-                let result = try await searchWithRetry(query: trimmedQuery)
+                let artistPage = self.artistPage
+                let albumPage = self.albumPage
+                let songPage = self.songPage
+                let result = try await searchWithRetry(
+                    query: trimmedQuery,
+                    artistPage: artistPage,
+                    albumPage: albumPage,
+                    songPage: songPage
+                )
                 guard SearchResultOwnershipPolicy.shouldApply(
                     query: trimmedQuery,
                     currentQuery: searchText.trimmingCharacters(in: .whitespacesAndNewlines),
                     isCancelled: Task.isCancelled
                 ) else { return }
                 self.applySearchResult(result)
-                SearchResultDiskCache.save(query: trimmedQuery, result: result)
+                self.updateSearchPageAvailability()
+                if artistPage == 0, albumPage == 0, songPage == 0 {
+                    SearchResultDiskCache.save(query: trimmedQuery, result: result)
+                }
                 self.isSearching = false
+                self.pagingKind = nil
 
                 print("🔍 Search results: \(self.artistResults.count) artists, \(self.albumResults.count) albums, \(self.searchResults.count) songs")
             } catch {
@@ -788,21 +982,34 @@ struct TracksView: View {
                 ) else { return }
                 self.errorMessage = searchErrorMessage(error)
                 self.isSearching = false
+                self.pagingKind = nil
                 print("❌ Search error: \(error)")
             }
         }
     }
 
-    private func searchWithRetry(query: String) async throws -> SearchResult {
+    private func searchWithRetry(query: String, artistPage: Int, albumPage: Int, songPage: Int) async throws -> SearchResult {
         do {
-            return try await NavidromeAPI.shared.search(query: query)
+            return try await pagedSearch(query: query, artistPage: artistPage, albumPage: albumPage, songPage: songPage)
         } catch {
             guard SearchRetryPolicy.isRetryable(error), !Task.isCancelled else {
                 throw error
             }
             try await Task.sleep(nanoseconds: 700_000_000)
-            return try await NavidromeAPI.shared.search(query: query)
+            return try await pagedSearch(query: query, artistPage: artistPage, albumPage: albumPage, songPage: songPage)
         }
+    }
+
+    private func pagedSearch(query: String, artistPage: Int, albumPage: Int, songPage: Int) async throws -> SearchResult {
+        try await NavidromeAPI.shared.search(
+            query: query,
+            artistCount: searchPageSize,
+            artistOffset: SearchPaginationPolicy.offset(forPage: artistPage, pageSize: searchPageSize),
+            albumCount: searchPageSize,
+            albumOffset: SearchPaginationPolicy.offset(forPage: albumPage, pageSize: searchPageSize),
+            songCount: searchPageSize,
+            songOffset: SearchPaginationPolicy.offset(forPage: songPage, pageSize: searchPageSize)
+        )
     }
 
     private func searchErrorMessage(_ error: Error) -> String {
@@ -812,6 +1019,23 @@ struct TracksView: View {
     private func formatDuration(_ seconds: Int) -> String {
         Duration.seconds(max(0, seconds))
             .formatted(.time(pattern: .minuteSecond(padMinuteToLength: 1)))
+    }
+}
+
+private enum SearchResultPageKind: String, Sendable {
+    case artists
+    case albums
+    case songs
+
+    var label: String {
+        switch self {
+        case .artists:
+            return "artists"
+        case .albums:
+            return "albums"
+        case .songs:
+            return "tracks"
+        }
     }
 }
 

@@ -1407,6 +1407,19 @@ struct PlaybackSyncPolicyTests {
         #expect(SearchResultOwnershipPolicy.shouldApply(query: "queen", currentQuery: "queen", isCancelled: true) == false)
     }
 
+    @Test func searchPaginationPolicyUsesIndependentOffsetsAndPageControls() {
+        #expect(SearchPaginationPolicy.offset(forPage: 0, pageSize: 20) == 0)
+        #expect(SearchPaginationPolicy.offset(forPage: 3, pageSize: 20) == 60)
+        #expect(SearchPaginationPolicy.offset(forPage: -1, pageSize: 20) == 0)
+
+        #expect(!SearchPaginationPolicy.canGoPrevious(page: 0))
+        #expect(SearchPaginationPolicy.canGoPrevious(page: 1))
+        #expect(!SearchPaginationPolicy.canGoNext(resultCount: 19, pageSize: 20))
+        #expect(SearchPaginationPolicy.canGoNext(resultCount: 20, pageSize: 20))
+        #expect(SearchPaginationPolicy.visiblePages(currentPage: 0, canGoNext: true) == [0, 1, 2, 3])
+        #expect(SearchPaginationPolicy.visiblePages(currentPage: 5, canGoNext: false) == [3, 4, 5, 6, 7])
+    }
+
     @Test func remotePauseRoundTripCanApplyAndAcknowledgeAcrossDevices() {
         let now = Date()
         let macPausedSession = makeSession(outputDeviceID: "mac", isPlaying: false, position: 120.2, updatedAt: now)
