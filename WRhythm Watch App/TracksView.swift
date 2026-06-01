@@ -320,81 +320,195 @@ struct TracksView: View {
                     message: "Try a different search term"
                 )
             } else {
-                List {
-#if os(iOS)
-                    PhoneSearchSubmenuHeader(
-                        title: "Search Results",
-                        subtitle: "Matching songs, albums, and artists from your library.",
-                        systemImage: "magnifyingglass",
-                        countText: resultCountText(searchResults.count + albumResults.count + artistResults.count),
-                        queryText: searchText
-                    )
-#endif
+                onlineSearchResultsContent
+            }
+        }
+    }
 
-                    if !artistResults.isEmpty {
-                        Section(header: Text("Artists")) {
-                            SlidingRenderWindowForEach(
-                                artistResults,
-                                estimatedRowHeight: 64,
-                                resetToken: SongRenderWindowPolicy.searchResultGroupResetToken(
-                                    mode: "online",
-                                    kind: "artists",
-                                    query: searchText
+    @ViewBuilder
+    private var onlineSearchResultsContent: some View {
+#if os(macOS)
+        ScrollView {
+            VStack(alignment: .leading, spacing: WRhythmSpacing.md) {
+                if !artistResults.isEmpty {
+                    searchResultSection(title: "Artists", count: artistResults.count) {
+                        SlidingRenderWindowForEach(
+                            artistResults,
+                            estimatedRowHeight: 64,
+                            resetToken: SongRenderWindowPolicy.searchResultGroupResetToken(
+                                mode: "online",
+                                kind: "artists",
+                                query: searchText
+                            )
+                        ) { _, artist in
+                            NavigationLink(destination: ArtistDetailView(artistId: artist.id, artistName: artist.name)) {
+                                WRhythmCollectionRow(
+                                    title: artist.name,
+                                    subtitle: artist.albumCount.map { "\($0) albums" },
+                                    coverArtId: artist.coverArt,
+                                    fallbackSystemImage: "person.fill",
+                                    tint: WRhythmTheme.artist
                                 )
-                            ) { _, artist in
-                                NavigationLink(destination: ArtistDetailView(artistId: artist.id, artistName: artist.name)) {
-                                    WRhythmCollectionRow(
-                                        title: artist.name,
-                                        subtitle: artist.albumCount.map { "\($0) albums" },
-                                        coverArtId: artist.coverArt,
-                                        fallbackSystemImage: "person.fill",
-                                        tint: WRhythmTheme.artist
-                                    )
-                                }
-                                .wrhythmArtistActions(artistId: artist.id, artistName: artist.name)
                             }
-                        }
-                    }
+                            .buttonStyle(.plain)
+                            .wrhythmArtistActions(artistId: artist.id, artistName: artist.name)
 
-                    if !albumResults.isEmpty {
-                        Section(header: Text("Albums")) {
-                            SlidingRenderWindowForEach(
-                                albumResults,
-                                estimatedRowHeight: 64,
-                                resetToken: SongRenderWindowPolicy.searchResultGroupResetToken(
-                                    mode: "online",
-                                    kind: "albums",
-                                    query: searchText
-                                )
-                            ) { _, album in
-                                NavigationLink(destination: AlbumDetailView(albumId: album.id)) {
-                                    WRhythmCollectionRow(
-                                        title: album.name,
-                                        subtitle: album.artist,
-                                        detail: album.year.map(String.init),
-                                        coverArtId: album.coverArt,
-                                        fallbackSystemImage: "square.stack",
-                                        tint: WRhythmTheme.album
-                                    )
-                                }
-                                .wrhythmAlbumActions(albumId: album.id, albumName: album.name)
-                            }
-                        }
-                    }
-
-                    if !searchResults.isEmpty {
-                        Section(header: Text("Songs")) {
-                            SlidingRenderWindowForEach(
-                                searchResults,
-                                estimatedRowHeight: 64,
-                                resetToken: SongRenderWindowPolicy.trackSearchResetToken(mode: "online", query: searchText)
-                            ) { _, song in
-                                songRow(song: song)
+                            if artist.id != artistResults.last?.id {
+                                Divider()
+                                    .padding(.leading, 56)
                             }
                         }
                     }
                 }
-                .wrhythmListSurface()
+
+                if !albumResults.isEmpty {
+                    searchResultSection(title: "Albums", count: albumResults.count) {
+                        SlidingRenderWindowForEach(
+                            albumResults,
+                            estimatedRowHeight: 64,
+                            resetToken: SongRenderWindowPolicy.searchResultGroupResetToken(
+                                mode: "online",
+                                kind: "albums",
+                                query: searchText
+                            )
+                        ) { _, album in
+                            NavigationLink(destination: AlbumDetailView(albumId: album.id)) {
+                                WRhythmCollectionRow(
+                                    title: album.name,
+                                    subtitle: album.artist,
+                                    detail: album.year.map(String.init),
+                                    coverArtId: album.coverArt,
+                                    fallbackSystemImage: "square.stack",
+                                    tint: WRhythmTheme.album
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .wrhythmAlbumActions(albumId: album.id, albumName: album.name)
+
+                            if album.id != albumResults.last?.id {
+                                Divider()
+                                    .padding(.leading, 56)
+                            }
+                        }
+                    }
+                }
+
+                if !searchResults.isEmpty {
+                    searchResultSection(title: "Songs", count: searchResults.count) {
+                        SlidingRenderWindowForEach(
+                            searchResults,
+                            estimatedRowHeight: 64,
+                            resetToken: SongRenderWindowPolicy.trackSearchResetToken(mode: "online", query: searchText)
+                        ) { _, song in
+                            songRow(song: song)
+
+                            if song.id != searchResults.last?.id {
+                                Divider()
+                                    .padding(.leading, 56)
+                            }
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: 960)
+            .frame(maxWidth: .infinity, alignment: .top)
+            .padding(.horizontal, WRhythmSpacing.lg)
+            .padding(.vertical, WRhythmSpacing.md)
+        }
+        .wrhythmListSurface()
+#else
+        List {
+#if os(iOS)
+            PhoneSearchSubmenuHeader(
+                title: "Search Results",
+                subtitle: "Matching songs, albums, and artists from your library.",
+                systemImage: "magnifyingglass",
+                countText: resultCountText(searchResults.count + albumResults.count + artistResults.count),
+                queryText: searchText
+            )
+#endif
+
+            if !artistResults.isEmpty {
+                Section(header: Text("Artists")) {
+                    SlidingRenderWindowForEach(
+                        artistResults,
+                        estimatedRowHeight: 64,
+                        resetToken: SongRenderWindowPolicy.searchResultGroupResetToken(
+                            mode: "online",
+                            kind: "artists",
+                            query: searchText
+                        )
+                    ) { _, artist in
+                        NavigationLink(destination: ArtistDetailView(artistId: artist.id, artistName: artist.name)) {
+                            WRhythmCollectionRow(
+                                title: artist.name,
+                                subtitle: artist.albumCount.map { "\($0) albums" },
+                                coverArtId: artist.coverArt,
+                                fallbackSystemImage: "person.fill",
+                                tint: WRhythmTheme.artist
+                            )
+                        }
+                        .wrhythmArtistActions(artistId: artist.id, artistName: artist.name)
+                    }
+                }
+            }
+
+            if !albumResults.isEmpty {
+                Section(header: Text("Albums")) {
+                    SlidingRenderWindowForEach(
+                        albumResults,
+                        estimatedRowHeight: 64,
+                        resetToken: SongRenderWindowPolicy.searchResultGroupResetToken(
+                            mode: "online",
+                            kind: "albums",
+                            query: searchText
+                        )
+                    ) { _, album in
+                        NavigationLink(destination: AlbumDetailView(albumId: album.id)) {
+                            WRhythmCollectionRow(
+                                title: album.name,
+                                subtitle: album.artist,
+                                detail: album.year.map(String.init),
+                                coverArtId: album.coverArt,
+                                fallbackSystemImage: "square.stack",
+                                tint: WRhythmTheme.album
+                            )
+                        }
+                        .wrhythmAlbumActions(albumId: album.id, albumName: album.name)
+                    }
+                }
+            }
+
+            if !searchResults.isEmpty {
+                Section(header: Text("Songs")) {
+                    SlidingRenderWindowForEach(
+                        searchResults,
+                        estimatedRowHeight: 64,
+                        resetToken: SongRenderWindowPolicy.trackSearchResetToken(mode: "online", query: searchText)
+                    ) { _, song in
+                        songRow(song: song)
+                    }
+                }
+            }
+        }
+        .wrhythmListSurface()
+#endif
+    }
+
+    @ViewBuilder
+    private func searchResultSection<Content: View>(
+        title: String,
+        count: Int,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
+            WRhythmSectionHeader(
+                title: title,
+                subtitle: resultCountText(count)
+            )
+
+            WRhythmCard(padding: WRhythmSpacing.sm) {
+                content()
             }
         }
     }

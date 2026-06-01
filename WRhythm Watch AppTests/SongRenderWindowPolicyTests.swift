@@ -127,7 +127,7 @@ struct SongRenderWindowPolicyTests {
         #expect(slots.count == 120)
         #expect(slots.first?.index == 0)
         #expect(slots.last?.index == 119)
-        #expect(slots.allSatisfy(\.isLoaded))
+        #expect(slots.map(\.isLoaded) == Array(repeating: true, count: 120))
     }
 
     @Test func largeClientCollectionsRenderOnlyConfiguredWindow() {
