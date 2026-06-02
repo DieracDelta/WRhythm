@@ -426,7 +426,12 @@ struct PrebufferQualityPresentationPolicy: Sendable {
         downloadedBitRate == AudioQuality.original.downloadedBitRate ? "Original" : "\(downloadedBitRate) kbps"
     }
 
-    static func streamingQualityLabel(streamingQuality: StreamingQuality, transcodesToMP3: Bool) -> String {
+    static func streamingQualityLabel(
+        streamingQuality: StreamingQuality,
+        transcodesToMP3: Bool,
+        contentType: String? = nil,
+        suffix: String? = nil
+    ) -> String {
         if transcodesToMP3 {
             let bitRate = streamingQuality.maxBitRate ?? StreamingQuality.max.rawValue
             if streamingQuality == .original {
@@ -434,7 +439,53 @@ struct PrebufferQualityPresentationPolicy: Sendable {
             }
             return "\(bitRate) kbps"
         }
-        return "Original"
+        guard let codec = codecLabel(contentType: contentType, suffix: suffix) else {
+            return "Original"
+        }
+        return "\(codec) original"
+    }
+
+    private static func codecLabel(contentType: String?, suffix: String?) -> String? {
+        let normalizedContentType = contentType?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        let normalizedSuffix = suffix?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+
+        if normalizedContentType?.contains("flac") == true || normalizedSuffix == "flac" {
+            return "FLAC"
+        }
+        if normalizedContentType?.contains("mpeg") == true ||
+            normalizedContentType?.contains("mp3") == true ||
+            normalizedSuffix == "mp3" {
+            return "MP3"
+        }
+        if normalizedContentType?.contains("ogg") == true ||
+            normalizedSuffix == "ogg" ||
+            normalizedSuffix == "oga" {
+            return "Ogg"
+        }
+        if normalizedContentType?.contains("aac") == true || normalizedSuffix == "aac" {
+            return "AAC"
+        }
+        if normalizedContentType?.contains("mp4") == true ||
+            normalizedSuffix == "m4a" ||
+            normalizedSuffix == "mp4" {
+            return "AAC"
+        }
+        if normalizedContentType?.contains("wav") == true || normalizedSuffix == "wav" {
+            return "WAV"
+        }
+        if normalizedContentType?.contains("aiff") == true ||
+            normalizedSuffix == "aiff" ||
+            normalizedSuffix == "aif" {
+            return "AIFF"
+        }
+        if normalizedContentType?.contains("alac") == true || normalizedSuffix == "alac" {
+            return "ALAC"
+        }
+        return normalizedSuffix?.uppercased()
     }
 }
 
@@ -1952,7 +2003,9 @@ class AudioPlayer: NSObject, ObservableObject {
     private func prebufferQualityLabel(for song: Song) -> String {
         PrebufferQualityPresentationPolicy.streamingQualityLabel(
             streamingQuality: StreamingQuality.current,
-            transcodesToMP3: shouldTranscodeForPlayback(song)
+            transcodesToMP3: shouldTranscodeForPlayback(song),
+            contentType: song.contentType,
+            suffix: song.suffix
         )
     }
 

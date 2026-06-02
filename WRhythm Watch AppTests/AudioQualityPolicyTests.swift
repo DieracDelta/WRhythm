@@ -64,6 +64,24 @@ struct AudioQualityPolicyTests {
     @Test func prebufferQualityLabelsReflectPlaybackTranscoding() {
         #expect(PrebufferQualityPresentationPolicy.streamingQualityLabel(
             streamingQuality: .original,
+            transcodesToMP3: false,
+            contentType: "audio/flac",
+            suffix: "flac"
+        ) == "FLAC original")
+        #expect(PrebufferQualityPresentationPolicy.streamingQualityLabel(
+            streamingQuality: .original,
+            transcodesToMP3: false,
+            contentType: "audio/ogg",
+            suffix: "ogg"
+        ) == "Ogg original")
+        #expect(PrebufferQualityPresentationPolicy.streamingQualityLabel(
+            streamingQuality: .original,
+            transcodesToMP3: false,
+            contentType: "audio/mpeg",
+            suffix: "mp3"
+        ) == "MP3 original")
+        #expect(PrebufferQualityPresentationPolicy.streamingQualityLabel(
+            streamingQuality: .original,
             transcodesToMP3: false
         ) == "Original")
         #expect(PrebufferQualityPresentationPolicy.streamingQualityLabel(
