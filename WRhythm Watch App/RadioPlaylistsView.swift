@@ -458,7 +458,7 @@ private struct SonicPlaylistGeneratorView: View {
     @State private var sourceSong: Song?
     @State private var startSong: Song?
     @State private var endSong: Song?
-    @State private var alchemySong: Song?
+    @State private var alchemySeeds: [AudioMuseAlchemySeed] = []
 
     let sonicSimilarityAvailable: Bool
     let audioMuseAlchemyAvailable: Bool
@@ -542,10 +542,10 @@ private struct SonicPlaylistGeneratorView: View {
                     ))
 
                 case .audioMuseAlchemy:
-                    SonicTrackSearchPicker(
-                        title: "Seed track",
+                    AudioMuseAlchemySeedSearchPicker(
+                        title: "Seeds",
                         query: $alchemyQuery,
-                        selectedSong: $alchemySong
+                        selectedSeeds: $alchemySeeds
                     )
 
                     Button(action: generateAudioMuseAlchemy) {
@@ -555,7 +555,7 @@ private struct SonicPlaylistGeneratorView: View {
                     .buttonStyle(.borderedProminent)
                     .disabled(!PlaylistGenerationActionPolicy.canStart(
                         isGenerating: player.playlistGenIsGenerating,
-                        hasRequiredSelection: alchemySong != nil
+                        hasRequiredSelection: !alchemySeeds.isEmpty
                     ))
                 }
             }
@@ -581,12 +581,12 @@ private struct SonicPlaylistGeneratorView: View {
     }
 
     private func generateAudioMuseAlchemy() {
-        guard PlaylistGenerationActionPolicy.canStart(
-            isGenerating: player.playlistGenIsGenerating,
-            hasRequiredSelection: alchemySong != nil
-        ), let alchemySong else { return }
+        guard AudioMuseAlchemySeedPolicy.canGenerate(
+            seeds: alchemySeeds,
+            isGenerating: player.playlistGenIsGenerating
+        ) else { return }
         didStartGeneration()
-        player.startAudioMuseAlchemyPlaylistGeneration(for: alchemySong)
+        player.startAudioMuseAlchemyPlaylistGeneration(seeds: alchemySeeds)
     }
 }
 
@@ -681,6 +681,189 @@ private struct SonicTrackSearchPicker: View {
         }
 
         isSearching = false
+    }
+}
+
+private struct AudioMuseAlchemySeedSearchPicker: View {
+    let title: String
+    @Binding var query: String
+    @Binding var selectedSeeds: [AudioMuseAlchemySeed]
+    @State private var searchResult = SearchResult(artist: [], album: [], song: [])
+    @State private var playlistResults: [PlaylistSummary] = []
+    @State private var isSearching = false
+    @State private var errorMessage: String?
+
+    private var hasResults: Bool {
+        !(searchResult.artist ?? []).isEmpty ||
+            !(searchResult.album ?? []).isEmpty ||
+            !(searchResult.song ?? []).isEmpty ||
+            !playlistResults.isEmpty
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: WRhythmSpacing.sm) {
+            Text(title)
+                .font(WRhythmTypography.controlLabelEmphasis)
+                .foregroundStyle(.secondary)
+
+            searchField
+
+            if !selectedSeeds.isEmpty {
+                VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
+                    Text("\(selectedSeeds.count) selected")
+                        .font(WRhythmTypography.sectionLabel)
+                        .foregroundStyle(.secondary)
+
+                    ForEach(selectedSeeds) { seed in
+                        AudioMuseAlchemySeedRow(seed: seed, isSelected: true) {
+                            selectedSeeds = AudioMuseAlchemySeedPolicy.remove(seed, from: selectedSeeds)
+                        }
+                    }
+                }
+            }
+
+            if isSearching {
+                HStack(spacing: WRhythmSpacing.sm) {
+                    ProgressView()
+                    Text("Searching")
+                        .font(WRhythmTypography.rowSubtitle)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, WRhythmSpacing.xs)
+            } else if let errorMessage {
+                Text(errorMessage)
+                    .font(WRhythmTypography.rowSubtitle)
+                    .foregroundStyle(WRhythmTheme.danger)
+            } else if hasResults {
+                VStack(alignment: .leading, spacing: WRhythmSpacing.sm) {
+                    seedSection("Artists", seeds: (searchResult.artist ?? []).prefix(4).map(AudioMuseAlchemySeed.artist))
+                    seedSection("Albums", seeds: (searchResult.album ?? []).prefix(4).map(AudioMuseAlchemySeed.album))
+                    seedSection("Tracks", seeds: (searchResult.song ?? []).prefix(5).map(AudioMuseAlchemySeed.song))
+                    seedSection("Playlists", seeds: playlistResults.prefix(4).map(AudioMuseAlchemySeed.playlist))
+                }
+            }
+        }
+        .task(id: query) {
+            await search()
+        }
+    }
+
+    @ViewBuilder
+    private var searchField: some View {
+#if os(watchOS)
+        TextField("Search seeds", text: $query)
+#else
+        TextField("Search artists, albums, tracks, playlists", text: $query)
+            .textFieldStyle(.roundedBorder)
+#endif
+    }
+
+    @ViewBuilder
+    private func seedSection(_ title: String, seeds: [AudioMuseAlchemySeed]) -> some View {
+        if !seeds.isEmpty {
+            VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
+                Text(title)
+                    .font(WRhythmTypography.sectionLabel)
+                    .foregroundStyle(.secondary)
+
+                ForEach(seeds) { seed in
+                    AudioMuseAlchemySeedRow(seed: seed, isSelected: false) {
+                        selectedSeeds = AudioMuseAlchemySeedPolicy.append(seed, to: selectedSeeds)
+                        query = ""
+                        searchResult = SearchResult(artist: [], album: [], song: [])
+                        playlistResults = []
+                    }
+                }
+            }
+        }
+    }
+
+    private func search() async {
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmedQuery.count >= 2 else {
+            searchResult = SearchResult(artist: [], album: [], song: [])
+            playlistResults = []
+            errorMessage = nil
+            isSearching = false
+            return
+        }
+
+        do {
+            try await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+            isSearching = true
+            errorMessage = nil
+
+            async let subsonicResult = NavidromeAPI.shared.search(
+                query: trimmedQuery,
+                artistCount: 8,
+                albumCount: 8,
+                songCount: 10
+            )
+            async let playlists = NavidromeAPI.shared.getPlaylists()
+
+            let result = try await subsonicResult
+            let fetchedPlaylists = (try? await playlists) ?? []
+            guard !Task.isCancelled else { return }
+
+            searchResult = result
+            playlistResults = fetchedPlaylists.filter { playlist in
+                playlist.name.localizedCaseInsensitiveContains(trimmedQuery)
+            }
+        } catch is CancellationError {
+            return
+        } catch {
+            searchResult = SearchResult(artist: [], album: [], song: [])
+            playlistResults = []
+            errorMessage = "Search failed"
+        }
+
+        isSearching = false
+    }
+}
+
+private struct AudioMuseAlchemySeedRow: View {
+    let seed: AudioMuseAlchemySeed
+    let isSelected: Bool
+    let action: () -> Void
+
+    private var icon: String {
+        switch seed.kind {
+        case .song: return "music.note"
+        case .artist: return "person.2"
+        case .album: return "square.stack"
+        case .playlist: return "music.note.list"
+        }
+    }
+
+    private var kindLabel: String {
+        seed.kind.rawValue.capitalized
+    }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: WRhythmSpacing.sm) {
+                WRhythmArtworkThumbnail(coverArtId: seed.coverArt, fallbackSystemImage: icon, tint: WRhythmTheme.playlistGen, size: 36)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(seed.title)
+                        .font(WRhythmTypography.rowTitle)
+                        .lineLimit(1)
+                    Text([kindLabel, seed.subtitle].compactMap { $0 }.joined(separator: " • "))
+                        .font(WRhythmTypography.rowSubtitle)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: WRhythmSpacing.sm)
+
+                Image(systemName: isSelected ? "xmark.circle.fill" : "plus.circle")
+                    .foregroundStyle(WRhythmTheme.playlistGen)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(isSelected ? "Remove \(seed.title)" : "Add \(seed.title)")
     }
 }
 

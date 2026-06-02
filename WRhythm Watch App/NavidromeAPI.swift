@@ -794,9 +794,21 @@ final class NavidromeAPI: ObservableObject {
     }
 
     func getAudioMuseAlchemySongs(seedSong: Song, count: Int = 100) async throws -> [Song] {
+        try await getAudioMuseAlchemySongs(
+            seeds: [.song(seedSong)],
+            count: count
+        )
+    }
+
+    func getAudioMuseAlchemySongs(seeds: [AudioMuseAlchemySeed], count: Int = 100) async throws -> [Song] {
         let jwt = try await loginToAudioMuseAPI()
         guard let url = buildAudioMuseAPIURL(path: "/api/alchemy") else {
             throw NavidromeError.invalidURL
+        }
+
+        let items = try await resolveAudioMuseAlchemyItems(from: seeds)
+        guard !items.isEmpty else {
+            throw NavidromeError.apiError("Select at least one usable seed")
         }
 
         var request = URLRequest(url: url)
@@ -805,7 +817,7 @@ final class NavidromeAPI: ObservableObject {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(jwt)", forHTTPHeaderField: "Authorization")
         request.httpBody = try JSONEncoder().encode(AudioMuseAlchemyRequest(
-            items: [AudioMuseAlchemyRequest.Item(id: seedSong.id, op: "ADD", type: "song")],
+            items: items,
             n: max(count, 1),
             temperature: 1.0,
             subtractDistance: 0.3
@@ -822,6 +834,37 @@ final class NavidromeAPI: ObservableObject {
         }
 
         return decoded.songs
+    }
+
+    private func resolveAudioMuseAlchemyItems(from seeds: [AudioMuseAlchemySeed]) async throws -> [AudioMuseAlchemyRequest.Item] {
+        var items: [AudioMuseAlchemyRequest.Item] = []
+        var seen = Set<String>()
+
+        func append(id: String, type: AudioMuseAlchemySeedKind) {
+            let key = "\(type.rawValue):\(id)"
+            guard !seen.contains(key) else { return }
+            seen.insert(key)
+            items.append(AudioMuseAlchemyRequest.Item(id: id, op: "ADD", type: type.rawValue))
+        }
+
+        for seed in seeds {
+            switch seed.kind {
+            case .song, .artist:
+                append(id: seed.sourceID, type: seed.kind)
+            case .album:
+                let album = try await getAlbum(id: seed.sourceID)
+                for song in album.song {
+                    append(id: song.id, type: .song)
+                }
+            case .playlist:
+                let playlist = try await getPlaylist(id: seed.sourceID)
+                for song in playlist.entry ?? [] {
+                    append(id: song.id, type: .song)
+                }
+            }
+        }
+
+        return items
     }
 
     private func loginToAudioMuseAPI() async throws -> String {
@@ -1323,6 +1366,85 @@ struct SonicMatch: Decodable {
 enum AudioMuseAlchemySupportPolicy {
     static func endpointExists(statusCode: Int) -> Bool {
         statusCode == 200 || statusCode == 401
+    }
+}
+
+enum AudioMuseAlchemySeedKind: String, Codable, Sendable, CaseIterable {
+    case song
+    case artist
+    case album
+    case playlist
+}
+
+struct AudioMuseAlchemySeed: Identifiable, Codable, Sendable, Equatable {
+    let kind: AudioMuseAlchemySeedKind
+    let sourceID: String
+    let title: String
+    let subtitle: String?
+    let coverArt: String?
+
+    var id: String {
+        "\(kind.rawValue):\(sourceID)"
+    }
+
+    nonisolated static func song(_ song: Song) -> AudioMuseAlchemySeed {
+        AudioMuseAlchemySeed(
+            kind: .song,
+            sourceID: song.id,
+            title: song.title,
+            subtitle: song.artist,
+            coverArt: song.coverArt
+        )
+    }
+
+    nonisolated static func artist(_ artist: Artist) -> AudioMuseAlchemySeed {
+        AudioMuseAlchemySeed(
+            kind: .artist,
+            sourceID: artist.id,
+            title: artist.name,
+            subtitle: "\(artist.albumCount ?? 0) albums",
+            coverArt: artist.coverArt
+        )
+    }
+
+    nonisolated static func album(_ album: AlbumSummary) -> AudioMuseAlchemySeed {
+        AudioMuseAlchemySeed(
+            kind: .album,
+            sourceID: album.id,
+            title: album.name,
+            subtitle: album.artist,
+            coverArt: album.coverArt
+        )
+    }
+
+    nonisolated static func playlist(_ playlist: PlaylistSummary) -> AudioMuseAlchemySeed {
+        AudioMuseAlchemySeed(
+            kind: .playlist,
+            sourceID: playlist.id,
+            title: playlist.name,
+            subtitle: "\(playlist.songCount) songs",
+            coverArt: playlist.coverArt
+        )
+    }
+}
+
+enum AudioMuseAlchemySeedPolicy {
+    static func append(_ seed: AudioMuseAlchemySeed, to seeds: [AudioMuseAlchemySeed]) -> [AudioMuseAlchemySeed] {
+        guard !seeds.contains(where: { $0.id == seed.id }) else {
+            return seeds
+        }
+        return seeds + [seed]
+    }
+
+    static func remove(_ seed: AudioMuseAlchemySeed, from seeds: [AudioMuseAlchemySeed]) -> [AudioMuseAlchemySeed] {
+        seeds.filter { $0.id != seed.id }
+    }
+
+    static func canGenerate(seeds: [AudioMuseAlchemySeed], isGenerating: Bool) -> Bool {
+        PlaylistGenerationActionPolicy.canStart(
+            isGenerating: isGenerating,
+            hasRequiredSelection: !seeds.isEmpty
+        )
     }
 }
 

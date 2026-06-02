@@ -3169,6 +3169,29 @@ struct PlaybackSyncPolicyTests {
     }
 
     @MainActor
+    @Test func audioMuseAlchemySeedPolicyAddsAndRemovesDistinctSeedTypes() {
+        let songSeed = AudioMuseAlchemySeed(kind: .song, sourceID: "seed-1", title: "Seed Track", subtitle: "Artist", coverArt: nil)
+        let albumSeed = AudioMuseAlchemySeed(kind: .album, sourceID: "seed-1", title: "Seed Album", subtitle: "Artist", coverArt: nil)
+
+        var seeds: [AudioMuseAlchemySeed] = []
+        seeds = AudioMuseAlchemySeedPolicy.append(songSeed, to: seeds)
+        seeds = AudioMuseAlchemySeedPolicy.append(songSeed, to: seeds)
+        seeds = AudioMuseAlchemySeedPolicy.append(albumSeed, to: seeds)
+
+        #expect(seeds.map(\.id) == ["song:seed-1", "album:seed-1"])
+        #expect(AudioMuseAlchemySeedPolicy.remove(songSeed, from: seeds).map(\.id) == ["album:seed-1"])
+    }
+
+    @MainActor
+    @Test func audioMuseAlchemyGenerationRequiresAtLeastOneSeedAndIdlePlayer() {
+        let seed = AudioMuseAlchemySeed(kind: .artist, sourceID: "artist-1", title: "Artist", subtitle: nil, coverArt: nil)
+
+        #expect(AudioMuseAlchemySeedPolicy.canGenerate(seeds: [], isGenerating: false) == false)
+        #expect(AudioMuseAlchemySeedPolicy.canGenerate(seeds: [seed], isGenerating: false))
+        #expect(AudioMuseAlchemySeedPolicy.canGenerate(seeds: [seed], isGenerating: true) == false)
+    }
+
+    @MainActor
     @Test func downloadedSongRequiresExplicitBitrate() {
         let payload = """
         {

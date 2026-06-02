@@ -1587,19 +1587,29 @@ class AudioPlayer: NSObject, ObservableObject {
     }
 
     func startAudioMuseAlchemyPlaylistGeneration(for sourceSong: Song, count: Int = 100) {
-        startPlaylistGeneration(title: "AudioMuse Alchemy", artist: sourceSong.title) {
+        startAudioMuseAlchemyPlaylistGeneration(
+            seeds: [.song(sourceSong)],
+            count: count
+        )
+    }
+
+    func startAudioMuseAlchemyPlaylistGeneration(seeds: [AudioMuseAlchemySeed], count: Int = 100) {
+        let sourceTitle = seeds.first?.title ?? "AudioMuse Alchemy"
+        let sourceDetail: String
+        if seeds.count <= 1 {
+            sourceDetail = seeds.first?.subtitle ?? "1 seed"
+        } else {
+            sourceDetail = "\(seeds.count) seeds"
+        }
+
+        startPlaylistGeneration(title: sourceTitle, artist: sourceDetail) {
             let requestedCount = max(count, 1)
             let songs = try await NavidromeAPI.shared.getAudioMuseAlchemySongs(
-                seedSong: sourceSong,
+                seeds: seeds,
                 count: requestedCount
             )
-            let queue = PlaylistGenerationPolicy.queue(
-                sourceSong: sourceSong,
-                primarySongs: songs,
-                fallbackSongs: [],
-                requestedCount: requestedCount
-            )
-            guard queue.count > 1 else {
+            let queue = Array(songs.prefix(requestedCount))
+            guard !queue.isEmpty else {
                 throw PlaylistGenerationError.noSongs
             }
             return .songs(queue)
