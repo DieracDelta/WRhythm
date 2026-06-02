@@ -429,6 +429,9 @@ struct PrebufferQualityPresentationPolicy: Sendable {
     static func streamingQualityLabel(streamingQuality: StreamingQuality, transcodesToMP3: Bool) -> String {
         if transcodesToMP3 {
             let bitRate = streamingQuality.maxBitRate ?? StreamingQuality.max.rawValue
+            if streamingQuality == .original {
+                return "MP3 fallback \(bitRate) kbps"
+            }
             return "\(bitRate) kbps"
         }
         return "Original"

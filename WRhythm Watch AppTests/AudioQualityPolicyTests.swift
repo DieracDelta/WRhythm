@@ -73,7 +73,7 @@ struct AudioQualityPolicyTests {
         #expect(PrebufferQualityPresentationPolicy.streamingQualityLabel(
             streamingQuality: .original,
             transcodesToMP3: true
-        ) == "320 kbps")
+        ) == "MP3 fallback 320 kbps")
     }
 
     @Test func playbackQualitySummaryNamesTransportAndQuality() {
