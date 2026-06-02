@@ -151,6 +151,7 @@ nonisolated struct PlaybackSnapshot: Codable, Identifiable, Sendable {
     let isPlaying: Bool
     let isBuffering: Bool?
     let prebufferedTrackCount: Int?
+    let playbackQualitySummary: String
     let volume: Double?
     let currentTime: TimeInterval
     let duration: TimeInterval
@@ -167,6 +168,7 @@ nonisolated struct PlaybackSession: Codable, Identifiable, Sendable {
     let position: TimeInterval
     let isPlaying: Bool
     let volume: Double?
+    let playbackQualitySummary: String
     let outputDeviceID: String
     let updatedAt: Date
     let updatedByDeviceID: String
@@ -929,6 +931,7 @@ nonisolated struct PlaybackSessionSnapshotPolicy: Sendable {
             isPlaying: session.isPlaying,
             isBuffering: nil,
             prebufferedTrackCount: nil,
+            playbackQualitySummary: session.playbackQualitySummary,
             volume: session.volume,
             currentTime: session.estimatedPosition(at: now),
             duration: TimeInterval(song.duration ?? 0),
@@ -1032,6 +1035,7 @@ nonisolated struct ConnectivityLossPlaybackPolicy: Sendable {
             position: currentSession.estimatedPosition(at: disconnectedAt),
             isPlaying: false,
             volume: currentSession.volume,
+            playbackQualitySummary: currentSession.playbackQualitySummary,
             outputDeviceID: currentSession.outputDeviceID,
             updatedAt: disconnectedAt,
             updatedByDeviceID: localDeviceID
@@ -1567,7 +1571,8 @@ final class DeviceSyncManager: NSObject, ObservableObject {
         isPlaying: Bool,
         outputDeviceID: String,
         revision: Int? = nil,
-        volume: Double? = nil
+        volume: Double? = nil,
+        playbackQualitySummary: String? = nil
     ) -> PlaybackSession {
         PlaybackSession(
             id: sharedSession?.id ?? sharedSessionID,
@@ -1577,6 +1582,7 @@ final class DeviceSyncManager: NSObject, ObservableObject {
             position: max(0, position.isFinite ? position : 0),
             isPlaying: isPlaying,
             volume: clampedVolume(volume ?? sharedSession?.volume ?? AudioPlayer.shared.volume),
+            playbackQualitySummary: playbackQualitySummary ?? sharedSession?.playbackQualitySummary ?? AudioPlayer.shared.currentPlaybackQualitySummary ?? "",
             outputDeviceID: outputDeviceID,
             updatedAt: Date(),
             updatedByDeviceID: localDeviceID

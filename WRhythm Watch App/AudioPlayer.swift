@@ -435,6 +435,32 @@ struct PrebufferQualityPresentationPolicy: Sendable {
     }
 }
 
+struct PlaybackQualityPresentationPolicy: Sendable {
+    enum Source: Sendable {
+        case local
+        case streaming
+
+        var label: String {
+            switch self {
+            case .local:
+                return "Local"
+            case .streaming:
+                return "Streaming"
+            }
+        }
+    }
+
+    static func statusText(source: Source, qualityLabel: String?) -> String {
+        let trimmed = qualityLabel?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let quality = if let trimmed, !trimmed.isEmpty {
+            trimmed
+        } else {
+            "Unknown"
+        }
+        return "\(source.label): \(quality)"
+    }
+}
+
 struct PrebufferAvailabilityPresentationPolicy: Sendable {
     static func orderedAvailableSongs(queuedSongs: [Song], preparedSongs: [Song]) -> [Song] {
         var seen = Set<String>()
@@ -533,6 +559,7 @@ class AudioPlayer: NSObject, ObservableObject {
     @Published private(set) var lastPauseReason: String?
     @Published private(set) var currentBufferPercent: Int?
     @Published private(set) var playbackError: PlaybackErrorInfo?
+    @Published private(set) var currentPlaybackQualitySummary: String?
     @Published private(set) var prebufferedTrackCount = 0
     @Published private(set) var prebufferedSongs: [Song] = []
     @Published private(set) var retainedPrebufferedSongs: [Song] = []
@@ -1931,6 +1958,10 @@ class AudioPlayer: NSObject, ObservableObject {
         return PrebufferQualityPresentationPolicy.downloadedQualityLabel(downloadedBitRate: downloadedSong.downloadedBitRate)
     }
 
+    private func makePlaybackQualitySummary(source: PlaybackQualityPresentationPolicy.Source, qualityLabel: String?) -> String {
+        PlaybackQualityPresentationPolicy.statusText(source: source, qualityLabel: qualityLabel)
+    }
+
     private func prebufferKey(for song: Song) -> String {
         "\(song.id)|q\(StreamingQuality.current.rawValue)"
     }
@@ -2746,6 +2777,7 @@ class AudioPlayer: NSObject, ObservableObject {
         playbackError = nil
         lastPauseReason = nil
         currentBufferPercent = nil
+        currentPlaybackQualitySummary = nil
 
         if currentSong?.id != song.id {
             playbackRetryTask?.cancel()
@@ -2776,18 +2808,22 @@ class AudioPlayer: NSObject, ObservableObject {
         // Check if song is downloaded first
         let playURL: URL
         let preparedAsset: AVURLAsset?
+        let playbackQualitySummary: String
 
         if let prebuffer = preparedPrebuffer(for: song) {
             playURL = prebuffer.url
             preparedAsset = prebuffer.asset
+            playbackQualitySummary = makePlaybackQualitySummary(source: .local, qualityLabel: prebuffer.qualityLabel)
             print("🎵 Playing from prepared local queue file: \(prebuffer.url.lastPathComponent)")
         } else if let localURL = DownloadManager.shared.getLocalURL(song.id) {
             playURL = localURL
             preparedAsset = nil
+            playbackQualitySummary = makePlaybackQualitySummary(source: .local, qualityLabel: downloadedQualityLabel(for: song))
             print("🎵 Playing from local file before preparation completed: \(localURL.lastPathComponent)")
         } else if let prebufferURL = existingPrebufferURL(for: song) {
             playURL = prebufferURL
             preparedAsset = nil
+            playbackQualitySummary = makePlaybackQualitySummary(source: .local, qualityLabel: preparedQualityLabel(for: song) ?? prebufferQualityLabel(for: song))
             print("🎵 Playing from cached queue file before preparation completed: \(prebufferURL.lastPathComponent)")
         } else {
             if shouldTranscodeForPlayback(song) {
@@ -2798,6 +2834,7 @@ class AudioPlayer: NSObject, ObservableObject {
                 if let streamURL = streamURLForPlayback(song) {
                     playURL = streamURL
                     preparedAsset = nil
+                    playbackQualitySummary = makePlaybackQualitySummary(source: .streaming, qualityLabel: prebufferQualityLabel(for: song))
                     print("🎵 Streaming transcoded: \(WRhythmLogRedactor.redacted(streamURL))")
                 } else {
                     print("❌ Failed to get transcoded stream URL")
@@ -2816,6 +2853,7 @@ class AudioPlayer: NSObject, ObservableObject {
                 if let streamURL = streamURLForPlayback(song) {
                     playURL = streamURL
                     preparedAsset = nil
+                    playbackQualitySummary = makePlaybackQualitySummary(source: .streaming, qualityLabel: prebufferQualityLabel(for: song))
                     print("🎵 Streaming from: \(WRhythmLogRedactor.redacted(streamURL))")
                 } else {
                     print("❌ Failed to get stream URL")
@@ -2836,6 +2874,7 @@ class AudioPlayer: NSObject, ObservableObject {
         self.isPlaying = PlaybackStartupStatePolicy.isPlayingDuringStartup(autoplay: autoplay)
         currentPlaybackURL = playURL
         currentPlaybackIsLocalFile = playURL.isFileURL
+        currentPlaybackQualitySummary = playbackQualitySummary
 
         // Remove old time observer if exists
         // if let observer = timeObserver {
@@ -2916,6 +2955,7 @@ class AudioPlayer: NSObject, ObservableObject {
         recentlyPlayedTracker.reset()
         currentPlaybackURL = nil
         currentPlaybackIsLocalFile = false
+        currentPlaybackQualitySummary = nil
         queue = []
         currentIndex = 0
         currentTime = 0

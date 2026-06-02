@@ -713,12 +713,7 @@ private struct SettingsInfoRow: View {
 
 #if os(macOS) || os(iOS)
     private func copyValue() {
-#if os(macOS)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(value, forType: .string)
-#elseif os(iOS)
-        UIPasteboard.general.string = value
-#endif
+        WRhythmClipboard.copy(value)
     }
 #endif
 }

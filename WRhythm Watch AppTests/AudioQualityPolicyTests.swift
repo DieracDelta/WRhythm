@@ -76,6 +76,35 @@ struct AudioQualityPolicyTests {
         ) == "320 kbps")
     }
 
+    @Test func playbackQualitySummaryNamesTransportAndQuality() {
+        #expect(PlaybackQualityPresentationPolicy.statusText(
+            source: .streaming,
+            qualityLabel: "192 kbps"
+        ) == "Streaming: 192 kbps")
+        #expect(PlaybackQualityPresentationPolicy.statusText(
+            source: .local,
+            qualityLabel: "Original"
+        ) == "Local: Original")
+        #expect(PlaybackQualityPresentationPolicy.statusText(
+            source: .streaming,
+            qualityLabel: " "
+        ) == "Streaming: Unknown")
+    }
+
+    @Test func errorCopyTextIncludesUserAndTechnicalDetails() {
+        let text = WRhythmErrorCopyPolicy.copyText(
+            title: "Playback retry limit reached",
+            message: "Could not play track.",
+            technicalDetails: "AVFoundation code -1003",
+            recoverySuggestion: "Try a lower streaming quality."
+        )
+
+        #expect(text.contains("Playback retry limit reached"))
+        #expect(text.contains("Could not play track."))
+        #expect(text.contains("Details:\nAVFoundation code -1003"))
+        #expect(text.contains("Recovery:\nTry a lower streaming quality."))
+    }
+
     @Test func availablePrebufferPresentationIncludesPreparedTracksOutsideQueue() {
         let queuedReady = makeSong(id: "queued-ready", title: "Queued Ready")
         let queuedMissing = makeSong(id: "queued-missing", title: "Queued Missing")

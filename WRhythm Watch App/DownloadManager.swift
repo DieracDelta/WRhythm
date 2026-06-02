@@ -278,7 +278,7 @@ struct DownloadedSong: Codable, Sendable {
         self.filePath = try container.decode(String.self, forKey: .filePath)
         self.downloadedAt = try container.decode(Date.self, forKey: .downloadedAt)
         self.fileSize = try container.decode(Int64.self, forKey: .fileSize)
-        self.downloadedBitRate = try container.decodeIfPresent(Int.self, forKey: .downloadedBitRate) ?? AudioQuality.original.downloadedBitRate
+        self.downloadedBitRate = try container.decode(Int.self, forKey: .downloadedBitRate)
     }
 }
 

@@ -654,6 +654,12 @@ private struct MacPlaybackErrorBanner: View {
                 Text(error.title)
                     .font(WRhythmTypography.controlLabelEmphasis)
                 Spacer()
+#if os(macOS) || os(iOS)
+                Button("Copy Error", action: copyError)
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(WRhythmTheme.accent)
+                    .accessibilityLabel("Copy playback error")
+#endif
                 Button(action: dismiss) {
                     Image(systemName: "xmark")
                 }
@@ -681,6 +687,19 @@ private struct MacPlaybackErrorBanner: View {
                 .stroke(WRhythmTheme.danger.opacity(0.35), lineWidth: 1)
         }
     }
+
+#if os(macOS) || os(iOS)
+    private func copyError() {
+        WRhythmClipboard.copy(
+            WRhythmErrorCopyPolicy.copyText(
+                title: error.title,
+                message: error.message,
+                technicalDetails: error.technicalDetails,
+                recoverySuggestion: error.recoverySuggestion
+            )
+        )
+    }
+#endif
 }
 
 struct MacMiniPlayerAttachment: View {

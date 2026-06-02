@@ -147,6 +147,24 @@ struct PlaybackSyncPolicyTests {
         #expect(snapshot.currentTime == 123)
     }
 
+    @Test func playbackSnapshotCarriesPlaybackQualitySummary() throws {
+        let now = Date()
+        let session = makeSession(
+            outputDeviceID: "mac",
+            playbackQualitySummary: "Local: 192 kbps",
+            updatedAt: now
+        )
+
+        let snapshot = try #require(PlaybackSessionSnapshotPolicy.snapshot(
+            from: session,
+            deviceName: "Mac",
+            platform: "Mac",
+            now: now
+        ))
+
+        #expect(snapshot.playbackQualitySummary == "Local: 192 kbps")
+    }
+
     @Test func newerDifferentSessionWinsEvenWhenRevisionIsLower() {
         let now = Date()
         let staleMacSession = makeSession(id: "mac-session", revision: 20, updatedAt: now.addingTimeInterval(-5), updatedByDeviceID: "mac")
@@ -4348,6 +4366,7 @@ struct PlaybackSyncPolicyTests {
                 position: position,
                 isPlaying: isPlaying,
                 volume: 0.8,
+                playbackQualitySummary: "Streaming: Original",
                 outputDeviceID: device.rawValue,
                 updatedAt: now,
                 updatedByDeviceID: device.rawValue
@@ -4505,6 +4524,7 @@ struct PlaybackSyncPolicyTests {
                 position: session.estimatedPosition(at: updatedAt),
                 isPlaying: session.isPlaying,
                 volume: session.volume,
+                playbackQualitySummary: session.playbackQualitySummary,
                 outputDeviceID: session.outputDeviceID,
                 updatedAt: updatedAt,
                 updatedByDeviceID: updatedByDeviceID
@@ -4574,6 +4594,7 @@ struct PlaybackSyncPolicyTests {
                 position: position,
                 isPlaying: isPlaying,
                 volume: 0.8,
+                playbackQualitySummary: "Streaming: Original",
                 outputDeviceID: id.rawValue,
                 updatedAt: now,
                 updatedByDeviceID: id.rawValue
@@ -4720,6 +4741,7 @@ struct PlaybackSyncPolicyTests {
                 position: session.estimatedPosition(at: updatedAt),
                 isPlaying: session.isPlaying,
                 volume: session.volume,
+                playbackQualitySummary: session.playbackQualitySummary,
                 outputDeviceID: session.outputDeviceID,
                 updatedAt: updatedAt,
                 updatedByDeviceID: updatedByDeviceID
@@ -5078,6 +5100,7 @@ struct PlaybackSyncPolicyTests {
             isPlaying: isPlaying,
             isBuffering: false,
             prebufferedTrackCount: 3,
+            playbackQualitySummary: "Streaming: Original",
             volume: volume,
             currentTime: currentTime,
             duration: duration,
@@ -5116,6 +5139,7 @@ struct PlaybackSyncPolicyTests {
         isPlaying: Bool = true,
         position: TimeInterval = 10,
         volume: Double? = 0.8,
+        playbackQualitySummary: String = "Streaming: Original",
         revision: Int = 1,
         updatedAt: Date,
         updatedByDeviceID: String = "mac"
@@ -5129,6 +5153,7 @@ struct PlaybackSyncPolicyTests {
             position: position,
             isPlaying: isPlaying,
             volume: volume,
+            playbackQualitySummary: playbackQualitySummary,
             outputDeviceID: outputDeviceID,
             updatedAt: updatedAt,
             updatedByDeviceID: updatedByDeviceID

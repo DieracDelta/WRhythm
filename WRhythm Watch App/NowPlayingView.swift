@@ -114,6 +114,13 @@ struct NowPlayingView: View {
                         }
 
                         HStack(spacing: 8) {
+                            if let qualitySummary = player.currentPlaybackQualitySummary {
+                                WRhythmStatusPill(
+                                    text: qualitySummary,
+                                    systemImage: "waveform",
+                                    tint: WRhythmTheme.accent
+                                )
+                            }
                             if player.isBuffering {
                                 WRhythmStatusPill(
                                     text: player.currentBufferPercent.map { "Buffering \($0)%" } ?? "Buffering",
@@ -543,6 +550,7 @@ private struct PhoneLocalNowPlayingContent: View {
                 title: song.title,
                 artist: song.artist,
                 album: song.album,
+                qualitySummary: player.currentPlaybackQualitySummary,
                 isBuffering: player.isBuffering,
                 previousBufferedCount: player.retainedPrebufferedSongs.count,
                 nextBufferedCount: player.prebufferedSongs.count,
@@ -684,6 +692,7 @@ private struct PhoneRemoteNowPlayingContent: View {
                     title: song.title,
                     artist: song.artist,
                     album: song.album,
+                    qualitySummary: playback.playbackQualitySummary,
                     isBuffering: playback.isBuffering == true,
                     previousBufferedCount: 0,
                     nextBufferedCount: playback.prebufferedTrackCount ?? 0,
@@ -827,6 +836,7 @@ private struct PhoneTrackSummary: View {
     let title: String
     let artist: String?
     let album: String?
+    let qualitySummary: String?
     let isBuffering: Bool
     let previousBufferedCount: Int
     let nextBufferedCount: Int
@@ -856,6 +866,11 @@ private struct PhoneTrackSummary: View {
             }
 
             HStack(spacing: WRhythmSpacing.xs) {
+                if let qualitySummary,
+                   !qualitySummary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    WRhythmStatusPill(text: qualitySummary, systemImage: "waveform", tint: WRhythmTheme.accent)
+                }
+
                 if isBuffering {
                     WRhythmStatusPill(text: "Buffering", systemImage: "hourglass", tint: WRhythmTheme.warning)
                 }
@@ -1098,6 +1113,9 @@ struct RemotePlaybackControls: View {
                     Spacer()
                     if playback.isBuffering == true {
                         WRhythmStatusPill(text: "Buffering", systemImage: "hourglass", tint: WRhythmTheme.warning)
+                    }
+                    if !playback.playbackQualitySummary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        WRhythmStatusPill(text: playback.playbackQualitySummary, systemImage: "waveform", tint: WRhythmTheme.accent)
                     }
                     if let bufferedCount = playback.prebufferedTrackCount,
                        !playback.queue.isEmpty,
@@ -1686,6 +1704,14 @@ private struct WatchNowPlayingView: View {
         VStack(spacing: 4) {
             WatchTrackTitleBlock(song: song)
 
+            if let qualitySummary = player.currentPlaybackQualitySummary,
+               !qualitySummary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text(qualitySummary)
+                    .font(WRhythmTypography.metadata)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
             NowPlayingArtwork(coverArtId: song.coverArt, maxSize: 52)
                 .equatable()
 
@@ -1838,6 +1864,13 @@ private struct WatchRemotePlaybackControls: View {
 
             if let song = playback.song {
                 WatchTrackTitleBlock(song: song)
+
+                if !playback.playbackQualitySummary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text(playback.playbackQualitySummary)
+                        .font(WRhythmTypography.metadata)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
 
                 NowPlayingArtwork(coverArtId: song.coverArt, maxSize: 50)
                     .equatable()

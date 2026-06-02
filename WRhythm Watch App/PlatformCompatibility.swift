@@ -5,6 +5,11 @@
 
 import SwiftUI
 import CoreText
+#if os(macOS)
+import AppKit
+#elseif os(iOS)
+import UIKit
+#endif
 
 extension ToolbarItemPlacement {
     static var platformTopBarTrailing: ToolbarItemPlacement {
@@ -1324,8 +1329,10 @@ struct WRhythmEmptyState: View {
     let systemImage: String
     let title: String
     let message: String?
-    var actionTitle: String?
-    var action: (() -> Void)?
+    var actionTitle: String? = nil
+    var action: (() -> Void)? = nil
+    var secondaryActionTitle: String? = nil
+    var secondaryAction: (() -> Void)? = nil
 
     var body: some View {
         VStack(spacing: WRhythmSpacing.md) {
@@ -1350,9 +1357,18 @@ struct WRhythmEmptyState: View {
                 }
             }
 
-            if let actionTitle, let action {
-                Button(actionTitle, action: action)
-                    .buttonStyle(.borderedProminent)
+            if actionTitle != nil || secondaryActionTitle != nil {
+                HStack(spacing: WRhythmSpacing.xs) {
+                    if let actionTitle, let action {
+                        Button(actionTitle, action: action)
+                            .buttonStyle(.borderedProminent)
+                    }
+
+                    if let secondaryActionTitle, let secondaryAction {
+                        Button(secondaryActionTitle, action: secondaryAction)
+                            .buttonStyle(.bordered)
+                    }
+                }
             }
         }
         .padding(24)
@@ -1450,10 +1466,67 @@ struct WRhythmErrorState: View {
             title: title,
             message: message,
             actionTitle: actionTitle,
-            action: action
+            action: action,
+            secondaryActionTitle: copyActionTitle,
+            secondaryAction: copyAction
         )
     }
+
+    private var copyActionTitle: String? {
+#if os(macOS) || os(iOS)
+        "Copy Error"
+#else
+        nil
+#endif
+    }
+
+    private var copyAction: (() -> Void)? {
+#if os(macOS) || os(iOS)
+        {
+            WRhythmClipboard.copy(
+                WRhythmErrorCopyPolicy.copyText(title: title, message: message)
+            )
+        }
+#else
+        nil
+#endif
+    }
 }
+
+enum WRhythmErrorCopyPolicy: Sendable {
+    static func copyText(
+        title: String,
+        message: String?,
+        technicalDetails: String? = nil,
+        recoverySuggestion: String? = nil
+    ) -> String {
+        [
+            title,
+            message,
+            technicalDetails.map { "Details:\n\($0)" },
+            recoverySuggestion.map { "Recovery:\n\($0)" }
+        ]
+        .compactMap { text -> String? in
+            guard let text else { return nil }
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        .joined(separator: "\n\n")
+    }
+}
+
+#if os(macOS) || os(iOS)
+enum WRhythmClipboard {
+    static func copy(_ value: String) {
+#if os(macOS)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
+#elseif os(iOS)
+        UIPasteboard.general.string = value
+#endif
+    }
+}
+#endif
 
 struct WRhythmActionBar<Content: View>: View {
     private let content: Content
