@@ -1421,6 +1421,34 @@ struct PlaybackSyncPolicyTests {
         #expect(SearchPaginationPolicy.visiblePages(currentPage: 5, canGoNext: false) == [3, 4, 5])
     }
 
+    @Test func audioMuseAlchemySeedSearchPagingUsesOffsetsAndLocalPlaylistPages() {
+        let playlistSeeds = (0..<25).map { index in
+            AudioMuseAlchemySeed(
+                kind: .playlist,
+                sourceID: "playlist-\(index)",
+                title: "Playlist \(index)",
+                subtitle: nil,
+                coverArt: nil
+            )
+        }
+
+        #expect(AudioMuseAlchemySeedSearchPagingPolicy.offset(forPage: 2, pageSize: 8) == 16)
+        #expect(AudioMuseAlchemySeedSearchPagingPolicy.canGoPrevious(page: 0) == false)
+        #expect(AudioMuseAlchemySeedSearchPagingPolicy.canGoPrevious(page: 1))
+        #expect(AudioMuseAlchemySeedSearchPagingPolicy.canGoNext(resultCount: 8, pageSize: 8))
+        #expect(AudioMuseAlchemySeedSearchPagingPolicy.canGoNext(resultCount: 7, pageSize: 8) == false)
+        #expect(AudioMuseAlchemySeedSearchPagingPolicy.canGoNextLocal(totalCount: 25, page: 1, pageSize: 10))
+        #expect(AudioMuseAlchemySeedSearchPagingPolicy.canGoNextLocal(totalCount: 25, page: 2, pageSize: 10) == false)
+        #expect(AudioMuseAlchemySeedSearchPagingPolicy.visiblePages(currentPage: 3, canGoNext: true) == [1, 2, 3])
+        #expect(AudioMuseAlchemySeedSearchPagingPolicy.pageItems(playlistSeeds, page: 2, pageSize: 10).map(\.sourceID) == [
+            "playlist-20",
+            "playlist-21",
+            "playlist-22",
+            "playlist-23",
+            "playlist-24"
+        ])
+    }
+
     @Test func remotePauseRoundTripCanApplyAndAcknowledgeAcrossDevices() {
         let now = Date()
         let macPausedSession = makeSession(outputDeviceID: "mac", isPlaying: false, position: 120.2, updatedAt: now)

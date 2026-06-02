@@ -1448,6 +1448,54 @@ enum AudioMuseAlchemySeedPolicy {
     }
 }
 
+enum AudioMuseAlchemySeedSearchPageKind: String, CaseIterable, Sendable, Identifiable {
+    case artists
+    case albums
+    case tracks
+    case playlists
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .artists: return "Artists"
+        case .albums: return "Albums"
+        case .tracks: return "Tracks"
+        case .playlists: return "Playlists"
+        }
+    }
+}
+
+nonisolated enum AudioMuseAlchemySeedSearchPagingPolicy: Sendable {
+    static let defaultPageSize = SearchPaginationPolicy.defaultPageSize
+
+    static func offset(forPage page: Int, pageSize: Int = defaultPageSize) -> Int {
+        SearchPaginationPolicy.offset(forPage: page, pageSize: pageSize)
+    }
+
+    static func canGoPrevious(page: Int) -> Bool {
+        SearchPaginationPolicy.canGoPrevious(page: page)
+    }
+
+    static func canGoNext(resultCount: Int, pageSize: Int = defaultPageSize) -> Bool {
+        SearchPaginationPolicy.canGoNext(resultCount: resultCount, pageSize: pageSize)
+    }
+
+    static func canGoNextLocal(totalCount: Int, page: Int, pageSize: Int = defaultPageSize) -> Bool {
+        offset(forPage: max(0, page) + 1, pageSize: pageSize) < totalCount
+    }
+
+    static func visiblePages(currentPage: Int, canGoNext: Bool, radius: Int = 2) -> [Int] {
+        SearchPaginationPolicy.visiblePages(currentPage: currentPage, canGoNext: canGoNext, radius: radius)
+    }
+
+    static func pageItems<Element>(_ items: [Element], page: Int, pageSize: Int = defaultPageSize) -> [Element] {
+        let lowerBound = min(offset(forPage: page, pageSize: pageSize), items.count)
+        let upperBound = min(lowerBound + SearchPaginationPolicy.sanitizedPageSize(pageSize), items.count)
+        return Array(items[lowerBound..<upperBound])
+    }
+}
+
 struct AudioMuseLoginRequest: Encodable {
     let username: String
     let password: String

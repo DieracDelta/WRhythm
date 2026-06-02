@@ -690,14 +690,36 @@ private struct AudioMuseAlchemySeedSearchPicker: View {
     @Binding var selectedSeeds: [AudioMuseAlchemySeed]
     @State private var searchResult = SearchResult(artist: [], album: [], song: [])
     @State private var playlistResults: [PlaylistSummary] = []
+    @State private var artistPage = 0
+    @State private var albumPage = 0
+    @State private var trackPage = 0
+    @State private var playlistPage = 0
+    @State private var artistCanGoNext = false
+    @State private var albumCanGoNext = false
+    @State private var trackCanGoNext = false
+    @State private var playlistCanGoNext = false
     @State private var isSearching = false
     @State private var errorMessage: String?
+
+    private let pageSize = AudioMuseAlchemySeedSearchPagingPolicy.defaultPageSize
 
     private var hasResults: Bool {
         !(searchResult.artist ?? []).isEmpty ||
             !(searchResult.album ?? []).isEmpty ||
             !(searchResult.song ?? []).isEmpty ||
             !playlistResults.isEmpty
+    }
+
+    private var hasSearchContent: Bool {
+        hasResults || artistPage > 0 || albumPage > 0 || trackPage > 0 || playlistPage > 0
+    }
+
+    private var currentPlaylistResults: [PlaylistSummary] {
+        AudioMuseAlchemySeedSearchPagingPolicy.pageItems(
+            playlistResults,
+            page: playlistPage,
+            pageSize: pageSize
+        )
     }
 
     var body: some View {
@@ -734,17 +756,36 @@ private struct AudioMuseAlchemySeedSearchPicker: View {
                 Text(errorMessage)
                     .font(WRhythmTypography.rowSubtitle)
                     .foregroundStyle(WRhythmTheme.danger)
-            } else if hasResults {
+            } else if hasSearchContent {
                 VStack(alignment: .leading, spacing: WRhythmSpacing.sm) {
-                    seedSection("Artists", seeds: (searchResult.artist ?? []).prefix(4).map(AudioMuseAlchemySeed.artist))
-                    seedSection("Albums", seeds: (searchResult.album ?? []).prefix(4).map(AudioMuseAlchemySeed.album))
-                    seedSection("Tracks", seeds: (searchResult.song ?? []).prefix(5).map(AudioMuseAlchemySeed.song))
-                    seedSection("Playlists", seeds: playlistResults.prefix(4).map(AudioMuseAlchemySeed.playlist))
+                    seedSection(
+                        .artists,
+                        seeds: (searchResult.artist ?? []).map(AudioMuseAlchemySeed.artist)
+                    )
+                    seedSection(
+                        .albums,
+                        seeds: (searchResult.album ?? []).map(AudioMuseAlchemySeed.album)
+                    )
+                    seedSection(
+                        .tracks,
+                        seeds: (searchResult.song ?? []).map(AudioMuseAlchemySeed.song)
+                    )
+                    seedSection(
+                        .playlists,
+                        seeds: currentPlaylistResults.map(AudioMuseAlchemySeed.playlist)
+                    )
                 }
+            } else if query.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2 {
+                Text("No seed matches")
+                    .font(WRhythmTypography.rowSubtitle)
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, WRhythmSpacing.xs)
             }
         }
         .task(id: query) {
-            await search()
+            resetPages()
+            clearResults()
+            await search(debounce: true)
         }
     }
 
@@ -759,66 +800,224 @@ private struct AudioMuseAlchemySeedSearchPicker: View {
     }
 
     @ViewBuilder
-    private func seedSection(_ title: String, seeds: [AudioMuseAlchemySeed]) -> some View {
-        if !seeds.isEmpty {
-            VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
-                Text(title)
-                    .font(WRhythmTypography.sectionLabel)
-                    .foregroundStyle(.secondary)
+    private func seedSection(_ kind: AudioMuseAlchemySeedSearchPageKind, seeds: [AudioMuseAlchemySeed]) -> some View {
+        let page = page(for: kind)
+        let canPrevious = AudioMuseAlchemySeedSearchPagingPolicy.canGoPrevious(page: page)
+        let canNext = canGoNext(for: kind)
 
-                ForEach(seeds) { seed in
-                    AudioMuseAlchemySeedRow(seed: seed, isSelected: false) {
-                        selectedSeeds = AudioMuseAlchemySeedPolicy.append(seed, to: selectedSeeds)
-                        query = ""
-                        searchResult = SearchResult(artist: [], album: [], song: [])
-                        playlistResults = []
+        if !seeds.isEmpty || canPrevious || canNext {
+            VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
+                HStack(spacing: WRhythmSpacing.xs) {
+                    Text(kind.label)
+                        .font(WRhythmTypography.sectionLabel)
+                        .foregroundStyle(.secondary)
+
+                    Text("Page \(page + 1)")
+                        .font(WRhythmTypography.rowSubtitle)
+                        .foregroundStyle(.tertiary)
+                }
+
+                if seeds.isEmpty {
+                    Text("No \(kind.label.lowercased()) on this page")
+                        .font(WRhythmTypography.rowSubtitle)
+                        .foregroundStyle(.secondary)
+                        .padding(.vertical, WRhythmSpacing.xs)
+                } else {
+                    ForEach(seeds) { seed in
+                        AudioMuseAlchemySeedRow(seed: seed, isSelected: false) {
+                            selectedSeeds = AudioMuseAlchemySeedPolicy.append(seed, to: selectedSeeds)
+                            query = ""
+                            clearResults()
+                        }
                     }
                 }
+
+                paginationControls(for: kind)
             }
         }
     }
 
-    private func search() async {
+    @ViewBuilder
+    private func paginationControls(for kind: AudioMuseAlchemySeedSearchPageKind) -> some View {
+        let currentPage = page(for: kind)
+        let canPrevious = AudioMuseAlchemySeedSearchPagingPolicy.canGoPrevious(page: currentPage)
+        let canNext = canGoNext(for: kind)
+        let pages = AudioMuseAlchemySeedSearchPagingPolicy.visiblePages(
+            currentPage: currentPage,
+            canGoNext: canNext
+        )
+
+        if canPrevious || canNext || pages.count > 1 {
+            HStack(spacing: WRhythmSpacing.xs) {
+                Button {
+                    goToPage(currentPage - 1, kind: kind)
+                } label: {
+                    Image(systemName: "chevron.left")
+                }
+                .buttonStyle(.borderless)
+                .disabled(!canPrevious || isSearching)
+                .accessibilityLabel("Previous \(kind.label) page")
+
+                ForEach(pages, id: \.self) { page in
+                    Button {
+                        goToPage(page, kind: kind)
+                    } label: {
+                        Text("\(page + 1)")
+                            .font(page == currentPage ? WRhythmTypography.metadataEmphasis : WRhythmTypography.metadata)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .tint(page == currentPage ? WRhythmTheme.playlistGen : nil)
+                    .disabled(page == currentPage || isSearching)
+                }
+
+                Button {
+                    goToPage(currentPage + 1, kind: kind)
+                } label: {
+                    Image(systemName: "chevron.right")
+                }
+                .buttonStyle(.borderless)
+                .disabled(!canNext || isSearching)
+                .accessibilityLabel("Next \(kind.label) page")
+            }
+            .accessibilityLabel("\(kind.label) seed result pages")
+        }
+    }
+
+    private func search(debounce: Bool) async {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmedQuery.count >= 2 else {
-            searchResult = SearchResult(artist: [], album: [], song: [])
-            playlistResults = []
+            clearResults()
             errorMessage = nil
             isSearching = false
             return
         }
 
         do {
-            try await Task.sleep(for: .milliseconds(250))
+            if debounce {
+                try await Task.sleep(for: .milliseconds(250))
+            }
             guard !Task.isCancelled else { return }
             isSearching = true
             errorMessage = nil
 
+            let capturedArtistPage = artistPage
+            let capturedAlbumPage = albumPage
+            let capturedTrackPage = trackPage
+            let capturedPlaylistPage = playlistPage
+
             async let subsonicResult = NavidromeAPI.shared.search(
                 query: trimmedQuery,
-                artistCount: 8,
-                albumCount: 8,
-                songCount: 10
+                artistCount: pageSize,
+                artistOffset: AudioMuseAlchemySeedSearchPagingPolicy.offset(
+                    forPage: capturedArtistPage,
+                    pageSize: pageSize
+                ),
+                albumCount: pageSize,
+                albumOffset: AudioMuseAlchemySeedSearchPagingPolicy.offset(
+                    forPage: capturedAlbumPage,
+                    pageSize: pageSize
+                ),
+                songCount: pageSize,
+                songOffset: AudioMuseAlchemySeedSearchPagingPolicy.offset(
+                    forPage: capturedTrackPage,
+                    pageSize: pageSize
+                )
             )
             async let playlists = NavidromeAPI.shared.getPlaylists()
 
             let result = try await subsonicResult
             let fetchedPlaylists = (try? await playlists) ?? []
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled,
+                  trimmedQuery == query.trimmingCharacters(in: .whitespacesAndNewlines),
+                  capturedArtistPage == artistPage,
+                  capturedAlbumPage == albumPage,
+                  capturedTrackPage == trackPage,
+                  capturedPlaylistPage == playlistPage else { return }
 
             searchResult = result
             playlistResults = fetchedPlaylists.filter { playlist in
                 playlist.name.localizedCaseInsensitiveContains(trimmedQuery)
             }
+            updatePageAvailability()
         } catch is CancellationError {
             return
         } catch {
-            searchResult = SearchResult(artist: [], album: [], song: [])
-            playlistResults = []
+            clearResults()
             errorMessage = "Search failed"
         }
 
         isSearching = false
+    }
+
+    private func page(for kind: AudioMuseAlchemySeedSearchPageKind) -> Int {
+        switch kind {
+        case .artists: return artistPage
+        case .albums: return albumPage
+        case .tracks: return trackPage
+        case .playlists: return playlistPage
+        }
+    }
+
+    private func canGoNext(for kind: AudioMuseAlchemySeedSearchPageKind) -> Bool {
+        switch kind {
+        case .artists: return artistCanGoNext
+        case .albums: return albumCanGoNext
+        case .tracks: return trackCanGoNext
+        case .playlists: return playlistCanGoNext
+        }
+    }
+
+    private func goToPage(_ page: Int, kind: AudioMuseAlchemySeedSearchPageKind) {
+        let page = max(0, page)
+        switch kind {
+        case .artists:
+            artistPage = page
+        case .albums:
+            albumPage = page
+        case .tracks:
+            trackPage = page
+        case .playlists:
+            playlistPage = page
+        }
+
+        Task {
+            await search(debounce: false)
+        }
+    }
+
+    private func resetPages() {
+        artistPage = 0
+        albumPage = 0
+        trackPage = 0
+        playlistPage = 0
+        updatePageAvailability()
+    }
+
+    private func updatePageAvailability() {
+        artistCanGoNext = AudioMuseAlchemySeedSearchPagingPolicy.canGoNext(
+            resultCount: searchResult.artist?.count ?? 0,
+            pageSize: pageSize
+        )
+        albumCanGoNext = AudioMuseAlchemySeedSearchPagingPolicy.canGoNext(
+            resultCount: searchResult.album?.count ?? 0,
+            pageSize: pageSize
+        )
+        trackCanGoNext = AudioMuseAlchemySeedSearchPagingPolicy.canGoNext(
+            resultCount: searchResult.song?.count ?? 0,
+            pageSize: pageSize
+        )
+        playlistCanGoNext = AudioMuseAlchemySeedSearchPagingPolicy.canGoNextLocal(
+            totalCount: playlistResults.count,
+            page: playlistPage,
+            pageSize: pageSize
+        )
+    }
+
+    private func clearResults() {
+        searchResult = SearchResult(artist: [], album: [], song: [])
+        playlistResults = []
+        updatePageAvailability()
     }
 }
 
