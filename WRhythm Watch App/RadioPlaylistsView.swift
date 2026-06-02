@@ -807,15 +807,7 @@ private struct AudioMuseAlchemySeedSearchPicker: View {
 
         if !seeds.isEmpty || canPrevious || canNext {
             VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
-                HStack(spacing: WRhythmSpacing.xs) {
-                    Text(kind.label)
-                        .font(WRhythmTypography.sectionLabel)
-                        .foregroundStyle(.secondary)
-
-                    Text("Page \(page + 1)")
-                        .font(WRhythmTypography.rowSubtitle)
-                        .foregroundStyle(.tertiary)
-                }
+                seedSectionHeader(for: kind)
 
                 if seeds.isEmpty {
                     Text("No \(kind.label.lowercased()) on this page")
@@ -831,24 +823,24 @@ private struct AudioMuseAlchemySeedSearchPicker: View {
                         }
                     }
                 }
-
-                paginationControls(for: kind)
             }
         }
     }
 
     @ViewBuilder
-    private func paginationControls(for kind: AudioMuseAlchemySeedSearchPageKind) -> some View {
+    private func seedSectionHeader(for kind: AudioMuseAlchemySeedSearchPageKind) -> some View {
         let currentPage = page(for: kind)
         let canPrevious = AudioMuseAlchemySeedSearchPagingPolicy.canGoPrevious(page: currentPage)
         let canNext = canGoNext(for: kind)
-        let pages = AudioMuseAlchemySeedSearchPagingPolicy.visiblePages(
-            currentPage: currentPage,
-            canGoNext: canNext
-        )
 
-        if canPrevious || canNext || pages.count > 1 {
-            HStack(spacing: WRhythmSpacing.xs) {
+        HStack(spacing: WRhythmSpacing.xs) {
+            Text(kind.label)
+                .font(WRhythmTypography.sectionLabel)
+                .foregroundStyle(.secondary)
+
+            Spacer(minLength: WRhythmSpacing.sm)
+
+            if canPrevious || canNext {
                 Button {
                     goToPage(currentPage - 1, kind: kind)
                 } label: {
@@ -858,18 +850,11 @@ private struct AudioMuseAlchemySeedSearchPicker: View {
                 .disabled(!canPrevious || isSearching)
                 .accessibilityLabel("Previous \(kind.label) page")
 
-                ForEach(pages, id: \.self) { page in
-                    Button {
-                        goToPage(page, kind: kind)
-                    } label: {
-                        Text("\(page + 1)")
-                            .font(page == currentPage ? WRhythmTypography.metadataEmphasis : WRhythmTypography.metadata)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .tint(page == currentPage ? WRhythmTheme.playlistGen : nil)
-                    .disabled(page == currentPage || isSearching)
-                }
+                Text("Page \(currentPage + 1)")
+                    .font(WRhythmTypography.metadataEmphasis)
+                    .foregroundStyle(WRhythmTheme.playlistGen)
+                    .monospacedDigit()
+                    .accessibilityHidden(true)
 
                 Button {
                     goToPage(currentPage + 1, kind: kind)
@@ -880,8 +865,8 @@ private struct AudioMuseAlchemySeedSearchPicker: View {
                 .disabled(!canNext || isSearching)
                 .accessibilityLabel("Next \(kind.label) page")
             }
-            .accessibilityLabel("\(kind.label) seed result pages")
         }
+        .accessibilityElement(children: .contain)
     }
 
     private func search(debounce: Bool) async {
