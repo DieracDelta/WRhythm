@@ -3,6 +3,41 @@
 //  WRhythm
 //
 
+enum SpacebarPlaybackShortcutPolicy {
+    enum EventPhase: Sendable {
+        case keyDown
+        case keyUp
+        case other
+    }
+
+    enum Decision: Sendable, Equatable {
+        case passThrough
+        case consume
+        case toggleAndConsume
+    }
+
+    static func decision(
+        isSpacebar: Bool,
+        eventPhase: EventPhase,
+        isRepeat: Bool,
+        hasDisallowedModifiers: Bool,
+        responderAllowsPlaybackShortcut: Bool
+    ) -> Decision {
+        guard isSpacebar, !hasDisallowedModifiers, responderAllowsPlaybackShortcut else {
+            return .passThrough
+        }
+
+        switch eventPhase {
+        case .keyDown:
+            return isRepeat ? .consume : .toggleAndConsume
+        case .keyUp:
+            return .consume
+        case .other:
+            return .passThrough
+        }
+    }
+}
+
 #if os(macOS)
 import AppKit
 import SwiftUI
@@ -46,29 +81,43 @@ struct MacSpacebarPlaybackShortcut: NSViewRepresentable {
         }
 
         private func handle(_ event: NSEvent) -> NSEvent? {
-            guard event.keyCode == 49 || event.charactersIgnoringModifiers == " " else {
+            let decision = SpacebarPlaybackShortcutPolicy.decision(
+                isSpacebar: event.keyCode == 49 || event.charactersIgnoringModifiers == " ",
+                eventPhase: eventPhase(for: event),
+                isRepeat: event.isARepeat,
+                hasDisallowedModifiers: hasDisallowedModifiers(event.modifierFlags),
+                responderAllowsPlaybackShortcut: shouldHandleSpacebar(for: NSApp.keyWindow?.firstResponder)
+            )
+
+            switch decision {
+            case .passThrough:
                 return event
-            }
-            guard event.type == .keyDown else {
+            case .consume:
+                return nil
+            case .toggleAndConsume:
+                Task { @MainActor in
+                    PlaybackKeyboardActions.togglePlayback()
+                }
                 return nil
             }
-            guard !event.isARepeat else {
-                return nil
+        }
+
+        private func eventPhase(for event: NSEvent) -> SpacebarPlaybackShortcutPolicy.EventPhase {
+            switch event.type {
+            case .keyDown:
+                return .keyDown
+            case .keyUp:
+                return .keyUp
+            default:
+                return .other
             }
-            guard event.modifierFlags
+        }
+
+        private func hasDisallowedModifiers(_ modifierFlags: NSEvent.ModifierFlags) -> Bool {
+            !modifierFlags
                 .intersection(.deviceIndependentFlagsMask)
                 .subtracting(.capsLock)
-                .isEmpty else {
-                return event
-            }
-            guard shouldHandleSpacebar(for: NSApp.keyWindow?.firstResponder) else {
-                return event
-            }
-
-            Task { @MainActor in
-                PlaybackKeyboardActions.togglePlayback()
-            }
-            return nil
+                .isEmpty
         }
 
         private func shouldHandleSpacebar(for responder: NSResponder?) -> Bool {
@@ -77,11 +126,7 @@ struct MacSpacebarPlaybackShortcut: NSViewRepresentable {
                 if responder is NSTextView
                     || responder is NSTextField
                     || responder is NSSearchField
-                    || responder is NSComboBox
-                    || responder is NSSlider
-                    || responder is NSButton
-                    || responder is NSSegmentedControl
-                    || responder is NSPopUpButton {
+                    || responder is NSComboBox {
                     return false
                 }
 

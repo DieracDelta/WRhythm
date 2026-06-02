@@ -1421,6 +1421,58 @@ struct PlaybackSyncPolicyTests {
         #expect(SearchPaginationPolicy.visiblePages(currentPage: 5, canGoNext: false) == [3, 4, 5])
     }
 
+    @Test func spacebarPlaybackShortcutConsumesPlainPlaybackEventsWithoutLeakingToAppKit() {
+        #expect(SpacebarPlaybackShortcutPolicy.decision(
+            isSpacebar: true,
+            eventPhase: .keyDown,
+            isRepeat: false,
+            hasDisallowedModifiers: false,
+            responderAllowsPlaybackShortcut: true
+        ) == .toggleAndConsume)
+
+        #expect(SpacebarPlaybackShortcutPolicy.decision(
+            isSpacebar: true,
+            eventPhase: .keyUp,
+            isRepeat: false,
+            hasDisallowedModifiers: false,
+            responderAllowsPlaybackShortcut: true
+        ) == .consume)
+
+        #expect(SpacebarPlaybackShortcutPolicy.decision(
+            isSpacebar: true,
+            eventPhase: .keyDown,
+            isRepeat: true,
+            hasDisallowedModifiers: false,
+            responderAllowsPlaybackShortcut: true
+        ) == .consume)
+    }
+
+    @Test func spacebarPlaybackShortcutPassesThroughTextAndModifiedEvents() {
+        #expect(SpacebarPlaybackShortcutPolicy.decision(
+            isSpacebar: true,
+            eventPhase: .keyDown,
+            isRepeat: false,
+            hasDisallowedModifiers: false,
+            responderAllowsPlaybackShortcut: false
+        ) == .passThrough)
+
+        #expect(SpacebarPlaybackShortcutPolicy.decision(
+            isSpacebar: true,
+            eventPhase: .keyDown,
+            isRepeat: false,
+            hasDisallowedModifiers: true,
+            responderAllowsPlaybackShortcut: true
+        ) == .passThrough)
+
+        #expect(SpacebarPlaybackShortcutPolicy.decision(
+            isSpacebar: false,
+            eventPhase: .keyDown,
+            isRepeat: false,
+            hasDisallowedModifiers: false,
+            responderAllowsPlaybackShortcut: true
+        ) == .passThrough)
+    }
+
     @Test func audioMuseAlchemySeedSearchPagingUsesOffsetsAndLocalPlaylistPages() {
         let playlistSeeds = (0..<25).map { index in
             AudioMuseAlchemySeed(
