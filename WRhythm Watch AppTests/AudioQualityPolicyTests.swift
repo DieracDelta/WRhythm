@@ -94,6 +94,84 @@ struct AudioQualityPolicyTests {
         ) == "MP3 fallback 320 kbps")
     }
 
+    @Test func playbackFormatInfersOriginalFlacFromPathWhenMimeFieldsAreMissing() {
+        let path = "/storage/music/07. Thomas Bergersen - Dreamgarden.flac"
+
+        #expect(PlaybackFormatPolicy.effectiveSuffix(suffix: nil, path: path) == "flac")
+#if os(watchOS)
+        #expect(PlaybackFormatPolicy.isFormatSupportedNatively(
+            contentType: nil,
+            suffix: nil,
+            path: path
+        ) == false)
+#else
+        #expect(PlaybackFormatPolicy.isFormatSupportedNatively(
+            contentType: nil,
+            suffix: nil,
+            path: path
+        ))
+        #expect(PlaybackFormatPolicy.playbackMimeType(
+            contentType: nil,
+            suffix: "flac",
+            url: URL(string: "https://example.com/rest/stream.view?id=song")!
+        ) == "audio/flac")
+#endif
+    }
+
+    @Test func originalPlaybackRejectsStaleMP3FallbackCacheForFreshFlacSong() {
+#if os(watchOS)
+        #expect(PrebufferPlaybackSelectionPolicy.shouldUseCachedPrebuffer(
+            songContentType: "audio/flac",
+            songSuffix: "flac",
+            songPath: nil,
+            streamingQuality: .original,
+            cachedFileExtension: "mp3",
+            qualityLabel: "MP3 fallback 320 kbps"
+        ))
+#else
+        #expect(PrebufferPlaybackSelectionPolicy.shouldUseCachedPrebuffer(
+            songContentType: "audio/flac",
+            songSuffix: "flac",
+            songPath: nil,
+            streamingQuality: .original,
+            cachedFileExtension: "mp3",
+            qualityLabel: "MP3 fallback 320 kbps"
+        ) == false)
+        #expect(PrebufferPlaybackSelectionPolicy.shouldUseCachedPrebuffer(
+            songContentType: nil,
+            songSuffix: nil,
+            songPath: "/storage/music/29. James Newton Howard - Case Chaos.flac",
+            streamingQuality: .original,
+            cachedFileExtension: "mp3",
+            qualityLabel: nil
+        ) == false)
+#endif
+        #expect(PrebufferPlaybackSelectionPolicy.shouldUseCachedPrebuffer(
+            songContentType: "audio/flac",
+            songSuffix: "flac",
+            songPath: nil,
+            streamingQuality: .original,
+            cachedFileExtension: "flac",
+            qualityLabel: "FLAC original"
+        ))
+        #expect(PrebufferPlaybackSelectionPolicy.shouldUseCachedPrebuffer(
+            songContentType: "audio/mpeg",
+            songSuffix: "mp3",
+            songPath: nil,
+            streamingQuality: .original,
+            cachedFileExtension: "mp3",
+            qualityLabel: "MP3 original"
+        ))
+        #expect(PrebufferPlaybackSelectionPolicy.shouldUseCachedPrebuffer(
+            songContentType: "audio/flac",
+            songSuffix: "flac",
+            songPath: nil,
+            streamingQuality: .high,
+            cachedFileExtension: "mp3",
+            qualityLabel: "192 kbps"
+        ))
+    }
+
     @Test func playbackQualitySummaryNamesTransportAndQuality() {
         #expect(PlaybackQualityPresentationPolicy.statusText(
             source: .streaming,

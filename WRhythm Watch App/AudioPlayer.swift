@@ -489,6 +489,127 @@ struct PrebufferQualityPresentationPolicy: Sendable {
     }
 }
 
+struct PlaybackFormatPolicy: Sendable {
+    static func effectiveSuffix(suffix: String?, path: String?) -> String? {
+        if let suffix = normalized(suffix), !suffix.isEmpty {
+            return suffix
+        }
+        guard let path = path?.trimmingCharacters(in: .whitespacesAndNewlines), !path.isEmpty else {
+            return nil
+        }
+        let extensionName = (path as NSString).pathExtension
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        return extensionName.isEmpty ? nil : extensionName
+    }
+
+    static func isMP3(contentType: String?, suffix: String?, path: String?) -> Bool {
+        let normalizedContentType = normalized(contentType)
+        let effectiveSuffix = effectiveSuffix(suffix: suffix, path: path)
+        return normalizedContentType?.contains("mpeg") == true ||
+            normalizedContentType?.contains("mp3") == true ||
+            effectiveSuffix == "mp3"
+    }
+
+    static func isFormatSupportedNatively(contentType: String?, suffix: String?, path: String?) -> Bool {
+#if os(watchOS)
+        let supportedTypes = ["audio/mpeg", "audio/mp3", "audio/aac", "audio/mp4", "audio/x-m4a", "audio/wav", "audio/x-wav", "audio/aiff", "audio/x-aiff"]
+        let supportedSuffixes = ["mp3", "aac", "m4a", "mp4", "wav", "aiff", "aif"]
+#else
+        let supportedTypes = ["audio/mpeg", "audio/mp3", "audio/aac", "audio/mp4", "audio/x-m4a", "audio/wav", "audio/x-wav", "audio/aiff", "audio/x-aiff", "audio/flac", "audio/x-flac", "audio/alac", "audio/x-alac"]
+        let supportedSuffixes = ["mp3", "aac", "m4a", "mp4", "wav", "aiff", "aif", "flac", "alac"]
+#endif
+
+        if let contentType = normalized(contentType),
+           supportedTypes.contains(where: { contentType.contains($0) }) {
+            return true
+        }
+
+        guard let suffix = effectiveSuffix(suffix: suffix, path: path) else { return false }
+        return supportedSuffixes.contains(suffix)
+    }
+
+    static func playbackMimeType(contentType: String?, suffix: String?, url: URL) -> String? {
+        switch url.pathExtension.lowercased() {
+        case "mp3":
+            return "audio/mpeg"
+        case "m4a", "mp4":
+            return "audio/mp4"
+        case "flac":
+            return "audio/flac"
+        case "wav":
+            return "audio/wav"
+        case "aiff", "aif":
+            return "audio/aiff"
+        default:
+            break
+        }
+
+        if let contentType = normalized(contentType) {
+            return contentType
+        }
+
+        switch effectiveSuffix(suffix: suffix, path: nil) {
+        case "mp3":
+            return "audio/mpeg"
+        case "m4a", "mp4":
+            return "audio/mp4"
+        case "flac":
+            return "audio/flac"
+        case "wav":
+            return "audio/wav"
+        case "aiff", "aif":
+            return "audio/aiff"
+        default:
+            return nil
+        }
+    }
+
+    private static func normalized(_ value: String?) -> String? {
+        value?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+    }
+}
+
+struct PrebufferPlaybackSelectionPolicy: Sendable {
+    static func shouldUseCachedPrebuffer(
+        songContentType: String?,
+        songSuffix: String?,
+        songPath: String?,
+        streamingQuality: StreamingQuality,
+        cachedFileExtension: String,
+        qualityLabel: String?
+    ) -> Bool {
+        let freshPlaybackTranscodes = streamingQuality != .original ||
+            !PlaybackFormatPolicy.isFormatSupportedNatively(
+                contentType: songContentType,
+                suffix: songSuffix,
+                path: songPath
+            )
+        guard streamingQuality == .original, !freshPlaybackTranscodes else {
+            return true
+        }
+
+        if qualityLabel?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .contains("mp3 fallback") == true {
+            return false
+        }
+
+        let cachedExtension = cachedFileExtension
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        if cachedExtension == "mp3",
+           !PlaybackFormatPolicy.isMP3(contentType: songContentType, suffix: songSuffix, path: songPath) {
+            return false
+        }
+
+        return true
+    }
+}
+
 struct PlaybackQualityPresentationPolicy: Sendable {
     enum Source: Sendable {
         case local
@@ -2036,27 +2157,19 @@ class AudioPlayer: NSObject, ObservableObject {
     }
 
     private func isFormatSupportedNatively(_ contentType: String?, _ suffix: String?) -> Bool {
-#if os(watchOS)
-        let supportedTypes = ["audio/mpeg", "audio/mp3", "audio/aac", "audio/mp4", "audio/x-m4a", "audio/wav", "audio/x-wav", "audio/aiff", "audio/x-aiff"]
-        let supportedSuffixes = ["mp3", "aac", "m4a", "mp4", "wav", "aiff", "aif"]
-#else
-        let supportedTypes = ["audio/mpeg", "audio/mp3", "audio/aac", "audio/mp4", "audio/x-m4a", "audio/wav", "audio/x-wav", "audio/aiff", "audio/x-aiff", "audio/flac", "audio/x-flac", "audio/alac", "audio/x-alac"]
-        let supportedSuffixes = ["mp3", "aac", "m4a", "mp4", "wav", "aiff", "aif", "flac", "alac"]
-#endif
+        PlaybackFormatPolicy.isFormatSupportedNatively(contentType: contentType, suffix: suffix, path: nil)
+    }
 
-        if let contentType = contentType?.lowercased() {
-            if supportedTypes.contains(where: { contentType.contains($0) }) {
-                return true
-            }
-        }
+    private func isFormatSupportedNatively(_ song: Song) -> Bool {
+        PlaybackFormatPolicy.isFormatSupportedNatively(
+            contentType: song.contentType,
+            suffix: song.suffix,
+            path: song.path
+        )
+    }
 
-        if let suffix = suffix?.lowercased() {
-            if supportedSuffixes.contains(suffix) {
-                return true
-            }
-        }
-
-        return false
+    private func effectiveSuffix(for song: Song) -> String? {
+        PlaybackFormatPolicy.effectiveSuffix(suffix: song.suffix, path: song.path)
     }
 
     private var prebufferDirectory: URL {
@@ -2078,7 +2191,7 @@ class AudioPlayer: NSObject, ObservableObject {
 
     private func shouldTranscodeForPlayback(_ song: Song) -> Bool {
         let streamingQuality = StreamingQuality.current
-        return streamingQuality != .original || !isFormatSupportedNatively(song.contentType, song.suffix)
+        return streamingQuality != .original || !isFormatSupportedNatively(song)
     }
 
     private func streamURLForPlayback(_ song: Song) -> URL? {
@@ -2095,7 +2208,7 @@ class AudioPlayer: NSObject, ObservableObject {
             streamingQuality: StreamingQuality.current,
             transcodesToMP3: shouldTranscodeForPlayback(song),
             contentType: song.contentType,
-            suffix: song.suffix
+            suffix: effectiveSuffix(for: song)
         )
     }
 
@@ -2117,7 +2230,7 @@ class AudioPlayer: NSObject, ObservableObject {
         let safeKey = key.map { character -> Character in
             character.isLetter || character.isNumber ? character : "_"
         }
-        let extensionName = shouldTranscodeForPlayback(song) ? "mp3" : (song.suffix?.isEmpty == false ? song.suffix! : "audio")
+        let extensionName = shouldTranscodeForPlayback(song) ? "mp3" : (effectiveSuffix(for: song) ?? "audio")
         return "\(String(safeKey)).\(extensionName)"
     }
 
@@ -2216,11 +2329,19 @@ class AudioPlayer: NSObject, ObservableObject {
         let key = prebufferKey(for: song)
         if let cachedURL = prebufferURLs[key],
            FileManager.default.fileExists(atPath: cachedURL.path) {
+            guard cachedPrebufferIsCompatible(song: song, url: cachedURL, qualityLabel: preparedQualityLabel(for: song)) else {
+                discardCachedPrebuffer(key: key, url: cachedURL)
+                return nil
+            }
             return cachedURL
         }
 
         let url = prebufferURL(for: song)
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        guard cachedPrebufferIsCompatible(song: song, url: url, qualityLabel: preparedQualityLabel(for: song)) else {
+            discardCachedPrebuffer(key: key, url: url)
+            return nil
+        }
         prebufferURLs[key] = url
         return url
     }
@@ -2232,37 +2353,47 @@ class AudioPlayer: NSObject, ObservableObject {
             preparedPrebuffers.removeValue(forKey: key)
             return nil
         }
+        guard cachedPrebufferIsCompatible(song: song, url: prebuffer.url, qualityLabel: prebuffer.qualityLabel) else {
+            discardCachedPrebuffer(key: key, url: prebuffer.url)
+            return nil
+        }
         return prebuffer
+    }
+
+    private func cachedPrebufferIsCompatible(song: Song, url: URL, qualityLabel: String?) -> Bool {
+        PrebufferPlaybackSelectionPolicy.shouldUseCachedPrebuffer(
+            songContentType: song.contentType,
+            songSuffix: song.suffix,
+            songPath: song.path,
+            streamingQuality: StreamingQuality.current,
+            cachedFileExtension: url.pathExtension,
+            qualityLabel: qualityLabel
+        )
+    }
+
+    private func discardCachedPrebuffer(key: String, url: URL) {
+        preparedPrebuffers.removeValue(forKey: key)
+        prebufferURLs.removeValue(forKey: key)
+        prebufferProgressByKey.removeValue(forKey: key)
+        try? FileManager.default.removeItem(at: url)
+        savePrebufferManifest()
     }
 
     private func isPrebuffered(_ song: Song) -> Bool {
         preparedPrebuffer(for: song) != nil
     }
 
-    private nonisolated static func playbackMimeType(contentType: String?, url: URL) -> String? {
-        switch url.pathExtension.lowercased() {
-        case "mp3":
-            return "audio/mpeg"
-        case "m4a", "mp4":
-            return "audio/mp4"
-        case "flac":
-            return "audio/flac"
-        case "wav":
-            return "audio/wav"
-        case "aiff", "aif":
-            return "audio/aiff"
-        default:
-            return contentType
-        }
+    private nonisolated static func playbackMimeType(contentType: String?, suffix: String?, url: URL) -> String? {
+        PlaybackFormatPolicy.playbackMimeType(contentType: contentType, suffix: suffix, url: url)
     }
 
     private func playbackMimeType(for song: Song, url: URL) -> String? {
-        Self.playbackMimeType(contentType: song.contentType, url: url)
+        Self.playbackMimeType(contentType: song.contentType, suffix: effectiveSuffix(for: song), url: url)
     }
 
-    private nonisolated static func playbackAssetOptions(contentType: String?, url: URL) -> [String: Any] {
+    private nonisolated static func playbackAssetOptions(contentType: String?, suffix: String?, url: URL) -> [String: Any] {
         var assetOptions: [String: Any] = [:]
-        if let contentType = playbackMimeType(contentType: contentType, url: url) {
+        if let contentType = playbackMimeType(contentType: contentType, suffix: suffix, url: url) {
             let fixedContentType = contentType == "audio/x-flac" ? "audio/flac" : contentType
             assetOptions["AVURLAssetOutOfBandMIMETypeKey"] = fixedContentType
 
@@ -2274,7 +2405,7 @@ class AudioPlayer: NSObject, ObservableObject {
     }
 
     private func playbackAssetOptions(for song: Song, url: URL) -> [String: Any] {
-        Self.playbackAssetOptions(contentType: song.contentType, url: url)
+        Self.playbackAssetOptions(contentType: song.contentType, suffix: effectiveSuffix(for: song), url: url)
     }
 
     private func makePlaybackAsset(for song: Song, url: URL) -> AVURLAsset {
@@ -2282,7 +2413,8 @@ class AudioPlayer: NSObject, ObservableObject {
     }
 
     private nonisolated static func preparePrebufferAsset(for song: Song, url: URL, qualityLabel: String) async throws -> PreparedPrebuffer {
-        let asset = AVURLAsset(url: url, options: playbackAssetOptions(contentType: song.contentType, url: url))
+        let effectiveSuffix = PlaybackFormatPolicy.effectiveSuffix(suffix: song.suffix, path: song.path)
+        let asset = AVURLAsset(url: url, options: playbackAssetOptions(contentType: song.contentType, suffix: effectiveSuffix, url: url))
         let isPlayable = try await asset.load(.isPlayable)
         _ = try? await asset.load(.duration)
         guard isPlayable else { throw PrebufferPreparationError.notPlayable }
@@ -2919,7 +3051,7 @@ class AudioPlayer: NSObject, ObservableObject {
         print("🎵 Song: \(song.title) by \(song.artist ?? "Unknown")")
         print("🎵 Song ID: \(song.id)")
         print("🎵 Content type: \(song.contentType ?? "unknown")")
-        print("🎵 Suffix: \(song.suffix ?? "unknown")")
+        print("🎵 Suffix: \(effectiveSuffix(for: song) ?? "unknown")")
         playbackError = nil
         lastPauseReason = nil
         currentBufferPercent = nil
@@ -2974,7 +3106,7 @@ class AudioPlayer: NSObject, ObservableObject {
         } else {
             if shouldTranscodeForPlayback(song) {
                 let bitRate = StreamingQuality.current.maxBitRate ?? StreamingQuality.max.rawValue
-                let isNativelySupported = isFormatSupportedNatively(song.contentType, song.suffix)
+                let isNativelySupported = isFormatSupportedNatively(song)
                 let reason = isNativelySupported ? StreamingQuality.current.description : "Unsupported format"
                 print("⚠️ \(reason) - requesting MP3 transcode at \(bitRate) kbps")
                 if let streamURL = streamURLForPlayback(song) {
@@ -2995,7 +3127,7 @@ class AudioPlayer: NSObject, ObservableObject {
                     return
                 }
             } else {
-                print("✅ Streaming original format '\(song.contentType ?? song.suffix ?? "unknown")'")
+                print("✅ Streaming original format '\(song.contentType ?? effectiveSuffix(for: song) ?? "unknown")'")
                 if let streamURL = streamURLForPlayback(song) {
                     playURL = streamURL
                     preparedAsset = nil
