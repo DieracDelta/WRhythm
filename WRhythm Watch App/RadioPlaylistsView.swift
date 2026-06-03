@@ -13,15 +13,25 @@ struct RadioPlaylistsView: View {
     @ObservedObject private var api = NavidromeAPI.shared
     @AppStorage("experimentalAudioMuseFeaturesEnabled") private var experimentalAudioMuseFeaturesEnabled = false
     @State private var showingSonicTools = false
+    @State private var audioMuseRadios: [AudioMuseRadioStation] = []
+    @State private var audioMuseRadiosLoading = false
+    @State private var audioMuseRadioError: String?
 
     private var sonicToolsCheckingSupport: Bool {
         api.sonicSimilaritySupported == nil ||
-        (experimentalAudioMuseFeaturesEnabled && api.audioMuseAlchemySupported == nil)
+        (experimentalAudioMuseFeaturesEnabled && (api.audioMuseAlchemySupported == nil || api.audioMusePrivateSonicSupported == nil))
     }
 
     private var hasAdvancedGenerator: Bool {
         api.sonicSimilaritySupported == true ||
-        (experimentalAudioMuseFeaturesEnabled && api.audioMuseAlchemySupported == true)
+        AudioMuseFeatureVisibilityPolicy.isVisible(
+            experimentalEnabled: experimentalAudioMuseFeaturesEnabled,
+            supported: api.audioMusePrivateSonicSupported
+        ) ||
+        AudioMuseFeatureVisibilityPolicy.isVisible(
+            experimentalEnabled: experimentalAudioMuseFeaturesEnabled,
+            supported: api.audioMuseAlchemySupported
+        )
     }
 
     var body: some View {
@@ -87,18 +97,29 @@ struct RadioPlaylistsView: View {
             if experimentalAudioMuseFeaturesEnabled && api.audioMuseAlchemySupported == nil {
                 _ = await api.checkAudioMuseAlchemySupport()
             }
+            if experimentalAudioMuseFeaturesEnabled && api.audioMusePrivateSonicSupported == nil {
+                _ = await api.checkAudioMuseFeatureSupport(.privateSonic)
+            }
+            if experimentalAudioMuseFeaturesEnabled && (api.audioMuseRadioSupported == nil || api.audioMuseMapSupported == nil) {
+                await api.checkAudioMuseAdvancedPlaylistSupport()
+                await refreshAudioMuseRadiosIfAvailable()
+            }
         }
         .task(id: showingSonicTools) {
             if showingSonicTools {
                 _ = await api.checkSonicSimilaritySupport()
                 if experimentalAudioMuseFeaturesEnabled {
                     _ = await api.checkAudioMuseAlchemySupport()
+                    await api.checkAudioMuseAdvancedPlaylistSupport()
+                    await refreshAudioMuseRadiosIfAvailable()
                 }
             }
         }
         .task(id: experimentalAudioMuseFeaturesEnabled) {
             guard experimentalAudioMuseFeaturesEnabled else { return }
             _ = await api.checkAudioMuseAlchemySupport()
+            await api.checkAudioMuseAdvancedPlaylistSupport()
+            await refreshAudioMuseRadiosIfAvailable()
         }
         .safeAreaInset(edge: .bottom) {
             if let message = player.playlistGenErrorMessage {
@@ -179,8 +200,19 @@ struct RadioPlaylistsView: View {
                     .listRowBackground(Color.clear)
                 } else if hasAdvancedGenerator {
                     SonicPlaylistGeneratorView(
-                        sonicSimilarityAvailable: api.sonicSimilaritySupported == true,
-                        audioMuseAlchemyAvailable: experimentalAudioMuseFeaturesEnabled && api.audioMuseAlchemySupported == true
+                        sonicSimilarityAvailable: api.sonicSimilaritySupported == true ||
+                            AudioMuseFeatureVisibilityPolicy.isVisible(
+                                experimentalEnabled: experimentalAudioMuseFeaturesEnabled,
+                                supported: api.audioMusePrivateSonicSupported
+                            ),
+                        audioMuseAlchemyAvailable: AudioMuseFeatureVisibilityPolicy.isVisible(
+                            experimentalEnabled: experimentalAudioMuseFeaturesEnabled,
+                            supported: api.audioMuseAlchemySupported
+                        ),
+                        audioMuseRadioAvailable: AudioMuseFeatureVisibilityPolicy.isVisible(
+                            experimentalEnabled: experimentalAudioMuseFeaturesEnabled,
+                            supported: api.audioMuseRadioSupported
+                        )
                     ) {
                         showingSonicTools = false
                     }
@@ -189,14 +221,90 @@ struct RadioPlaylistsView: View {
                     AdvancedPlaylistGenUnavailableView(
                         sonicSimilaritySupported: api.sonicSimilaritySupported == true,
                         audioMuseExperimentsEnabled: experimentalAudioMuseFeaturesEnabled,
+                        audioMusePrivateSonicSupported: api.audioMusePrivateSonicSupported == true,
                         audioMuseAlchemySupported: api.audioMuseAlchemySupported == true
                     )
                     .listRowBackground(Color.clear)
                 }
             }
+
+            if experimentalAudioMuseFeaturesEnabled {
+                Section("AudioMuse Radio") {
+                    if api.audioMuseRadioSupported == nil {
+                        AudioMuseFeatureCheckingRow(label: "Checking radio support")
+                            .listRowBackground(Color.clear)
+                    } else if api.audioMuseRadioSupported == true {
+                        AudioMuseRadioStationsView(
+                            radios: audioMuseRadios,
+                            isLoading: audioMuseRadiosLoading,
+                            errorMessage: audioMuseRadioError,
+                            refresh: {
+                                Task { await refreshAudioMuseRadiosIfAvailable(force: true) }
+                            },
+                            play: { radio in
+                                showingSonicTools = false
+                                player.startAudioMuseRadioPlaylistGeneration(radio: radio)
+                            },
+                            delete: { radio in
+                                Task { await deleteAudioMuseRadio(radio) }
+                            }
+                        )
+                        .listRowBackground(Color.clear)
+                    } else {
+                        AudioMuseFeatureUnavailableRow(title: "AudioMuse Radio", detail: "This server does not expose saved AI radio stations.")
+                            .listRowBackground(Color.clear)
+                    }
+                }
+
+#if !os(watchOS)
+                Section("Music Map") {
+                    if api.audioMuseMapSupported == nil {
+                        AudioMuseFeatureCheckingRow(label: "Checking map support")
+                            .listRowBackground(Color.clear)
+                    } else if api.audioMuseMapSupported == true {
+                        AudioMuseMapPlaylistBuilder()
+                            .listRowBackground(Color.clear)
+                    } else {
+                        AudioMuseFeatureUnavailableRow(title: "Music Map", detail: "This server does not expose the AudioMuse map endpoints.")
+                            .listRowBackground(Color.clear)
+                    }
+                }
+#endif
+            }
         }
         .navigationTitle("Playlist Gen")
         .wrhythmListSurface()
+    }
+
+    @MainActor
+    private func refreshAudioMuseRadiosIfAvailable(force: Bool = false) async {
+        guard experimentalAudioMuseFeaturesEnabled, api.audioMuseRadioSupported == true else {
+            audioMuseRadios = []
+            audioMuseRadioError = nil
+            audioMuseRadiosLoading = false
+            return
+        }
+        guard force || audioMuseRadios.isEmpty else { return }
+
+        audioMuseRadiosLoading = true
+        audioMuseRadioError = nil
+        do {
+            audioMuseRadios = try await api.getAudioMuseRadios()
+        } catch {
+            audioMuseRadios = []
+            audioMuseRadioError = "Could not load radio stations"
+        }
+        audioMuseRadiosLoading = false
+    }
+
+    @MainActor
+    private func deleteAudioMuseRadio(_ radio: AudioMuseRadioStation) async {
+        do {
+            try await api.deleteAudioMuseRadio(id: radio.id)
+            audioMuseRadios.removeAll { $0.id == radio.id }
+        } catch {
+            audioMuseRadioError = "Could not delete \(radio.name)"
+        }
     }
 
     private var playlistGenerationLoadingView: some View {
@@ -345,6 +453,7 @@ private struct PlaylistGenWarningRow: View {
 private struct AdvancedPlaylistGenUnavailableView: View {
     let sonicSimilaritySupported: Bool
     let audioMuseExperimentsEnabled: Bool
+    let audioMusePrivateSonicSupported: Bool
     let audioMuseAlchemySupported: Bool
 
     private var bodyText: String {
@@ -380,6 +489,12 @@ private struct AdvancedPlaylistGenUnavailableView: View {
                     AdvancedGeneratorStatusRow(
                         title: "OpenSubsonic sonicSimilarity",
                         isAvailable: sonicSimilaritySupported
+                    )
+
+                    AdvancedGeneratorStatusRow(
+                        title: "AudioMuse-AI sonic wrappers",
+                        isAvailable: audioMuseExperimentsEnabled && audioMusePrivateSonicSupported,
+                        note: audioMuseExperimentsEnabled ? nil : "Enable in Settings"
                     )
 
                     AdvancedGeneratorStatusRow(
@@ -424,6 +539,364 @@ private struct AdvancedGeneratorStatusRow: View {
     }
 }
 
+private struct AudioMuseFeatureCheckingRow: View {
+    let label: String
+
+    var body: some View {
+        WRhythmCard(padding: WRhythmSpacing.md) {
+            HStack(spacing: WRhythmSpacing.sm) {
+                ProgressView()
+                Text(label)
+                    .font(WRhythmTypography.subhead)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+private struct AudioMuseFeatureUnavailableRow: View {
+    let title: String
+    let detail: String
+
+    var body: some View {
+        WRhythmCard(padding: WRhythmSpacing.md, style: .glass) {
+            HStack(alignment: .top, spacing: WRhythmSpacing.sm) {
+                WRhythmIconBadge(systemImage: "minus.circle", tint: .gray, size: 36)
+                VStack(alignment: .leading, spacing: WRhythmSpacing.xxs) {
+                    Text(title)
+                        .font(WRhythmTypography.rowTitle)
+                    Text(detail)
+                        .font(WRhythmTypography.rowSubtitle)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+private struct AudioMuseRadioStationsView: View {
+    let radios: [AudioMuseRadioStation]
+    let isLoading: Bool
+    let errorMessage: String?
+    let refresh: () -> Void
+    let play: (AudioMuseRadioStation) -> Void
+    let delete: (AudioMuseRadioStation) -> Void
+
+    var body: some View {
+        WRhythmCard(padding: WRhythmSpacing.md, style: .glass) {
+            VStack(alignment: .leading, spacing: WRhythmSpacing.md) {
+                HStack {
+                    Label("Saved Radios", systemImage: "dot.radiowaves.left.and.right")
+                        .font(WRhythmTypography.rowTitle)
+                    Spacer()
+                    Button(action: refresh) {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(isLoading)
+                    .accessibilityLabel("Refresh AudioMuse radios")
+                }
+
+                if isLoading {
+                    HStack(spacing: WRhythmSpacing.sm) {
+                        ProgressView()
+                        Text("Loading radios")
+                            .font(WRhythmTypography.rowSubtitle)
+                            .foregroundStyle(.secondary)
+                    }
+                } else if let errorMessage {
+                    Text(errorMessage)
+                        .font(WRhythmTypography.rowSubtitle)
+                        .foregroundStyle(WRhythmTheme.danger)
+                } else if radios.isEmpty {
+                    Text("No saved radios yet")
+                        .font(WRhythmTypography.rowSubtitle)
+                        .foregroundStyle(.secondary)
+                } else {
+                    VStack(spacing: WRhythmSpacing.xs) {
+                        ForEach(radios) { radio in
+                            AudioMuseRadioStationRow(
+                                radio: radio,
+                                play: { play(radio) },
+                                delete: { delete(radio) }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct AudioMuseRadioStationRow: View {
+    let radio: AudioMuseRadioStation
+    let play: () -> Void
+    let delete: () -> Void
+
+    var body: some View {
+        HStack(spacing: WRhythmSpacing.sm) {
+            WRhythmIconBadge(
+                systemImage: "dot.radiowaves.left.and.right",
+                tint: WRhythmTheme.playlistGen,
+                size: 34
+            )
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(radio.name)
+                    .font(WRhythmTypography.rowTitle)
+                    .lineLimit(1)
+                Text("Temperature \(radio.temperature, specifier: "%.1f")")
+                    .font(WRhythmTypography.rowSubtitle)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: WRhythmSpacing.sm)
+
+            Button(action: play) {
+                Image(systemName: "play.fill")
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Play \(radio.name)")
+
+            Button(role: .destructive, action: delete) {
+                Image(systemName: "trash")
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Delete \(radio.name)")
+        }
+        .padding(.horizontal, WRhythmSpacing.sm)
+        .padding(.vertical, WRhythmSpacing.xs)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius))
+    }
+}
+
+private struct AudioMuseRadioCreateCard: View {
+    let seeds: [AudioMuseAlchemySeed]
+    @State private var radioName = ""
+    @State private var isCreating = false
+    @State private var statusMessage: String?
+    @State private var errorMessage: String?
+
+    private var canCreate: Bool {
+        !isCreating &&
+            !radioName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            !seeds.isEmpty
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: WRhythmSpacing.sm) {
+            Text("Save as Radio")
+                .font(WRhythmTypography.controlLabelEmphasis)
+                .foregroundStyle(.secondary)
+
+#if os(watchOS)
+            TextField("Name", text: $radioName)
+#else
+            TextField("Radio name", text: $radioName)
+                .textFieldStyle(.roundedBorder)
+#endif
+
+            Button(action: createRadio) {
+                Label(isCreating ? "Creating" : "Create Radio", systemImage: "dot.radiowaves.left.and.right")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .disabled(!canCreate)
+
+            if let statusMessage {
+                Text(statusMessage)
+                    .font(WRhythmTypography.rowSubtitle)
+                    .foregroundStyle(WRhythmTheme.success)
+            } else if let errorMessage {
+                Text(errorMessage)
+                    .font(WRhythmTypography.rowSubtitle)
+                    .foregroundStyle(WRhythmTheme.danger)
+            }
+        }
+    }
+
+    private func createRadio() {
+        guard canCreate else { return }
+        let name = radioName.trimmingCharacters(in: .whitespacesAndNewlines)
+        isCreating = true
+        statusMessage = nil
+        errorMessage = nil
+
+        Task {
+            do {
+                _ = try await NavidromeAPI.shared.createAudioMuseRadio(name: name, seeds: seeds)
+                await MainActor.run {
+                    radioName = ""
+                    statusMessage = "Radio saved"
+                    isCreating = false
+                }
+            } catch {
+                await MainActor.run {
+                    errorMessage = "Could not save radio"
+                    isCreating = false
+                }
+            }
+        }
+    }
+}
+
+#if !os(watchOS)
+private struct AudioMuseMapPlaylistBuilder: View {
+    @ObservedObject private var api = NavidromeAPI.shared
+    @State private var playlistName = ""
+    @State private var query = ""
+    @State private var results: [Song] = []
+    @State private var selectedSongs: [Song] = []
+    @State private var isSearching = false
+    @State private var isCreating = false
+    @State private var statusMessage: String?
+    @State private var errorMessage: String?
+
+    private var canCreate: Bool {
+        !isCreating &&
+            !playlistName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            !selectedSongs.isEmpty
+    }
+
+    var body: some View {
+        WRhythmCard(padding: WRhythmSpacing.md, style: .glass) {
+            VStack(alignment: .leading, spacing: WRhythmSpacing.md) {
+                HStack(alignment: .center, spacing: WRhythmSpacing.sm) {
+                    WRhythmIconBadge(systemImage: "map", tint: WRhythmTheme.playlistGen, size: 38)
+                    VStack(alignment: .leading, spacing: WRhythmSpacing.xxs) {
+                        Text("Map Playlist")
+                            .font(WRhythmTypography.rowTitle)
+                        Text("Select tracks and create an AudioMuse map playlist")
+                            .font(WRhythmTypography.rowSubtitle)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                TextField("Playlist name", text: $playlistName)
+                    .textFieldStyle(.roundedBorder)
+
+                TextField("Search map tracks", text: $query)
+                    .textFieldStyle(.roundedBorder)
+
+                if !selectedSongs.isEmpty {
+                    VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
+                        Text("\(selectedSongs.count) selected")
+                            .font(WRhythmTypography.sectionLabel)
+                            .foregroundStyle(.secondary)
+                        ForEach(selectedSongs) { song in
+                            SonicTrackSelectionRow(song: song, isSelected: true) {
+                                selectedSongs.removeAll { $0.id == song.id }
+                            }
+                        }
+                    }
+                }
+
+                if isSearching {
+                    HStack(spacing: WRhythmSpacing.sm) {
+                        ProgressView()
+                        Text("Searching")
+                            .font(WRhythmTypography.rowSubtitle)
+                            .foregroundStyle(.secondary)
+                    }
+                } else if let errorMessage {
+                    Text(errorMessage)
+                        .font(WRhythmTypography.rowSubtitle)
+                        .foregroundStyle(WRhythmTheme.danger)
+                } else if !results.isEmpty {
+                    VStack(spacing: WRhythmSpacing.xs) {
+                        ForEach(results.prefix(8)) { song in
+                            SonicTrackSelectionRow(song: song, isSelected: selectedSongs.contains(where: { $0.id == song.id })) {
+                                if selectedSongs.contains(where: { $0.id == song.id }) {
+                                    selectedSongs.removeAll { $0.id == song.id }
+                                } else {
+                                    selectedSongs.append(song)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Button(action: createPlaylist) {
+                    Label(isCreating ? "Creating" : "Create Playlist", systemImage: "plus")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!canCreate)
+
+                if let statusMessage {
+                    Text(statusMessage)
+                        .font(WRhythmTypography.rowSubtitle)
+                        .foregroundStyle(WRhythmTheme.success)
+                }
+            }
+        }
+        .task(id: query) {
+            await search()
+        }
+    }
+
+    private func search() async {
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmedQuery.count >= 2 else {
+            results = []
+            errorMessage = nil
+            isSearching = false
+            return
+        }
+
+        do {
+            try await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+            isSearching = true
+            errorMessage = nil
+            let songs: [Song]
+            do {
+                songs = try await api.searchAudioMuseMapTracks(query: trimmedQuery)
+            } catch {
+                songs = try await api.search(query: trimmedQuery, songCount: 25).song ?? []
+            }
+            guard !Task.isCancelled, trimmedQuery == query.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
+            results = songs
+        } catch is CancellationError {
+            return
+        } catch {
+            results = []
+            errorMessage = "Search failed"
+        }
+        isSearching = false
+    }
+
+    private func createPlaylist() {
+        guard canCreate else { return }
+        let name = playlistName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let itemIDs = selectedSongs.map(\.id)
+        isCreating = true
+        statusMessage = nil
+        errorMessage = nil
+
+        Task {
+            do {
+                let playlistID = try await api.createAudioMuseMapPlaylist(name: name, itemIDs: itemIDs)
+                await MainActor.run {
+                    statusMessage = "Created playlist \(playlistID)"
+                    playlistName = ""
+                    selectedSongs = []
+                    isCreating = false
+                }
+            } catch {
+                await MainActor.run {
+                    errorMessage = "Could not create map playlist"
+                    isCreating = false
+                }
+            }
+        }
+    }
+}
+#endif
+
 private struct PlaylistGenModeToggle: View {
     let title: String
     let systemImage: String
@@ -462,6 +935,7 @@ private struct SonicPlaylistGeneratorView: View {
 
     let sonicSimilarityAvailable: Bool
     let audioMuseAlchemyAvailable: Bool
+    let audioMuseRadioAvailable: Bool
     let didStartGeneration: () -> Void
 
     private var availableModes: [SonicPlaylistMode] {
@@ -557,6 +1031,10 @@ private struct SonicPlaylistGeneratorView: View {
                         isGenerating: player.playlistGenIsGenerating,
                         hasRequiredSelection: !alchemySeeds.isEmpty
                     ))
+
+                    if audioMuseRadioAvailable {
+                        AudioMuseRadioCreateCard(seeds: alchemySeeds)
+                    }
                 }
             }
         }

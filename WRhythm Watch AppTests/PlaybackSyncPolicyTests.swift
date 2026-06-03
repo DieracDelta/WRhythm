@@ -3240,6 +3240,243 @@ struct PlaybackSyncPolicyTests {
     }
 
     @MainActor
+    @Test func audioMuseFeatureProbeTreatsAuthAndMethodErrorsAsEndpointPresent() {
+        #expect(AudioMuseFeatureSupportPolicy.endpointExists(statusCode: 200))
+        #expect(AudioMuseFeatureSupportPolicy.endpointExists(statusCode: 204))
+        #expect(AudioMuseFeatureSupportPolicy.endpointExists(statusCode: 400))
+        #expect(AudioMuseFeatureSupportPolicy.endpointExists(statusCode: 401))
+        #expect(AudioMuseFeatureSupportPolicy.endpointExists(statusCode: 403))
+        #expect(AudioMuseFeatureSupportPolicy.endpointExists(statusCode: 405))
+        #expect(!AudioMuseFeatureSupportPolicy.endpointExists(statusCode: 404))
+        #expect(!AudioMuseFeatureSupportPolicy.endpointExists(statusCode: 500))
+    }
+
+    @MainActor
+    @Test func audioMusePrivateFeatureVisibilityRequiresSettingAndSupport() {
+        #expect(!AudioMuseFeatureVisibilityPolicy.isVisible(
+            experimentalEnabled: false,
+            supported: true
+        ))
+        #expect(!AudioMuseFeatureVisibilityPolicy.isVisible(
+            experimentalEnabled: true,
+            supported: false
+        ))
+        #expect(!AudioMuseFeatureVisibilityPolicy.isVisible(
+            experimentalEnabled: true,
+            supported: nil
+        ))
+        #expect(AudioMuseFeatureVisibilityPolicy.isVisible(
+            experimentalEnabled: true,
+            supported: true
+        ))
+    }
+
+    @MainActor
+    @Test func audioMuseActionsAreBlockedWhenExperimentalSettingIsOff() async {
+        let key = "experimentalAudioMuseFeaturesEnabled"
+        let previousValue = UserDefaults.standard.object(forKey: key) as? Bool
+        UserDefaults.standard.set(false, forKey: key)
+        defer {
+            if let previousValue {
+                UserDefaults.standard.set(previousValue, forKey: key)
+            } else {
+                UserDefaults.standard.removeObject(forKey: key)
+            }
+        }
+
+        func expectDisabled(_ operation: () async throws -> Void) async {
+            do {
+                try await operation()
+                #expect(Bool(false), "Expected AudioMuse action to be blocked")
+            } catch let error as NavidromeError {
+                #expect(error.errorDescription == "AudioMuse-AI features are disabled")
+            } catch {
+                #expect(Bool(false), "Unexpected error: \(error.localizedDescription)")
+            }
+        }
+
+        await expectDisabled {
+            _ = try await NavidromeAPI.shared.getAudioMuseClapTopQueries()
+        }
+        await expectDisabled {
+            _ = try await NavidromeAPI.shared.getAudioMuseAlchemySongs(
+                items: [AudioMuseAlchemyRequest.Item(id: "song-1", op: "ADD", type: "song")],
+                count: 1
+            )
+        }
+        await expectDisabled {
+            _ = try await NavidromeAPI.shared.getAudioMusePrivateSimilarSongs(songId: "song-1", count: 1)
+        }
+    }
+
+    @MainActor
+    @Test func audioMuseSearchModesStayHiddenWithoutExperimentalSetting() {
+        #expect(TracksSearchModePolicy.availableModes(
+            experimentalAudioMuseEnabled: false,
+            clapSupported: true,
+            semanticSupported: true
+        ) == [.library])
+
+        #expect(TracksSearchModePolicy.availableModes(
+            experimentalAudioMuseEnabled: true,
+            clapSupported: true,
+            semanticSupported: false
+        ) == [.library, .audioMuseClap])
+
+        #expect(TracksSearchModePolicy.sanitizedSelection(
+            .audioMuseSemantic,
+            availableModes: [.library, .audioMuseClap]
+        ) == .library)
+    }
+
+    @MainActor
+    @Test func audioMuseSearchResponseDecodesHydratedSongs() throws {
+        let payload = """
+        {
+          "query": "dreamy synths",
+          "count": 2,
+          "songs": [
+            { "id": "song-1", "title": "Cloud Room", "artist": "A", "album": "Sky", "coverArt": "cover-1" },
+            { "id": "song-2", "title": "Silver Road", "artist": "B", "album": "Night", "contentType": "audio/flac", "suffix": "flac" }
+          ]
+        }
+        """
+
+        let response = try JSONDecoder().decode(AudioMuseSearchResponse.self, from: Data(payload.utf8))
+
+        #expect(response.query == "dreamy synths")
+        #expect(response.count == 2)
+        #expect(response.songs.map(\.id) == ["song-1", "song-2"])
+        #expect(response.songs[1].suffix == "flac")
+    }
+
+    @MainActor
+    @Test func audioMuseDirectorySongsResponseDecodesPrivateSonicWrappers() throws {
+        let payload = """
+        {
+          "subsonic-response": {
+            "status": "ok",
+            "version": "1.16.1",
+            "directory": {
+              "name": "Song Path",
+              "songCount": 2,
+              "song": [
+                { "id": "song-1", "title": "Start" },
+                { "id": "song-2", "title": "End" }
+              ]
+            }
+          }
+        }
+        """
+
+        let response = try JSONDecoder().decode(
+            SubsonicResponse<AudioMuseDirectorySongsResponse>.self,
+            from: Data(payload.utf8)
+        )
+
+        #expect(response.subsonicResponse.songs.map(\.id) == ["song-1", "song-2"])
+    }
+
+    @MainActor
+    @Test func similarArtistsResponseDecodesArtists() throws {
+        let payload = """
+        {
+          "subsonic-response": {
+            "status": "ok",
+            "version": "1.16.1",
+            "similarArtists2": {
+              "artist": [
+                { "id": "artist-1", "name": "One", "albumCount": 3, "coverArt": "artist-1" },
+                { "id": "artist-2", "name": "Two", "albumCount": 1 }
+              ]
+            }
+          }
+        }
+        """
+
+        let response = try JSONDecoder().decode(
+            SubsonicResponse<SimilarArtistsResponse>.self,
+            from: Data(payload.utf8)
+        )
+
+        let artists = try #require(response.subsonicResponse.similarArtists2?.artist)
+        #expect(artists.map(\.name) == ["One", "Two"])
+        #expect(artists[0].coverArt == "artist-1")
+    }
+
+    @MainActor
+    @Test func audioMuseRadioResponsesDecodeAndRequestsEncodeServerShape() throws {
+        let payload = """
+        {
+          "radios": [
+            {
+              "id": 7,
+              "name": "Late Night",
+              "seed_songs": "[{\\"id\\":\\"song-1\\",\\"op\\":\\"ADD\\"}]",
+              "temperature": 1.2,
+              "subtract_distance": 0.3,
+              "created_at": "2026-06-01T00:00:00Z",
+              "updated_at": "2026-06-02T00:00:00Z"
+            }
+          ]
+        }
+        """
+
+        let response = try JSONDecoder().decode(AudioMuseRadiosResponse.self, from: Data(payload.utf8))
+
+        #expect(response.radios.first?.id == 7)
+        #expect(response.radios.first?.seedSongs.contains("song-1") == true)
+
+        let request = AudioMuseCreateRadioRequest(
+            name: "Late Night",
+            seedSongs: "[{\"id\":\"song-1\",\"op\":\"ADD\",\"type\":\"song\"}]",
+            temperature: 1.2,
+            subtractDistance: 0.3
+        )
+        let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as? [String: Any]
+        #expect(encoded?["seed_songs"] as? String == "[{\"id\":\"song-1\",\"op\":\"ADD\",\"type\":\"song\"}]")
+        #expect(encoded?["subtract_distance"] as? Double == 0.3)
+    }
+
+    @MainActor
+    @Test func audioMuseRadioSeedDecodesAlchemyItems() throws {
+        let seedSongs = """
+        [{"id":"song-1","op":"ADD","type":"song"},{"id":"artist-1","op":"ADD","type":"artist"}]
+        """
+        let items = try JSONDecoder().decode([AudioMuseAlchemyRequest.Item].self, from: Data(seedSongs.utf8))
+
+        #expect(items.map(\.id) == ["song-1", "artist-1"])
+        #expect(items.map(\.type) == ["song", "artist"])
+    }
+
+    @MainActor
+    @Test func audioMuseMapCreatePlaylistPayloadUsesItemIDs() throws {
+        let request = AudioMuseMapCreatePlaylistRequest(name: "Map Pick", itemIDs: ["a", "b"])
+        let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as? [String: Any]
+
+        #expect(encoded?["name"] as? String == "Map Pick")
+        #expect(encoded?["item_ids"] as? [String] == ["a", "b"])
+    }
+
+    @MainActor
+    @Test func audioMuseMapTrackSearchResponseDecodesVoyagerItems() throws {
+        let payload = """
+        {
+          "items": [
+            { "item_id": "song-1", "title": "Map Track", "author": "Artist One", "album": "A" },
+            { "id": "song-2", "name": "Fallback Track", "artist": "Artist Two" }
+          ]
+        }
+        """
+
+        let response = try JSONDecoder().decode(AudioMuseMapTrackSearchResponse.self, from: Data(payload.utf8))
+
+        #expect(response.songs.map(\.id) == ["song-1", "song-2"])
+        #expect(response.songs[0].artist == "Artist One")
+        #expect(response.songs[1].title == "Fallback Track")
+    }
+
+    @MainActor
     @Test func audioMuseAlchemyResponseMapsResultsToPlayableSongs() throws {
         let payload = """
         {

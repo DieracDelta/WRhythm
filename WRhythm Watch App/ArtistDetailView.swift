@@ -12,10 +12,14 @@ struct ArtistDetailView: View {
     let artistName: String
 
     @State private var artist: ArtistWithAlbums?
+    @State private var similarArtists: [Artist] = []
+    @State private var isLoadingSimilarArtists = false
     @State private var isLoading = true
     @State private var errorMessage = ""
+    @ObservedObject private var api = NavidromeAPI.shared
     @ObservedObject var downloadManager = DownloadManager.shared
     @AppStorage("offlineMode") private var offlineMode = false
+    @AppStorage("experimentalAudioMuseFeaturesEnabled") private var experimentalAudioMuseFeaturesEnabled = false
 
     private var player: AudioPlayer { AudioPlayer.shared }
 
@@ -33,6 +37,9 @@ struct ArtistDetailView: View {
             if !offlineMode {
                 loadArtist()
             }
+        }
+        .task(id: "\(artistId)-\(experimentalAudioMuseFeaturesEnabled)-\(offlineMode)") {
+            await loadSimilarArtistsIfAvailable()
         }
     }
 
@@ -150,7 +157,52 @@ struct ArtistDetailView: View {
                 }
             }
 
+            similarArtistsSection()
+
             albumSection(albums: albums, mode: "online")
+        }
+    }
+
+    @ViewBuilder
+    private func similarArtistsSection() -> some View {
+        if experimentalAudioMuseFeaturesEnabled && api.audioMuseSimilarArtistsSupported == true && (!similarArtists.isEmpty || isLoadingSimilarArtists) {
+            VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
+                WRhythmSectionHeader(
+                    title: "Similar Artists",
+                    subtitle: isLoadingSimilarArtists ? "Loading" : "\(similarArtists.count) found"
+                )
+
+                WRhythmCard(padding: WRhythmSpacing.sm) {
+                    if isLoadingSimilarArtists && similarArtists.isEmpty {
+                        HStack(spacing: WRhythmSpacing.sm) {
+                            ProgressView()
+                            Text("Finding similar artists")
+                                .font(WRhythmTypography.rowSubtitle)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, WRhythmSpacing.sm)
+                    } else {
+                        ForEach(similarArtists.prefix(8)) { artist in
+                            NavigationLink(destination: ArtistDetailView(artistId: artist.id, artistName: artist.name)) {
+                                WRhythmCollectionRow(
+                                    title: artist.name,
+                                    subtitle: artist.albumCount.map { "\($0) albums" },
+                                    coverArtId: artist.coverArt,
+                                    fallbackSystemImage: "person.2",
+                                    tint: WRhythmTheme.playlistGen
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .wrhythmArtistActions(artistId: artist.id, artistName: artist.name)
+
+                            if artist.id != similarArtists.prefix(8).last?.id {
+                                Divider()
+                                    .padding(.leading, 56)
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -250,6 +302,35 @@ struct ArtistDetailView: View {
                 }
             }
         }
+    }
+
+    private func loadSimilarArtistsIfAvailable() async {
+        guard !offlineMode, experimentalAudioMuseFeaturesEnabled else {
+            similarArtists = []
+            return
+        }
+
+        let supported: Bool
+        if let cached = api.audioMuseSimilarArtistsSupported {
+            supported = cached
+        } else {
+            supported = await api.checkAudioMuseFeatureSupport(.similarArtists)
+        }
+
+        guard supported else {
+            similarArtists = []
+            return
+        }
+
+        isLoadingSimilarArtists = true
+        do {
+            let fetched = try await api.getSimilarArtists2(artistId: artistId, count: 8)
+            guard !Task.isCancelled else { return }
+            similarArtists = fetched
+        } catch {
+            similarArtists = []
+        }
+        isLoadingSimilarArtists = false
     }
 
     private func isAlbumDownloaded(_ albumId: String) -> Bool {

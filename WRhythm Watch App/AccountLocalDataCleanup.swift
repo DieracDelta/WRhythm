@@ -74,7 +74,7 @@ enum AccountLocalDataCleaner {
             "server_supports_transcoding",
             "server_supports_sonic_similarity",
             "server_supports_audiomuse_alchemy"
-        ]
+        ] + AudioMuseFeature.allCases.map(\.userDefaultsKey)
         for key in keys {
             UserDefaults.standard.removeObject(forKey: key)
         }

@@ -1580,6 +1580,56 @@ class AudioPlayer: NSObject, ObservableObject {
                 }
             }
 
+            let privateSonicSupported: Bool
+            if UserDefaults.standard.bool(forKey: "experimentalAudioMuseFeaturesEnabled") {
+                if let cachedPrivateSonicSupport = await api.audioMusePrivateSonicSupported {
+                    privateSonicSupported = cachedPrivateSonicSupport
+                } else {
+                    privateSonicSupported = await api.checkAudioMuseFeatureSupport(.privateSonic)
+                }
+            } else {
+                privateSonicSupported = false
+            }
+
+            if privateSonicSupported {
+                do {
+                    let privateSonicSongs = try await api.getAudioMusePrivateSimilarSongs(songId: sourceSong.id, count: requestedCount)
+                    let primaryQueue = PlaylistGenerationPolicy.queue(
+                        sourceSong: sourceSong,
+                        primarySongs: privateSonicSongs,
+                        fallbackSongs: [],
+                        requestedCount: requestedCount
+                    )
+
+                    var fallbackSongs: [Song] = []
+                    if fallbackToRandom, PlaylistGenerationPolicy.needsFallback(currentCount: primaryQueue.count, requestedCount: requestedCount) {
+                        fallbackSongs = try await api.getRandomSongs(size: requestedCount)
+                    }
+
+                    let queue = PlaylistGenerationPolicy.queue(
+                        sourceSong: sourceSong,
+                        primarySongs: privateSonicSongs,
+                        fallbackSongs: fallbackSongs,
+                        requestedCount: requestedCount
+                    )
+                    guard queue.count > 1 else {
+                        throw PlaylistGenerationError.noSongs
+                    }
+
+                    let warning = PlaylistGenerationPolicy.shortResultWarning(
+                        similarCount: primaryQueue.count,
+                        requestedCount: requestedCount,
+                        finalCount: queue.count,
+                        fallbackCount: max(queue.count - primaryQueue.count, 0),
+                        similarDescription: "AudioMuse sonic tracks"
+                    )
+                    return .songs(queue, warning: warning)
+                } catch {
+                    sonicFailure = error
+                    print("⚠️ AudioMuse private sonic playlist gen failed, falling back to artist similarity: \(error.localizedDescription)")
+                }
+            }
+
             let similarSongs = try await api.getSimilarSongsForSong(sourceSong, count: requestedCount)
             var fallbackSongs: [Song] = []
             let primaryQueue = PlaylistGenerationPolicy.queue(
@@ -1637,7 +1687,16 @@ class AudioPlayer: NSObject, ObservableObject {
     func startSonicSimilarityPlaylistGeneration(for sourceSong: Song, count: Int = 100) {
         startPlaylistGeneration(title: sourceSong.title, artist: sourceSong.artist) {
             let requestedCount = max(count, 1)
-            let songs = try await NavidromeAPI.shared.getSonicSimilarTracks(songId: sourceSong.id, count: requestedCount)
+            let api = await NavidromeAPI.shared
+            let songs: [Song]
+            if await api.sonicSimilaritySupported == true {
+                songs = try await api.getSonicSimilarTracks(songId: sourceSong.id, count: requestedCount)
+            } else if UserDefaults.standard.bool(forKey: "experimentalAudioMuseFeaturesEnabled"),
+                      await api.audioMusePrivateSonicSupported == true {
+                songs = try await api.getAudioMusePrivateSimilarSongs(songId: sourceSong.id, count: requestedCount)
+            } else {
+                songs = try await api.getSonicSimilarTracks(songId: sourceSong.id, count: requestedCount)
+            }
             let queue = PlaylistGenerationPolicy.queue(
                 sourceSong: sourceSong,
                 primarySongs: songs,
@@ -1655,11 +1714,27 @@ class AudioPlayer: NSObject, ObservableObject {
         let title = "Sonic Path"
         let artist = "\(startSong.title) -> \(endSong.title)"
         startPlaylistGeneration(title: title, artist: artist) {
-            let songs = try await NavidromeAPI.shared.findSonicPath(
-                startSongId: startSong.id,
-                endSongId: endSong.id,
-                count: max(count, 2)
-            )
+            let api = await NavidromeAPI.shared
+            let songs: [Song]
+            if await api.sonicSimilaritySupported == true {
+                songs = try await api.findSonicPath(
+                    startSongId: startSong.id,
+                    endSongId: endSong.id,
+                    count: max(count, 2)
+                )
+            } else if UserDefaults.standard.bool(forKey: "experimentalAudioMuseFeaturesEnabled"),
+                      await api.audioMusePrivateSonicSupported == true {
+                songs = try await api.findAudioMusePrivateSongPath(
+                    startSongId: startSong.id,
+                    endSongId: endSong.id
+                )
+            } else {
+                songs = try await api.findSonicPath(
+                    startSongId: startSong.id,
+                    endSongId: endSong.id,
+                    count: max(count, 2)
+                )
+            }
             guard !songs.isEmpty else {
                 throw PlaylistGenerationError.noSongs
             }
@@ -1687,6 +1762,21 @@ class AudioPlayer: NSObject, ObservableObject {
             let requestedCount = max(count, 1)
             let songs = try await NavidromeAPI.shared.getAudioMuseAlchemySongs(
                 seeds: seeds,
+                count: requestedCount
+            )
+            let queue = Array(songs.prefix(requestedCount))
+            guard !queue.isEmpty else {
+                throw PlaylistGenerationError.noSongs
+            }
+            return .songs(queue)
+        }
+    }
+
+    func startAudioMuseRadioPlaylistGeneration(radio: AudioMuseRadioStation, count: Int = 200) {
+        startPlaylistGeneration(title: radio.name, artist: "AudioMuse Radio") {
+            let requestedCount = max(count, 1)
+            let songs = try await NavidromeAPI.shared.getAudioMuseRadioSongs(
+                id: radio.id,
                 count: requestedCount
             )
             let queue = Array(songs.prefix(requestedCount))

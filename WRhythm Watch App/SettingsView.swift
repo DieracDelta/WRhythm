@@ -446,11 +446,20 @@ struct SettingsView: View {
         .onChange(of: experimentalAudioMuseFeaturesEnabled) { _, enabled in
             if enabled {
                 Task {
-                    await api.checkAudioMuseAlchemySupport()
+                    _ = await api.checkAudioMuseAlchemySupport()
+                    await api.checkAudioMuseSearchSupport()
+                    await api.checkAudioMuseAdvancedPlaylistSupport()
                 }
             } else {
                 api.audioMuseAlchemySupported = false
                 UserDefaults.standard.set(false, forKey: "server_supports_audiomuse_alchemy")
+                api.audioMuseClapSearchSupported = false
+                api.audioMuseSemanticSearchSupported = false
+                api.audioMuseRadioSupported = false
+                api.audioMusePrivateSonicSupported = false
+                api.audioMuseSimilarArtistsSupported = false
+                api.audioMuseMapSupported = false
+                AudioMuseFeature.allCases.forEach { UserDefaults.standard.set(false, forKey: $0.userDefaultsKey) }
             }
         }
 

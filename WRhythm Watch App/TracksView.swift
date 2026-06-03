@@ -25,13 +25,25 @@ struct TracksView: View {
     @State private var albumCanGoNext = false
     @State private var songCanGoNext = false
     @State private var pagingKind: SearchResultPageKind?
+    @State private var searchMode: TracksSearchMode = .library
+    @State private var clapTopQueries: [String] = []
 #if os(watchOS)
     @State private var presentedSheet: TracksSheet?
 #endif
     @State private var searchTask: Task<Void, Never>?
+    @ObservedObject var api = NavidromeAPI.shared
     @ObservedObject var downloadManager = DownloadManager.shared
     @ObservedObject var player = AudioPlayer.shared
     @AppStorage("offlineMode") private var offlineMode = false
+    @AppStorage("experimentalAudioMuseFeaturesEnabled") private var experimentalAudioMuseFeaturesEnabled = false
+
+    private var availableSearchModes: [TracksSearchMode] {
+        TracksSearchModePolicy.availableModes(
+            experimentalAudioMuseEnabled: experimentalAudioMuseFeaturesEnabled && !offlineMode,
+            clapSupported: api.audioMuseClapSearchSupported,
+            semanticSupported: api.audioMuseSemanticSearchSupported
+        )
+    }
 
     private var displayedSongs: [Song] {
         if offlineMode {
@@ -166,6 +178,30 @@ struct TracksView: View {
 #endif
         .onAppear {
             loadCachedSearchIfNeeded()
+        }
+        .task(id: experimentalAudioMuseFeaturesEnabled) {
+            guard experimentalAudioMuseFeaturesEnabled, !offlineMode else { return }
+            await api.checkAudioMuseSearchSupport()
+            await loadClapTopQueriesIfAvailable()
+        }
+        .onChange(of: availableSearchModes.map(\.id)) { _, modes in
+            let available = TracksSearchModePolicy.availableModes(
+                experimentalAudioMuseEnabled: experimentalAudioMuseFeaturesEnabled && !offlineMode,
+                clapSupported: api.audioMuseClapSearchSupported,
+                semanticSupported: api.audioMuseSemanticSearchSupported
+            )
+            let sanitized = TracksSearchModePolicy.sanitizedSelection(searchMode, availableModes: available)
+            if sanitized != searchMode {
+                searchMode = sanitized
+                clearOnlineSearchResults()
+            }
+        }
+        .onChange(of: searchMode) { _, _ in
+            guard !offlineMode else { return }
+            clearOnlineSearchResults()
+            if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                performSearch(query: searchText, debounce: false)
+            }
         }
         .onChange(of: searchText) { _, newValue in
             guard !offlineMode else { return }
@@ -321,7 +357,7 @@ struct TracksView: View {
                     performSearch(query: searchText)
                 }
             } else if searchText.isEmpty {
-                searchPrompt(title: "Search Music", message: nil)
+                searchPrompt(title: searchPromptTitle, message: searchPromptMessage)
             } else if searchResults.isEmpty && albumResults.isEmpty && artistResults.isEmpty {
                 WRhythmEmptyState(
                     systemImage: "music.note",
@@ -580,11 +616,35 @@ struct TracksView: View {
             .buttonStyle(.plain)
         }
 #elseif os(iOS) || os(macOS)
-        WRhythmEmptyState(
-            systemImage: "magnifyingglass",
-            title: title,
-            message: message
-        )
+        VStack(spacing: WRhythmSpacing.md) {
+            WRhythmEmptyState(
+                systemImage: searchMode == .library ? "magnifyingglass" : "sparkles",
+                title: title,
+                message: message
+            )
+
+            if searchMode == .audioMuseClap && !clapTopQueries.isEmpty {
+                WRhythmCard(padding: WRhythmSpacing.sm) {
+                    VStack(alignment: .leading, spacing: WRhythmSpacing.sm) {
+                        Text("Try a vibe")
+                            .font(WRhythmTypography.sectionLabel)
+                            .foregroundStyle(.secondary)
+
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: WRhythmSpacing.xs)], alignment: .leading, spacing: WRhythmSpacing.xs) {
+                            ForEach(clapTopQueries.prefix(8), id: \.self) { query in
+                                Button(query) {
+                                    searchText = query
+                                    performSearch(query: query, debounce: false)
+                                }
+                                .buttonStyle(.bordered)
+                                .tint(WRhythmTheme.playlistGen)
+                            }
+                        }
+                    }
+                }
+                .frame(maxWidth: 620)
+            }
+        }
 #endif
     }
 
@@ -682,6 +742,9 @@ struct TracksView: View {
 
     @ViewBuilder
     private func searchPaginationControls(kind: SearchResultPageKind, resultCount: Int) -> some View {
+        if searchMode != .library {
+            EmptyView()
+        } else {
         let currentPage = searchPage(for: kind)
         let canPrevious = SearchPaginationPolicy.canGoPrevious(page: currentPage)
         let canNext = searchCanGoNext(for: kind)
@@ -731,6 +794,7 @@ struct TracksView: View {
         .padding(.top, WRhythmSpacing.xs)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(kind.label) search result pages")
+        }
     }
 
     private func searchPage(for kind: SearchResultPageKind) -> Int {
@@ -778,6 +842,12 @@ struct TracksView: View {
     }
 
     private func updateSearchPageAvailability() {
+        guard searchMode == .library else {
+            artistCanGoNext = false
+            albumCanGoNext = false
+            songCanGoNext = false
+            return
+        }
         artistCanGoNext = SearchPaginationPolicy.canGoNext(resultCount: artistResults.count, pageSize: searchPageSize)
         albumCanGoNext = SearchPaginationPolicy.canGoNext(resultCount: albumResults.count, pageSize: searchPageSize)
         songCanGoNext = SearchPaginationPolicy.canGoNext(resultCount: searchResults.count, pageSize: searchPageSize)
@@ -822,7 +892,19 @@ struct TracksView: View {
                 .font(WRhythmTypography.bodyEmphasis)
                 .foregroundStyle(WRhythmTheme.accent)
 
-            TextField(offlineMode ? "Search offline music" : "Search music", text: $searchText)
+            if availableSearchModes.count > 1 {
+                Picker("Search Mode", selection: $searchMode) {
+                    ForEach(availableSearchModes) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .frame(maxWidth: 112)
+                .accessibilityLabel("Search mode")
+            }
+
+            TextField(searchFieldPrompt, text: $searchText)
                 .textFieldStyle(.plain)
                 .platformAutocapitalizationNever()
                 .submitLabel(.search)
@@ -1001,7 +1083,16 @@ struct TracksView: View {
     }
 
     private func pagedSearch(query: String, artistPage: Int, albumPage: Int, songPage: Int) async throws -> SearchResult {
-        try await NavidromeAPI.shared.search(
+        if let audioMuseMode = searchMode.audioMuseMode {
+            let songs = try await NavidromeAPI.shared.getAudioMuseSearchSongs(
+                mode: audioMuseMode,
+                query: query,
+                limit: searchPageSize
+            )
+            return SearchResult(artist: [], album: [], song: songs)
+        }
+
+        return try await NavidromeAPI.shared.search(
             query: query,
             artistCount: searchPageSize,
             artistOffset: SearchPaginationPolicy.offset(forPage: artistPage, pageSize: searchPageSize),
@@ -1014,6 +1105,51 @@ struct TracksView: View {
 
     private func searchErrorMessage(_ error: Error) -> String {
         SearchRetryPolicy.userMessage(for: error)
+    }
+
+    private var searchFieldPrompt: String {
+        if offlineMode {
+            return "Search offline music"
+        }
+        switch searchMode {
+        case .library:
+            return "Search music"
+        case .audioMuseClap:
+            return "Search by vibe"
+        case .audioMuseSemantic:
+            return "Search semantically"
+        }
+    }
+
+    private var searchPromptTitle: String {
+        switch searchMode {
+        case .library:
+            return "Search Music"
+        case .audioMuseClap:
+            return "Vibe Search"
+        case .audioMuseSemantic:
+            return "Semantic Search"
+        }
+    }
+
+    private var searchPromptMessage: String? {
+        switch searchMode {
+        case .library:
+            return nil
+        case .audioMuseClap:
+            return "Describe how the music should feel or sound."
+        case .audioMuseSemantic:
+            return "Search by lyric, text, or meaning."
+        }
+    }
+
+    private func loadClapTopQueriesIfAvailable() async {
+        guard api.audioMuseClapSearchSupported == true else { return }
+        do {
+            clapTopQueries = try await api.getAudioMuseClapTopQueries()
+        } catch {
+            clapTopQueries = []
+        }
     }
 
     private func formatDuration(_ seconds: Int) -> String {
