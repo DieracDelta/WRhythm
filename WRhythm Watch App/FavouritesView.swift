@@ -161,7 +161,13 @@ struct FavouritesView: View {
                         }
 
                         SlidingRenderWindowForEach(songsToShow, estimatedRowHeight: 64, resetToken: songResetToken) { index, song in
-                            TrackRowView(song: song, player: player, downloadManager: downloadManager, offlineMode: offlineMode) {
+                            TrackRowView(
+                                song: song,
+                                player: player,
+                                downloadManager: downloadManager,
+                                offlineMode: offlineMode,
+                                selectionScopeSongs: songsToShow
+                            ) {
                                 player.playQueue(songsToShow, startingAt: index)
                             }
                         }
@@ -267,7 +273,13 @@ struct FavouritesView: View {
                                 }
 
                                 SlidingRenderWindowForEach(songsToShow, estimatedRowHeight: 64, resetToken: songResetToken) { index, song in
-                                    TrackRowView(song: song, player: player, downloadManager: downloadManager, offlineMode: offlineMode) {
+                                    TrackRowView(
+                                        song: song,
+                                        player: player,
+                                        downloadManager: downloadManager,
+                                        offlineMode: offlineMode,
+                                        selectionScopeSongs: songsToShow
+                                    ) {
                                         player.playQueue(songsToShow, startingAt: index)
                                     }
                                 }

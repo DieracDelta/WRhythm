@@ -2052,6 +2052,25 @@ final class DeviceSyncManager: NSObject, ObservableObject {
     }
 
     @discardableResult
+    func appendSharedQueueItems(_ songs: [Song]) -> Bool {
+        guard syncModeEnabled,
+              let sharedSession,
+              !songs.isEmpty else {
+            return false
+        }
+
+        publishSharedSession(makeSession(
+            queue: sharedSession.queue + songs,
+            currentIndex: sharedSession.currentIndex,
+            position: sharedSession.estimatedPosition,
+            isPlaying: sharedSession.isPlaying,
+            outputDeviceID: sharedSession.outputDeviceID,
+            volume: sharedSession.volume
+        ))
+        return true
+    }
+
+    @discardableResult
     func clearSharedQueueKeepingCurrent() -> Bool {
         guard syncModeEnabled, let sharedSession, !sharedSession.queue.isEmpty else { return false }
         let safeIndex = min(max(sharedSession.currentIndex, 0), sharedSession.queue.count - 1)

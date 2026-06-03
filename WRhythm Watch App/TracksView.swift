@@ -651,7 +651,7 @@ struct TracksView: View {
     @ViewBuilder
     private func songRow(song: Song) -> some View {
         Button(action: {
-            AudioPlayer.shared.playSong(song)
+            handleSongRowTap(song)
         }) {
             WRhythmMediaRow(
                 title: song.title,
@@ -709,7 +709,26 @@ struct TracksView: View {
             }
         }
         .buttonStyle(.plain)
+        .wrhythmSelectableTrack(song: song, selectionScopeSongs: displayedSongs)
         .wrhythmTrackActions(song: song)
+    }
+
+    private func handleSongRowTap(_ song: Song) {
+#if os(macOS)
+        let modifiers = TrackSelectionModifiers.currentEventModifiers
+        if modifiers.shouldSelectInsteadOfActivate {
+            TrackSelectionManager.shared.handleClick(
+                song: song,
+                scopeSongs: displayedSongs,
+                modifiers: modifiers
+            )
+            return
+        }
+        if TrackSelectionManager.shared.selectedCount > 0 {
+            TrackSelectionManager.shared.clear()
+        }
+#endif
+        AudioPlayer.shared.playSong(song)
     }
 
     private var offlineSearchMessage: String {

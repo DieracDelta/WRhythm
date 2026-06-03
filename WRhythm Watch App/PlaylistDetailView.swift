@@ -175,7 +175,13 @@ struct PlaylistDetailView: View {
 
             WRhythmCard(padding: WRhythmSpacing.sm) {
                 SlidingRenderWindowForEach(trackItems, estimatedRowHeight: 64, resetToken: resetToken) { _, item in
-                    TrackRowView(song: item.song, player: player, downloadManager: downloadManager, offlineMode: offlineMode) {
+                    TrackRowView(
+                        song: item.song,
+                        player: player,
+                        downloadManager: downloadManager,
+                        offlineMode: offlineMode,
+                        selectionScopeSongs: songs
+                    ) {
                         player.playQueue(queue, startingAt: item.queueIndex)
                     }
                 }

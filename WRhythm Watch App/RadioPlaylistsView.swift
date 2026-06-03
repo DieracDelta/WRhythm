@@ -65,7 +65,13 @@ struct RadioPlaylistsView: View {
                                     songIds: player.playlistGenQueue.map(\.id)
                                 )
                             ) { index, song in
-                                TrackRowView(song: song, player: player, downloadManager: downloadManager, offlineMode: false) {
+                                TrackRowView(
+                                    song: song,
+                                    player: player,
+                                    downloadManager: downloadManager,
+                                    offlineMode: false,
+                                    selectionScopeSongs: player.playlistGenQueue
+                                ) {
                                     player.playQueue(player.playlistGenQueue, startingAt: index, clearGeneratedPlaylist: false)
                                 }
                             }
@@ -1656,7 +1662,13 @@ struct RadioPlaylistDetailView: View {
                             bitRate: nil,
                             path: downloadedSong.filePath
                         )
-                        TrackRowView(song: song, player: player, downloadManager: downloadManager, offlineMode: true) {
+                        TrackRowView(
+                            song: song,
+                            player: player,
+                            downloadManager: downloadManager,
+                            offlineMode: true,
+                            selectionScopeSongs: downloadedQueueSongs
+                        ) {
                             playRadio(startingAt: item.index)
                         }
                     }
@@ -1676,28 +1688,15 @@ struct RadioPlaylistDetailView: View {
         }
     }
 
-    private func playRadio(startingAt index: Int = 0) {
-        let songs = downloadedSongs.compactMap { songId -> Song? in
+    private var downloadedQueueSongs: [Song] {
+        downloadedSongs.compactMap { songId -> Song? in
             guard let downloaded = downloadManager.downloadedSongs[songId] else { return nil }
-            return Song(
-                id: downloaded.songId,
-                title: downloaded.title,
-                album: downloaded.album,
-                albumId: nil,
-                artist: downloaded.artist,
-                artistId: nil,
-                track: nil,
-                year: nil,
-                genre: nil,
-                coverArt: downloaded.coverArt,
-                size: Int(downloaded.fileSize),
-                contentType: nil,
-                suffix: nil,
-                duration: nil,
-                bitRate: nil,
-                path: downloaded.filePath
-            )
+            return makeSong(from: downloaded)
         }
+    }
+
+    private func playRadio(startingAt index: Int = 0) {
+        let songs = downloadedQueueSongs
 
         guard !songs.isEmpty else {
             print("⚠️ No downloaded songs in radio")
@@ -1708,27 +1707,7 @@ struct RadioPlaylistDetailView: View {
     }
 
     private func shuffleRadio() {
-        let songs = downloadedSongs.compactMap { songId -> Song? in
-            guard let downloaded = downloadManager.downloadedSongs[songId] else { return nil }
-            return Song(
-                id: downloaded.songId,
-                title: downloaded.title,
-                album: downloaded.album,
-                albumId: nil,
-                artist: downloaded.artist,
-                artistId: nil,
-                track: nil,
-                year: nil,
-                genre: nil,
-                coverArt: downloaded.coverArt,
-                size: Int(downloaded.fileSize),
-                contentType: nil,
-                suffix: nil,
-                duration: nil,
-                bitRate: nil,
-                path: downloaded.filePath
-            )
-        }
+        let songs = downloadedQueueSongs
 
         guard !songs.isEmpty else {
             print("⚠️ No downloaded songs in radio")
@@ -1736,6 +1715,27 @@ struct RadioPlaylistDetailView: View {
         }
 
         player.playQueueShuffled(songs)
+    }
+
+    private func makeSong(from downloaded: DownloadedSong) -> Song {
+        Song(
+            id: downloaded.songId,
+            title: downloaded.title,
+            album: downloaded.album,
+            albumId: nil,
+            artist: downloaded.artist,
+            artistId: nil,
+            track: nil,
+            year: nil,
+            genre: nil,
+            coverArt: downloaded.coverArt,
+            size: Int(downloaded.fileSize),
+            contentType: nil,
+            suffix: nil,
+            duration: nil,
+            bitRate: nil,
+            path: downloaded.filePath
+        )
     }
 
     private func deleteRadio() {

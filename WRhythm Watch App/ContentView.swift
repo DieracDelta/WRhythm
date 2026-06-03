@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 extension Notification.Name {
     static let wrhythmShowPlaylistGen = Notification.Name("wrhythmShowPlaylistGen")
@@ -384,6 +385,9 @@ struct MacSidebar: View {
                     }
                 }
             }
+            .onDrop(of: [TrackDragPayloadPolicy.contentType.identifier], isTargeted: nil) { providers in
+                handleTrackDrop(providers)
+            }
             .listRowBackground(Color.clear)
 
             if deviceSyncManager.syncModeEnabled,
@@ -518,6 +522,35 @@ struct MacSidebar: View {
             deviceSyncManager.clearSharedQueue()
         } else {
             player.clearQueue()
+        }
+    }
+
+    private func handleTrackDrop(_ providers: [NSItemProvider]) -> Bool {
+        guard let provider = providers.first(where: {
+            $0.hasItemConformingToTypeIdentifier(TrackDragPayloadPolicy.contentType.identifier)
+        }) else {
+            return false
+        }
+
+        provider.loadDataRepresentation(forTypeIdentifier: TrackDragPayloadPolicy.contentType.identifier) { data, _ in
+            guard let data,
+                  let songs = try? TrackDragPayloadPolicy.decode(data),
+                  !songs.isEmpty else {
+                return
+            }
+
+            Task { @MainActor in
+                appendDroppedTracks(songs)
+            }
+        }
+        return true
+    }
+
+    private func appendDroppedTracks(_ songs: [Song]) {
+        if QueuePresentationPolicy.mutationTarget(hasSharedSession: deviceSyncManager.sharedSession != nil) == .shared {
+            _ = deviceSyncManager.appendSharedQueueItems(songs)
+        } else {
+            player.enqueue(songs)
         }
     }
 }

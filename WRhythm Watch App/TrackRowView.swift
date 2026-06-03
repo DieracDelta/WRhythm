@@ -14,6 +14,7 @@ struct TrackRowView: View {
     let isStarred: Bool
     let isCurrentAndPlaying: Bool
     let offlineMode: Bool
+    let selectionScopeSongs: [Song]
     let onTap: () -> Void
     var onDownload: () -> Void
     var onDelete: () -> Void
@@ -26,6 +27,7 @@ struct TrackRowView: View {
         isStarred: Bool,
         isCurrentAndPlaying: Bool,
         offlineMode: Bool,
+        selectionScopeSongs: [Song] = [],
         onTap: @escaping () -> Void,
         onDownload: @escaping () -> Void,
         onDelete: @escaping () -> Void,
@@ -37,6 +39,7 @@ struct TrackRowView: View {
         self.isStarred = isStarred
         self.isCurrentAndPlaying = isCurrentAndPlaying
         self.offlineMode = offlineMode
+        self.selectionScopeSongs = selectionScopeSongs
         self.onTap = onTap
         self.onDownload = onDownload
         self.onDelete = onDelete
@@ -44,7 +47,7 @@ struct TrackRowView: View {
     }
 
     var body: some View {
-        Button(action: onTap) {
+        Button(action: handleTap) {
             WRhythmMediaRow(
                 title: song.title,
                 subtitle: song.artist,
@@ -117,7 +120,26 @@ struct TrackRowView: View {
             }
         }
         .buttonStyle(.plain)
+        .wrhythmSelectableTrack(song: song, selectionScopeSongs: selectionScopeSongs)
         .wrhythmTrackActions(song: song)
+    }
+
+    private func handleTap() {
+#if os(macOS)
+        let modifiers = TrackSelectionModifiers.currentEventModifiers
+        if modifiers.shouldSelectInsteadOfActivate {
+            TrackSelectionManager.shared.handleClick(
+                song: song,
+                scopeSongs: selectionScopeSongs,
+                modifiers: modifiers
+            )
+            return
+        }
+        if TrackSelectionManager.shared.selectedCount > 0 {
+            TrackSelectionManager.shared.clear()
+        }
+#endif
+        onTap()
     }
 }
 
@@ -127,6 +149,7 @@ extension TrackRowView {
         player: AudioPlayer,
         downloadManager: DownloadManager,
         offlineMode: Bool,
+        selectionScopeSongs: [Song] = [],
         onTap: @escaping () -> Void
     ) {
         self.init(
@@ -136,6 +159,7 @@ extension TrackRowView {
             isStarred: downloadManager.starredSongIds.contains(song.id),
             isCurrentAndPlaying: player.currentSong?.id == song.id && player.isPlaying,
             offlineMode: offlineMode,
+            selectionScopeSongs: selectionScopeSongs,
             onTap: onTap,
             onDownload: { downloadManager.downloadSong(song) },
             onDelete: { downloadManager.deleteSong(song.id) },

@@ -10,8 +10,12 @@ import SwiftUI
 @MainActor
 enum TrackActions {
     static func addToQueue(_ song: Song) {
+        addToQueue([song])
+    }
+
+    static func addToQueue(_ songs: [Song]) {
         Task { @MainActor in
-            AudioPlayer.shared.enqueue([song])
+            AudioPlayer.shared.enqueue(songs)
         }
     }
 
@@ -178,13 +182,25 @@ struct TrackContextMenuItems: View {
     @ObservedObject var player = AudioPlayer.shared
     @ObservedObject var downloadManager = DownloadManager.shared
     @ObservedObject var deviceSyncManager = DeviceSyncManager.shared
+    @ObservedObject var selectionManager = TrackSelectionManager.shared
     @AppStorage("offlineMode") private var offlineMode = false
 
     var body: some View {
+        let selectedSongs = selectionManager.selectedSongs(containing: song)
+        let hasSelectedGroup = selectedSongs.count > 1
+
         Button(action: {
             player.playSong(song)
         }) {
             Label("Play", systemImage: "play.fill")
+        }
+
+        if hasSelectedGroup {
+            Button(action: {
+                TrackActions.addToQueue(selectedSongs)
+            }) {
+                Label("Add \(selectedSongs.count) Selected to Queue", systemImage: "text.badge.plus")
+            }
         }
 
         Button(action: {
@@ -225,6 +241,14 @@ struct TrackContextMenuItems: View {
         }
 
         if deviceSyncManager.syncModeEnabled && deviceSyncManager.hasActiveRemotePlayback {
+            if hasSelectedGroup {
+                Button(action: {
+                    deviceSyncManager.enqueueOnConnectedDevices(selectedSongs)
+                }) {
+                    Label("Queue \(selectedSongs.count) Selected on Connected Device", systemImage: "text.badge.plus")
+                }
+            }
+
             Button(action: {
                 deviceSyncManager.enqueueOnConnectedDevices([song])
             }) {
