@@ -118,19 +118,20 @@ struct SongRenderWindowPolicyTests {
         #expect(slots.count == 50)
         #expect(slots.map(\.index) == Array(0..<50))
         #expect(slots.allSatisfy(\.isLoaded))
-        #expect(SongRenderWindowPolicy.nextPageIndexToLoad(totalCount: 1_000, storedLimit: 50, loadedPageIndices: [0]) == 1)
+        #expect(SongRenderWindowPolicy.nextPageIndexToLoad(totalCount: 1_000, storedLimit: 50, displayedPageIndex: 0) == 1)
     }
 
     @Test func pagedListsAppendNextPageWhenBottomIsReached() {
         let slots = SongRenderWindowPolicy.pagedRenderSlots(
             totalCount: 1_000,
             storedLimit: 50,
-            loadedPageIndices: [0, 1]
+            displayedPageIndex: 1,
+            loadedPageIndices: [1]
         )
 
-        #expect(slots.count == 100)
-        #expect(slots.map(\.index) == Array(0..<100))
-        #expect(SongRenderWindowPolicy.nextPageIndexToLoad(totalCount: 1_000, storedLimit: 50, loadedPageIndices: [0, 1]) == 2)
+        #expect(slots.count == 50)
+        #expect(slots.map(\.index) == Array(50..<100))
+        #expect(SongRenderWindowPolicy.nextPageIndexToLoad(totalCount: 1_000, storedLimit: 50, displayedPageIndex: 1) == 2)
     }
 
     @Test func pagedSharedQueuesCanStartAtCurrentTrackPage() {
@@ -138,26 +139,76 @@ struct SongRenderWindowPolicyTests {
         let slots = SongRenderWindowPolicy.pagedRenderSlots(
             totalCount: 240,
             storedLimit: 50,
+            displayedPageIndex: initialPage,
             loadedPageIndices: [initialPage]
         )
 
         #expect(initialPage == 2)
         #expect(slots.map(\.index) == Array(100..<150))
-        #expect(SongRenderWindowPolicy.previousPageIndexToLoad(storedLimit: 50, loadedPageIndices: [2]) == 1)
-        #expect(SongRenderWindowPolicy.nextPageIndexToLoad(totalCount: 240, storedLimit: 50, loadedPageIndices: [2]) == 3)
+        #expect(SongRenderWindowPolicy.previousPageIndexToLoad(storedLimit: 50, displayedPageIndex: 2) == 1)
+        #expect(SongRenderWindowPolicy.nextPageIndexToLoad(totalCount: 240, storedLimit: 50, displayedPageIndex: 2) == 3)
+    }
+
+    @Test func pagedSharedQueuesNeverRenderAccumulatedLoadedPages() {
+        let slots = SongRenderWindowPolicy.pagedRenderSlots(
+            totalCount: 500,
+            storedLimit: 50,
+            displayedPageIndex: 4,
+            loadedPageIndices: Set(0...8)
+        )
+
+        #expect(slots.count == 50)
+        #expect(slots.map(\.index) == Array(200..<250))
+        #expect(slots.allSatisfy(\.isLoaded))
+    }
+
+    @Test func pagedQueuesDoNotResetRenderedPageWhenCurrentTrackAnchorMoves() {
+        #expect(!SongRenderWindowPolicy.shouldResetWindowWhenAnchorChanges(renderMode: .paged))
+        #expect(SongRenderWindowPolicy.shouldResetWindowWhenAnchorChanges(renderMode: .slidingWindow))
+        #expect(SongRenderWindowPolicy.shouldResetWindowWhenAnchorChanges(renderMode: .fullRangeLoaded))
     }
 
     @Test func pendingPageShowsLoadingSlotsBeforeRowsAreLoaded() {
         let slots = SongRenderWindowPolicy.pagedRenderSlots(
             totalCount: 120,
             storedLimit: 50,
+            displayedPageIndex: 1,
             loadedPageIndices: [0],
             pendingPageIndices: [1]
         )
 
-        #expect(slots.count == 100)
-        #expect(slots.filter(\.isLoaded).map(\.index) == Array(0..<50))
+        #expect(slots.count == 50)
         #expect(slots.filter { !$0.isLoaded }.map(\.index) == Array(50..<100))
+    }
+
+    @Test func sidebarQueuePageResetTokenUsesCheapQueueIdentityOnly() {
+        let baseline = SongRenderWindowPolicy.sidebarQueuePageResetToken(
+            queueCount: 500,
+            firstSongID: "first",
+            lastSongID: "last"
+        )
+
+        #expect(
+            SongRenderWindowPolicy.sidebarQueuePageResetToken(
+                queueCount: 500,
+                firstSongID: "first",
+                lastSongID: "last"
+            ) == baseline
+        )
+        #expect(
+            SongRenderWindowPolicy.sidebarQueuePageResetToken(
+                queueCount: 501,
+                firstSongID: "first",
+                lastSongID: "last"
+            ) != baseline
+        )
+        #expect(
+            SongRenderWindowPolicy.sidebarQueuePageResetToken(
+                queueCount: 500,
+                firstSongID: "different-first",
+                lastSongID: "last"
+            ) != baseline
+        )
     }
 
     @Test func fullRangeLoadedModeKeepsFiniteQueuesActionableWithoutEarlierPlaceholderRows() {
@@ -421,19 +472,6 @@ struct SongRenderWindowPolicyTests {
         #expect(SongRenderWindowPolicy.failedDownloadIdsResetToken(songIds: ["song-1", "song-3", "song-2"]) != baseline)
         #expect(SongRenderWindowPolicy.failedDownloadIdsResetToken(songIds: ["song-1", "song-2"]) != baseline)
         #expect(SongRenderWindowPolicy.failedDownloadIdsResetToken(songIds: ["song-1", "song-2", "song-4"]) != baseline)
-    }
-
-    @Test func sidebarQueueResetTokenChangesWhenQueueIdentityOrderOrCurrentIndexChanges() {
-        let baseline = SongRenderWindowPolicy.sidebarQueueResetToken(
-            songIds: ["song-1", "song-2", "song-3"],
-            currentIndex: 1
-        )
-
-        #expect(SongRenderWindowPolicy.sidebarQueueResetToken(songIds: ["song-1", "song-2", "song-3"], currentIndex: 1) == baseline)
-        #expect(SongRenderWindowPolicy.sidebarQueueResetToken(songIds: ["song-1", "song-3", "song-2"], currentIndex: 1) != baseline)
-        #expect(SongRenderWindowPolicy.sidebarQueueResetToken(songIds: ["song-1", "song-2"], currentIndex: 1) != baseline)
-        #expect(SongRenderWindowPolicy.sidebarQueueResetToken(songIds: ["song-1", "song-2", "song-4"], currentIndex: 1) != baseline)
-        #expect(SongRenderWindowPolicy.sidebarQueueResetToken(songIds: ["song-1", "song-2", "song-3"], currentIndex: 2) != baseline)
     }
 
     @Test func renderWindowAnchorHintClampsToCollectionBounds() {

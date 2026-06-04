@@ -11,6 +11,7 @@ struct SlidingRenderWindowForEach<Element, Row: View>: View {
 
     @AppStorage(SongRenderWindowPolicy.userDefaultsKey) private var storedLimit = SongRenderWindowPolicy.defaultLimit
     @State private var anchorIndex = 0
+    @State private var displayedPageIndex = 0
     @State private var loadedPageIndices: Set<Int> = []
     @State private var pendingPageIndices: Set<Int> = []
 
@@ -46,6 +47,7 @@ struct SlidingRenderWindowForEach<Element, Row: View>: View {
             return SongRenderWindowPolicy.pagedRenderSlots(
                 totalCount: items.count,
                 storedLimit: storedLimit,
+                displayedPageIndex: displayedPageIndex,
                 loadedPageIndices: loadedPageIndices,
                 pendingPageIndices: pendingPageIndices
             )
@@ -65,13 +67,12 @@ struct SlidingRenderWindowForEach<Element, Row: View>: View {
             if renderMode == .paged,
                let previousPage = SongRenderWindowPolicy.previousPageIndexToLoad(
                     storedLimit: storedLimit,
-                    loadedPageIndices: loadedPageIndices,
-                    pendingPageIndices: pendingPageIndices
+                    displayedPageIndex: displayedPageIndex
                ) {
                 Button(action: {
-                    loadPages([previousPage])
+                    showPagedWindow(previousPage)
                 }) {
-                    loadingSentinel(title: "Load earlier")
+                    pageNavigationControl(title: "Previous page", systemImage: "chevron.up.circle.fill")
                 }
                 .buttonStyle(.plain)
             }
@@ -120,18 +121,20 @@ struct SlidingRenderWindowForEach<Element, Row: View>: View {
                let nextPage = SongRenderWindowPolicy.nextPageIndexToLoad(
                     totalCount: items.count,
                     storedLimit: storedLimit,
-                    loadedPageIndices: loadedPageIndices,
-                    pendingPageIndices: pendingPageIndices
+                    displayedPageIndex: displayedPageIndex
                ) {
-                loadingSentinel(title: "Loading more")
-                    .onAppear {
-                        loadPages([nextPage])
-                    }
+                Button(action: {
+                    showPagedWindow(nextPage)
+                }) {
+                    pageNavigationControl(title: "Next page", systemImage: "chevron.down.circle.fill")
+                }
+                .buttonStyle(.plain)
             }
         }
         .onAppear {
             if loadedPageIndices.isEmpty, pendingPageIndices.isEmpty {
                 anchorIndex = clampedAnchorIndexHint
+                displayedPageIndex = initialPagedPageIndex
             }
             scheduleVisiblePages()
         }
@@ -145,6 +148,14 @@ struct SlidingRenderWindowForEach<Element, Row: View>: View {
             anchorIndex = min(anchorIndex, newCount - 1)
             loadedPageIndices = validPageIndices(loadedPageIndices, totalCount: newCount)
             pendingPageIndices = validPageIndices(pendingPageIndices, totalCount: newCount)
+            if renderMode == .paged {
+                displayedPageIndex = clampedPageIndex(displayedPageIndex, totalCount: newCount)
+                if !loadedPageIndices.contains(displayedPageIndex),
+                   !pendingPageIndices.contains(displayedPageIndex) {
+                    showPagedWindow(displayedPageIndex)
+                }
+                return
+            }
             if renderMode == .slidingWindow {
                 loadedPageIndices = SongRenderWindowPolicy.loadedPageIndicesAfterEviction(
                     loadedPageIndices: loadedPageIndices,
@@ -156,27 +167,30 @@ struct SlidingRenderWindowForEach<Element, Row: View>: View {
             scheduleVisiblePages()
         }
         .onChange(of: resetToken) { _, _ in
-            anchorIndex = clampedAnchorIndexHint
-            loadedPageIndices = []
-            pendingPageIndices = []
-            scheduleVisiblePages()
+            resetPagedWindowOrScheduleVisiblePages()
         }
         .onChange(of: anchorIndexHint) { _, _ in
-            anchorIndex = clampedAnchorIndexHint
-            loadedPageIndices = []
-            pendingPageIndices = []
-            scheduleVisiblePages()
+            if !SongRenderWindowPolicy.shouldResetWindowWhenAnchorChanges(renderMode: renderMode) {
+                anchorIndex = clampedAnchorIndexHint
+                return
+            }
+            resetPagedWindowOrScheduleVisiblePages()
         }
         .onChange(of: storedLimit) { _, _ in
-            anchorIndex = clampedAnchorIndexHint
-            loadedPageIndices = []
-            pendingPageIndices = []
-            scheduleVisiblePages()
+            resetPagedWindowOrScheduleVisiblePages()
         }
     }
 
     private var clampedAnchorIndexHint: Int {
         SongRenderWindowPolicy.clampedAnchorIndexHint(anchorIndexHint, totalCount: items.count)
+    }
+
+    private var initialPagedPageIndex: Int {
+        SongRenderWindowPolicy.initialPageIndex(
+            totalCount: items.count,
+            anchorIndex: clampedAnchorIndexHint,
+            storedLimit: storedLimit
+        )
     }
 
     private func spacerHeight(for hiddenRows: Int) -> CGFloat {
@@ -212,7 +226,9 @@ struct SlidingRenderWindowForEach<Element, Row: View>: View {
         .frame(maxWidth: .infinity)
         .frame(height: estimatedRowHeight)
         .onAppear {
-            loadPage(containing: index)
+            if renderMode == .slidingWindow {
+                loadPage(containing: index)
+            }
         }
     }
 
@@ -229,17 +245,34 @@ struct SlidingRenderWindowForEach<Element, Row: View>: View {
         .frame(maxWidth: .infinity)
     }
 
+    @ViewBuilder
+    private func pageNavigationControl(title: String, systemImage: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: systemImage)
+                .font(.caption)
+                .foregroundStyle(WRhythmTheme.accent)
+
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.primary)
+        }
+        .padding(.vertical, 7)
+        .padding(.horizontal, 8)
+        .frame(maxWidth: .infinity)
+        .background(WRhythmTheme.accent.opacity(0.10), in: Capsule())
+        .overlay {
+            Capsule()
+                .stroke(WRhythmTheme.accent.opacity(0.35), lineWidth: 1)
+        }
+        .contentShape(Capsule())
+        .accessibilityLabel(title)
+    }
+
     private func scheduleVisiblePages() {
         if renderMode == .paged {
             guard SongRenderWindowPolicy.pageSize(forStoredLimit: storedLimit) != nil else { return }
             guard loadedPageIndices.isEmpty, pendingPageIndices.isEmpty else { return }
-            loadPages([
-                SongRenderWindowPolicy.initialPageIndex(
-                    totalCount: items.count,
-                    anchorIndex: anchorIndex,
-                    storedLimit: storedLimit
-                )
-            ])
+            showPagedWindow(displayedPageIndex)
             return
         }
 
@@ -255,6 +288,55 @@ struct SlidingRenderWindowForEach<Element, Row: View>: View {
     private func loadPage(containing index: Int) {
         let pageSize = SongRenderWindowPolicy.pageSize(forStoredLimit: storedLimit) ?? SongRenderWindowPolicy.defaultPageSize
         loadPages([SongRenderWindowPolicy.pageIndex(forRow: index, pageSize: pageSize)])
+    }
+
+    private func resetPagedWindowOrScheduleVisiblePages() {
+        anchorIndex = clampedAnchorIndexHint
+        loadedPageIndices = []
+        pendingPageIndices = []
+
+        guard renderMode == .paged else {
+            scheduleVisiblePages()
+            return
+        }
+
+        displayedPageIndex = initialPagedPageIndex
+        showPagedWindow(displayedPageIndex)
+    }
+
+    private func showPagedWindow(_ pageIndex: Int) {
+        guard renderMode == .paged else {
+            loadPages([pageIndex])
+            return
+        }
+
+        guard SongRenderWindowPolicy.pageSize(forStoredLimit: storedLimit) != nil else {
+            loadedPageIndices = [0]
+            pendingPageIndices = []
+            return
+        }
+
+        let validPage = clampedPageIndex(pageIndex, totalCount: items.count)
+        guard !SongRenderWindowPolicy.pageRange(
+            pageIndex: validPage,
+            totalCount: items.count,
+            pageSize: SongRenderWindowPolicy.pageSize(forStoredLimit: storedLimit) ?? SongRenderWindowPolicy.defaultPageSize
+        ).isEmpty else {
+            loadedPageIndices = []
+            pendingPageIndices = []
+            return
+        }
+
+        displayedPageIndex = validPage
+        loadedPageIndices = []
+        pendingPageIndices = [validPage]
+
+        Task { @MainActor in
+            await Task.yield()
+            guard displayedPageIndex == validPage else { return }
+            loadedPageIndices = [validPage]
+            pendingPageIndices = []
+        }
     }
 
     private func loadPages(_ pages: [Int]) {
@@ -286,5 +368,14 @@ struct SlidingRenderWindowForEach<Element, Row: View>: View {
         return pageIndices.filter {
             !SongRenderWindowPolicy.pageRange(pageIndex: $0, totalCount: totalCount, pageSize: pageSize).isEmpty
         }
+    }
+
+    private func clampedPageIndex(_ pageIndex: Int, totalCount: Int) -> Int {
+        guard totalCount > 0,
+              let pageSize = SongRenderWindowPolicy.pageSize(forStoredLimit: storedLimit) else {
+            return 0
+        }
+        let maxPage = SongRenderWindowPolicy.pageIndex(forRow: totalCount - 1, pageSize: pageSize)
+        return min(max(pageIndex, 0), maxPage)
     }
 }

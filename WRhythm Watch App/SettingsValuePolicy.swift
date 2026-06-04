@@ -79,6 +79,10 @@ struct SongRenderWindowPolicy: Sendable {
         effectiveLimit(storedLimit)
     }
 
+    static func shouldResetWindowWhenAnchorChanges(renderMode: RenderMode) -> Bool {
+        renderMode != .paged
+    }
+
     static func initialPageIndex(totalCount: Int, anchorIndex: Int, storedLimit: Int) -> Int {
         guard totalCount > 0, let pageSize = pageSize(forStoredLimit: storedLimit) else { return 0 }
         return pageIndex(forRow: clampedAnchorIndexHint(anchorIndex, totalCount: totalCount), pageSize: pageSize)
@@ -158,8 +162,15 @@ struct SongRenderWindowPolicy: Sendable {
         resetToken(scope: "downloads:failed", sortIdentifier: songIds.joined(separator: ","))
     }
 
-    static func sidebarQueueResetToken(songIds: [String], currentIndex: Int) -> String {
-        resetToken(scope: "mac-sidebar:queue:\(currentIndex)", sortIdentifier: songIds.joined(separator: ","))
+    static func sidebarQueuePageResetToken(
+        queueCount: Int,
+        firstSongID: String?,
+        lastSongID: String?
+    ) -> String {
+        resetToken(
+            scope: "queue-page:\(queueCount)",
+            sortIdentifier: [firstSongID, lastSongID].compactMap { $0 }.joined(separator: ",")
+        )
     }
 
     static func clampedAnchorIndexHint(_ hint: Int, totalCount: Int) -> Int {
@@ -194,6 +205,7 @@ struct SongRenderWindowPolicy: Sendable {
     static func pagedRenderSlots(
         totalCount: Int,
         storedLimit: Int,
+        displayedPageIndex: Int? = nil,
         loadedPageIndices: Set<Int>,
         pendingPageIndices: Set<Int> = []
     ) -> [RenderSlot] {
@@ -202,12 +214,10 @@ struct SongRenderWindowPolicy: Sendable {
             return (0..<totalCount).map { RenderSlot(index: $0, isLoaded: true) }
         }
 
-        let displayedPages = loadedPageIndices.union(pendingPageIndices).filter { $0 >= 0 }
-        guard let firstPage = displayedPages.min(), let lastPage = displayedPages.max() else { return [] }
-
-        let lowerBound = pageRange(pageIndex: firstPage, totalCount: totalCount, pageSize: pageSize).lowerBound
-        let upperBound = pageRange(pageIndex: lastPage, totalCount: totalCount, pageSize: pageSize).upperBound
-        let range = lowerBound..<upperBound
+        let activePages = loadedPageIndices.union(pendingPageIndices).filter { $0 >= 0 }
+        let pageToDisplay = displayedPageIndex ?? activePages.min() ?? 0
+        let range = pageRange(pageIndex: pageToDisplay, totalCount: totalCount, pageSize: pageSize)
+        guard !range.isEmpty else { return [] }
 
         return range.map { index in
             let page = pageIndex(forRow: index, pageSize: pageSize)
@@ -218,25 +228,19 @@ struct SongRenderWindowPolicy: Sendable {
     static func nextPageIndexToLoad(
         totalCount: Int,
         storedLimit: Int,
-        loadedPageIndices: Set<Int>,
-        pendingPageIndices: Set<Int> = []
+        displayedPageIndex: Int
     ) -> Int? {
         guard totalCount > 0, let pageSize = pageSize(forStoredLimit: storedLimit) else { return nil }
-        let activePages = loadedPageIndices.union(pendingPageIndices)
-        guard let lastPage = activePages.max() else { return 0 }
-        let nextPage = lastPage + 1
+        let nextPage = displayedPageIndex + 1
         return pageRange(pageIndex: nextPage, totalCount: totalCount, pageSize: pageSize).isEmpty ? nil : nextPage
     }
 
     static func previousPageIndexToLoad(
         storedLimit: Int,
-        loadedPageIndices: Set<Int>,
-        pendingPageIndices: Set<Int> = []
+        displayedPageIndex: Int
     ) -> Int? {
-        guard pageSize(forStoredLimit: storedLimit) != nil else { return nil }
-        let activePages = loadedPageIndices.union(pendingPageIndices)
-        guard let firstPage = activePages.min(), firstPage > 0 else { return nil }
-        return firstPage - 1
+        guard pageSize(forStoredLimit: storedLimit) != nil, displayedPageIndex > 0 else { return nil }
+        return displayedPageIndex - 1
     }
 
     static func visiblePageIndices(

@@ -93,31 +93,28 @@ struct PhoneQueueView: View {
                         .padding(.vertical, WRhythmSpacing.xs)
                 } else {
                     SlidingRenderWindowForEach(
-                        queueItems(songs),
+                        songs,
                         estimatedRowHeight: 62,
                         spacing: WRhythmSpacing.xs,
-                        resetToken: SongRenderWindowPolicy.sidebarQueueResetToken(
-                            songIds: songs.map(\.id),
-                            currentIndex: currentIndex
-                        ),
+                        resetToken: sidebarQueuePageResetToken(songs),
                         anchorIndexHint: currentIndex
-                    ) { _, item in
+                    ) { index, song in
                         Button(action: {
-                            play(item.index)
+                            play(index)
                         }) {
                             PhoneQueueRow(
-                                song: item.song,
-                                index: item.index,
-                                isCurrent: currentIndex == item.index,
+                                song: song,
+                                index: index,
+                                isCurrent: currentIndex == index,
                                 isPlaying: isPlaying
                             )
                         }
                         .buttonStyle(.plain)
                         .wrhythmQueueTrackActions(
-                            song: item.song,
-                            canRemoveFromQueue: canRemove(item.index),
+                            song: song,
+                            canRemoveFromQueue: canRemove(index),
                             removeFromQueue: {
-                                remove(item.index)
+                                remove(index)
                             },
                             clearQueue: clear
                         )
@@ -140,7 +137,7 @@ struct PhoneQueueView: View {
 
     private var displayedCurrentIndex: Int {
         if deviceSyncManager.isLocalPlaybackOutput,
-           displayedQueue.map(\.id) == player.queue.map(\.id),
+           queuesLikelyMatch(displayedQueue, player.queue),
            let currentSong = player.currentSong,
            let index = displayedQueue.firstIndex(where: { $0.id == currentSong.id }) {
             return index
@@ -178,12 +175,12 @@ struct PhoneQueueView: View {
 
     private var remoteQueueMatchesLocal: Bool {
         guard !player.queue.isEmpty, !remoteQueue.isEmpty else { return false }
-        return player.queue.map(\.id) == remoteQueue.map(\.id)
+        return queuesLikelyMatch(player.queue, remoteQueue)
     }
 
     private var remoteQueueMatchesDisplayed: Bool {
         guard !displayedQueue.isEmpty, !remoteQueue.isEmpty else { return false }
-        return displayedQueue.map(\.id) == remoteQueue.map(\.id)
+        return queuesLikelyMatch(displayedQueue, remoteQueue)
     }
 
     private var localQueueSectionTitle: String {
@@ -196,12 +193,6 @@ struct PhoneQueueView: View {
 
     private var queueSummary: String {
         QueuePresentationPolicy.summary(queueCount: displayedQueue.count, currentIndex: displayedCurrentIndex)
-    }
-
-    private func queueItems(_ songs: [Song]) -> [PhoneQueueDisplayItem] {
-        songs.enumerated().map { index, song in
-            PhoneQueueDisplayItem(index: index, song: song)
-        }
     }
 
     private func playDisplayedQueueItem(at index: Int) {
@@ -235,14 +226,17 @@ struct PhoneQueueView: View {
             player.clearQueue()
         }
     }
-}
 
-private struct PhoneQueueDisplayItem: Identifiable {
-    let index: Int
-    let song: Song
+    private func sidebarQueuePageResetToken(_ songs: [Song]) -> String {
+        SongRenderWindowPolicy.sidebarQueuePageResetToken(
+            queueCount: songs.count,
+            firstSongID: songs.first?.id,
+            lastSongID: songs.last?.id
+        )
+    }
 
-    var id: String {
-        "\(song.id)-\(index)"
+    private func queuesLikelyMatch(_ lhs: [Song], _ rhs: [Song]) -> Bool {
+        lhs.count == rhs.count && lhs.first?.id == rhs.first?.id && lhs.last?.id == rhs.last?.id
     }
 }
 

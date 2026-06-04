@@ -348,34 +348,31 @@ struct MacSidebar: View {
                         .foregroundColor(.secondary)
                 } else {
                     SlidingRenderWindowForEach(
-                        queueItems(displayedQueue),
+                        displayedQueue,
                         estimatedRowHeight: 50,
-                        resetToken: SongRenderWindowPolicy.sidebarQueueResetToken(
-                            songIds: displayedQueue.map(\.id),
-                            currentIndex: displayedCurrentIndex
-                        ),
+                        resetToken: sidebarQueuePageResetToken(displayedQueue),
                         anchorIndexHint: displayedCurrentIndex
-                    ) { _, item in
+                    ) { index, song in
                         Button(action: {
                             selection = .nowPlaying
                             if deviceSyncManager.sharedSession != nil {
-                                deviceSyncManager.playSharedQueueItem(at: item.index)
+                                deviceSyncManager.playSharedQueueItem(at: index)
                             } else {
-                                player.playQueue(player.queue, startingAt: item.index)
+                                player.playQueue(player.queue, startingAt: index)
                             }
                         }) {
                             MacQueueRow(
-                                song: item.song,
-                                isCurrent: displayedCurrentIndex == item.index,
+                                song: song,
+                                isCurrent: displayedCurrentIndex == index,
                                 isPlaying: displayedQueueIsPlaying
                             )
                         }
                         .buttonStyle(.plain)
                         .wrhythmQueueTrackActions(
-                            song: item.song,
-                            canRemoveFromQueue: canRemoveDisplayedQueueItem(at: item.index),
+                            song: song,
+                            canRemoveFromQueue: canRemoveDisplayedQueueItem(at: index),
                             removeFromQueue: {
-                                removeDisplayedQueueItem(at: item.index)
+                                removeDisplayedQueueItem(at: index)
                             },
                             clearQueue: {
                                 clearDisplayedQueue()
@@ -398,26 +395,23 @@ struct MacSidebar: View {
                             .foregroundColor(.secondary)
                     } else {
                         SlidingRenderWindowForEach(
-                            queueItems(remoteQueue),
+                            remoteQueue,
                             estimatedRowHeight: 50,
-                            resetToken: SongRenderWindowPolicy.sidebarQueueResetToken(
-                                songIds: remoteQueue.map(\.id),
-                                currentIndex: remote.currentIndex
-                            ),
+                            resetToken: sidebarQueuePageResetToken(remoteQueue),
                             anchorIndexHint: remote.currentIndex
-                        ) { _, item in
+                        ) { index, song in
                             Button(action: {
                                 selection = .nowPlaying
-                                deviceSyncManager.playRemoteQueueItem(remote, at: item.index)
+                                deviceSyncManager.playRemoteQueueItem(remote, at: index)
                             }) {
                                 MacQueueRow(
-                                    song: item.song,
-                                    isCurrent: remote.currentIndex == item.index,
+                                    song: song,
+                                    isCurrent: remote.currentIndex == index,
                                     isPlaying: remote.isPlaying
                                 )
                             }
                             .buttonStyle(.plain)
-                            .wrhythmTrackActions(song: item.song)
+                            .wrhythmTrackActions(song: song)
                         }
                     }
                 }
@@ -441,7 +435,7 @@ struct MacSidebar: View {
 
     private var displayedCurrentIndex: Int {
         if deviceSyncManager.isLocalPlaybackOutput,
-           displayedQueue.map(\.id) == player.queue.map(\.id),
+           queuesLikelyMatch(displayedQueue, player.queue),
            let currentSong = player.currentSong,
            let index = displayedQueue.firstIndex(where: { $0.id == currentSong.id }) {
             return index
@@ -477,12 +471,12 @@ struct MacSidebar: View {
 
     private var remoteQueueMatchesLocal: Bool {
         guard !player.queue.isEmpty, !remoteQueue.isEmpty else { return false }
-        return player.queue.map(\.id) == remoteQueue.map(\.id)
+        return queuesLikelyMatch(player.queue, remoteQueue)
     }
 
     private var remoteQueueMatchesDisplayed: Bool {
         guard !displayedQueue.isEmpty, !remoteQueue.isEmpty else { return false }
-        return displayedQueue.map(\.id) == remoteQueue.map(\.id)
+        return queuesLikelyMatch(displayedQueue, remoteQueue)
     }
 
     private var localQueueSectionTitle: String {
@@ -491,12 +485,6 @@ struct MacSidebar: View {
             remoteQueueMatchesLocal: remoteQueueMatchesLocal,
             localTitle: "Mac Queue"
         )
-    }
-
-    private func queueItems(_ songs: [Song]) -> [QueueDisplayItem] {
-        songs.enumerated().map { index, song in
-            QueueDisplayItem(index: index, song: song)
-        }
     }
 
     private func canRemoveDisplayedQueueItem(at index: Int) -> Bool {
@@ -551,6 +539,18 @@ struct MacSidebar: View {
             player.enqueue(songs)
         }
     }
+
+    private func sidebarQueuePageResetToken(_ songs: [Song]) -> String {
+        SongRenderWindowPolicy.sidebarQueuePageResetToken(
+            queueCount: songs.count,
+            firstSongID: songs.first?.id,
+            lastSongID: songs.last?.id
+        )
+    }
+
+    private func queuesLikelyMatch(_ lhs: [Song], _ rhs: [Song]) -> Bool {
+        lhs.count == rhs.count && lhs.first?.id == rhs.first?.id && lhs.last?.id == rhs.last?.id
+    }
 }
 
 private extension View {
@@ -558,15 +558,6 @@ private extension View {
         self
             .scrollContentBackground(.hidden)
             .background(Color.clear)
-    }
-}
-
-private struct QueueDisplayItem: Identifiable {
-    let index: Int
-    let song: Song
-
-    var id: String {
-        "\(song.id)-\(index)"
     }
 }
 
