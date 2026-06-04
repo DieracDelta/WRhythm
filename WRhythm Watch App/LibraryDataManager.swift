@@ -66,6 +66,17 @@ nonisolated struct SearchPaginationPolicy: Sendable {
     }
 }
 
+nonisolated enum AudioMuseSearchResultLimitPolicy: Sendable {
+    static let defaultLimit = SearchPaginationPolicy.defaultPageSize
+    static let minimumLimit = 5
+    static let maximumLimit = 200
+    static let step = 5
+
+    static func sanitizedLimit(_ limit: Int) -> Int {
+        min(max(limit, minimumLimit), maximumLimit)
+    }
+}
+
 @MainActor
 final class LibraryDataManager: ObservableObject {
     // MARK: - Artists

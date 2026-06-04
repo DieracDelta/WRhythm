@@ -36,6 +36,7 @@ struct TracksView: View {
     @ObservedObject var player = AudioPlayer.shared
     @AppStorage("offlineMode") private var offlineMode = false
     @AppStorage("experimentalAudioMuseFeaturesEnabled") private var experimentalAudioMuseFeaturesEnabled = false
+    @AppStorage("audioMuseSearchResultLimit") private var audioMuseSearchResultLimit = AudioMuseSearchResultLimitPolicy.defaultLimit
 
     private var availableSearchModes: [TracksSearchMode] {
         TracksSearchModePolicy.availableModes(
@@ -199,6 +200,17 @@ struct TracksView: View {
         .onChange(of: searchMode) { _, _ in
             guard !offlineMode else { return }
             clearOnlineSearchResults()
+            if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                performSearch(query: searchText, debounce: false)
+            }
+        }
+        .onChange(of: audioMuseSearchResultLimit) { _, newValue in
+            let sanitized = AudioMuseSearchResultLimitPolicy.sanitizedLimit(newValue)
+            if sanitized != newValue {
+                audioMuseSearchResultLimit = sanitized
+                return
+            }
+            guard !offlineMode, searchMode.audioMuseMode != nil else { return }
             if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 performSearch(query: searchText, debounce: false)
             }
@@ -574,6 +586,72 @@ struct TracksView: View {
     }
 
     @ViewBuilder
+    private var audioMuseSearchControls: some View {
+        if let mode = searchMode.audioMuseMode {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: WRhythmSpacing.sm) {
+                    audioMuseSearchLimitStepper(mode: mode)
+                    audioMuseQueueAllButton
+                }
+
+                VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
+                    audioMuseSearchLimitStepper(mode: mode)
+                    audioMuseQueueAllButton
+                }
+            }
+            .padding(.horizontal, WRhythmSpacing.md)
+            .padding(.vertical, WRhythmSpacing.sm)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: WRhythmVisual.compactCornerRadius, style: .continuous)
+                    .strokeBorder(WRhythmTheme.playlistGen.opacity(0.22), lineWidth: 1)
+            }
+            .frame(maxWidth: 620, alignment: .leading)
+        }
+    }
+
+    private func audioMuseSearchLimitStepper(mode: AudioMuseSearchMode) -> some View {
+        Stepper(
+            value: audioMuseSearchLimitBinding,
+            in: AudioMuseSearchResultLimitPolicy.minimumLimit...AudioMuseSearchResultLimitPolicy.maximumLimit,
+            step: AudioMuseSearchResultLimitPolicy.step
+        ) {
+            Label {
+                Text("\(mode.label): \(sanitizedAudioMuseSearchResultLimit) songs")
+                    .font(WRhythmTypography.metadataEmphasis)
+                    .monospacedDigit()
+            } icon: {
+                Image(systemName: "number")
+            }
+            .foregroundStyle(.primary)
+        }
+    }
+
+    private var audioMuseQueueAllButton: some View {
+        Button(action: queueAllAudioMuseSearchResults) {
+            Label("Queue All", systemImage: "text.badge.plus")
+        }
+        .buttonStyle(.bordered)
+        .tint(WRhythmTheme.playlistGen)
+        .disabled(searchResults.isEmpty || isSearching)
+    }
+
+    private var sanitizedAudioMuseSearchResultLimit: Int {
+        AudioMuseSearchResultLimitPolicy.sanitizedLimit(audioMuseSearchResultLimit)
+    }
+
+    private var audioMuseSearchLimitBinding: Binding<Int> {
+        Binding(
+            get: {
+                sanitizedAudioMuseSearchResultLimit
+            },
+            set: { newValue in
+                audioMuseSearchResultLimit = AudioMuseSearchResultLimitPolicy.sanitizedLimit(newValue)
+            }
+        )
+    }
+
+    @ViewBuilder
     private func searchResultSection<Content: View>(
         title: String,
         kind: SearchResultPageKind,
@@ -897,6 +975,10 @@ struct TracksView: View {
                 .padding(.top, WRhythmSpacing.md)
                 .padding(.bottom, WRhythmSpacing.sm)
 
+            audioMuseSearchControls
+                .padding(.horizontal, WRhythmSpacing.md)
+                .padding(.bottom, searchMode.audioMuseMode == nil ? 0 : WRhythmSpacing.sm)
+
             content()
         }
 #else
@@ -1055,11 +1137,13 @@ struct TracksView: View {
                 let artistPage = self.artistPage
                 let albumPage = self.albumPage
                 let songPage = self.songPage
+                let audioMuseLimit = self.sanitizedAudioMuseSearchResultLimit
                 let result = try await searchWithRetry(
                     query: trimmedQuery,
                     artistPage: artistPage,
                     albumPage: albumPage,
-                    songPage: songPage
+                    songPage: songPage,
+                    audioMuseLimit: audioMuseLimit
                 )
                 guard SearchResultOwnershipPolicy.shouldApply(
                     query: trimmedQuery,
@@ -1089,24 +1173,29 @@ struct TracksView: View {
         }
     }
 
-    private func searchWithRetry(query: String, artistPage: Int, albumPage: Int, songPage: Int) async throws -> SearchResult {
+    private func queueAllAudioMuseSearchResults() {
+        guard searchMode.audioMuseMode != nil, !searchResults.isEmpty else { return }
+        TrackActions.addToQueue(searchResults)
+    }
+
+    private func searchWithRetry(query: String, artistPage: Int, albumPage: Int, songPage: Int, audioMuseLimit: Int) async throws -> SearchResult {
         do {
-            return try await pagedSearch(query: query, artistPage: artistPage, albumPage: albumPage, songPage: songPage)
+            return try await pagedSearch(query: query, artistPage: artistPage, albumPage: albumPage, songPage: songPage, audioMuseLimit: audioMuseLimit)
         } catch {
             guard SearchRetryPolicy.isRetryable(error), !Task.isCancelled else {
                 throw error
             }
             try await Task.sleep(nanoseconds: 700_000_000)
-            return try await pagedSearch(query: query, artistPage: artistPage, albumPage: albumPage, songPage: songPage)
+            return try await pagedSearch(query: query, artistPage: artistPage, albumPage: albumPage, songPage: songPage, audioMuseLimit: audioMuseLimit)
         }
     }
 
-    private func pagedSearch(query: String, artistPage: Int, albumPage: Int, songPage: Int) async throws -> SearchResult {
+    private func pagedSearch(query: String, artistPage: Int, albumPage: Int, songPage: Int, audioMuseLimit: Int) async throws -> SearchResult {
         if let audioMuseMode = searchMode.audioMuseMode {
             let songs = try await NavidromeAPI.shared.getAudioMuseSearchSongs(
                 mode: audioMuseMode,
                 query: query,
-                limit: searchPageSize
+                limit: audioMuseLimit
             )
             return SearchResult(artist: [], album: [], song: songs)
         }

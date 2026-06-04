@@ -1439,6 +1439,13 @@ struct PlaybackSyncPolicyTests {
         #expect(SearchPaginationPolicy.visiblePages(currentPage: 5, canGoNext: false) == [3, 4, 5])
     }
 
+    @Test func audioMuseSearchResultLimitPolicyKeepsUserConfiguredLimitsBounded() {
+        #expect(AudioMuseSearchResultLimitPolicy.defaultLimit == SearchPaginationPolicy.defaultPageSize)
+        #expect(AudioMuseSearchResultLimitPolicy.sanitizedLimit(1) == AudioMuseSearchResultLimitPolicy.minimumLimit)
+        #expect(AudioMuseSearchResultLimitPolicy.sanitizedLimit(65) == 65)
+        #expect(AudioMuseSearchResultLimitPolicy.sanitizedLimit(500) == AudioMuseSearchResultLimitPolicy.maximumLimit)
+    }
+
     @Test func spacebarPlaybackShortcutConsumesPlainPlaybackEventsWithoutLeakingToAppKit() {
         #expect(SpacebarPlaybackShortcutPolicy.decision(
             isSpacebar: true,
