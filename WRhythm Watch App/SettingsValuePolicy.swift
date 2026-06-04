@@ -29,6 +29,7 @@ struct ConcurrentDownloadSettingsPolicy: Sendable {
 
 struct SongRenderWindowPolicy: Sendable {
     enum RenderMode: Sendable {
+        case paged
         case slidingWindow
         case fullRangeLoaded
     }
@@ -43,7 +44,7 @@ struct SongRenderWindowPolicy: Sendable {
     static let userDefaultsKey = "songRenderWindowLimit"
     static let unlimitedSentinel = 0
     static let minimumLimit = 20
-    static let defaultLimit = 250
+    static let defaultLimit = 50
     static let hiddenSpacerSentinelRows = 1
     static let defaultPageSize = 25
     static let defaultRetainedPageRadius = 1
@@ -74,6 +75,15 @@ struct SongRenderWindowPolicy: Sendable {
         return lowerBound..<(lowerBound + limit)
     }
 
+    static func pageSize(forStoredLimit storedLimit: Int) -> Int? {
+        effectiveLimit(storedLimit)
+    }
+
+    static func initialPageIndex(totalCount: Int, anchorIndex: Int, storedLimit: Int) -> Int {
+        guard totalCount > 0, let pageSize = pageSize(forStoredLimit: storedLimit) else { return 0 }
+        return pageIndex(forRow: clampedAnchorIndexHint(anchorIndex, totalCount: totalCount), pageSize: pageSize)
+    }
+
     static func renderRange(
         totalCount: Int,
         anchorIndex: Int,
@@ -81,6 +91,8 @@ struct SongRenderWindowPolicy: Sendable {
         renderMode: RenderMode = .slidingWindow
     ) -> Range<Int> {
         switch renderMode {
+        case .paged:
+            return visibleRange(totalCount: totalCount, anchorIndex: anchorIndex, storedLimit: storedLimit)
         case .slidingWindow:
             return visibleRange(totalCount: totalCount, anchorIndex: anchorIndex, storedLimit: storedLimit)
         case .fullRangeLoaded:
@@ -179,6 +191,54 @@ struct SongRenderWindowPolicy: Sendable {
         return lowerBound..<upperBound
     }
 
+    static func pagedRenderSlots(
+        totalCount: Int,
+        storedLimit: Int,
+        loadedPageIndices: Set<Int>,
+        pendingPageIndices: Set<Int> = []
+    ) -> [RenderSlot] {
+        guard totalCount > 0 else { return [] }
+        guard let pageSize = pageSize(forStoredLimit: storedLimit) else {
+            return (0..<totalCount).map { RenderSlot(index: $0, isLoaded: true) }
+        }
+
+        let displayedPages = loadedPageIndices.union(pendingPageIndices).filter { $0 >= 0 }
+        guard let firstPage = displayedPages.min(), let lastPage = displayedPages.max() else { return [] }
+
+        let lowerBound = pageRange(pageIndex: firstPage, totalCount: totalCount, pageSize: pageSize).lowerBound
+        let upperBound = pageRange(pageIndex: lastPage, totalCount: totalCount, pageSize: pageSize).upperBound
+        let range = lowerBound..<upperBound
+
+        return range.map { index in
+            let page = pageIndex(forRow: index, pageSize: pageSize)
+            return RenderSlot(index: index, isLoaded: loadedPageIndices.contains(page))
+        }
+    }
+
+    static func nextPageIndexToLoad(
+        totalCount: Int,
+        storedLimit: Int,
+        loadedPageIndices: Set<Int>,
+        pendingPageIndices: Set<Int> = []
+    ) -> Int? {
+        guard totalCount > 0, let pageSize = pageSize(forStoredLimit: storedLimit) else { return nil }
+        let activePages = loadedPageIndices.union(pendingPageIndices)
+        guard let lastPage = activePages.max() else { return 0 }
+        let nextPage = lastPage + 1
+        return pageRange(pageIndex: nextPage, totalCount: totalCount, pageSize: pageSize).isEmpty ? nil : nextPage
+    }
+
+    static func previousPageIndexToLoad(
+        storedLimit: Int,
+        loadedPageIndices: Set<Int>,
+        pendingPageIndices: Set<Int> = []
+    ) -> Int? {
+        guard pageSize(forStoredLimit: storedLimit) != nil else { return nil }
+        let activePages = loadedPageIndices.union(pendingPageIndices)
+        guard let firstPage = activePages.min(), firstPage > 0 else { return nil }
+        return firstPage - 1
+    }
+
     static func visiblePageIndices(
         totalCount: Int,
         anchorIndex: Int,
@@ -274,6 +334,8 @@ struct SongRenderWindowPolicy: Sendable {
 
         return range.map { index in
             switch renderMode {
+            case .paged:
+                RenderSlot(index: index, isLoaded: loadedPageIndices.contains(pageIndex(forRow: index, pageSize: pageSize)))
             case .slidingWindow:
                 RenderSlot(index: index, isLoaded: loadedPageIndices.contains(pageIndex(forRow: index, pageSize: pageSize)))
             case .fullRangeLoaded:

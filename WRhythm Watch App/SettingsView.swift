@@ -318,9 +318,9 @@ struct SettingsView: View {
         )
 
         SettingsNumberRow(
-            title: "Menu Song Window",
+            title: "Results Per Page",
             valueText: $songRenderWindowLimitText,
-            detailText: "Maximum rendered songs per menu. Use 0 for unlimited.",
+            detailText: "Rows loaded when a list reaches the next page. Use 0 for unlimited.",
             displayValue: SongRenderWindowPolicy.displayText(for: songRenderWindowLimit),
             commit: commitSongRenderWindowLimit
         )

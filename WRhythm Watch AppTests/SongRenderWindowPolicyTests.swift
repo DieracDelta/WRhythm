@@ -106,6 +106,60 @@ struct SongRenderWindowPolicyTests {
         #expect(slots.last?.index == 9_924)
     }
 
+    @Test func pagedListsStartAtConfiguredPageSize() {
+        let initialPage = SongRenderWindowPolicy.initialPageIndex(totalCount: 1_000, anchorIndex: 0, storedLimit: 50)
+        let slots = SongRenderWindowPolicy.pagedRenderSlots(
+            totalCount: 1_000,
+            storedLimit: 50,
+            loadedPageIndices: [initialPage]
+        )
+
+        #expect(initialPage == 0)
+        #expect(slots.count == 50)
+        #expect(slots.map(\.index) == Array(0..<50))
+        #expect(slots.allSatisfy(\.isLoaded))
+        #expect(SongRenderWindowPolicy.nextPageIndexToLoad(totalCount: 1_000, storedLimit: 50, loadedPageIndices: [0]) == 1)
+    }
+
+    @Test func pagedListsAppendNextPageWhenBottomIsReached() {
+        let slots = SongRenderWindowPolicy.pagedRenderSlots(
+            totalCount: 1_000,
+            storedLimit: 50,
+            loadedPageIndices: [0, 1]
+        )
+
+        #expect(slots.count == 100)
+        #expect(slots.map(\.index) == Array(0..<100))
+        #expect(SongRenderWindowPolicy.nextPageIndexToLoad(totalCount: 1_000, storedLimit: 50, loadedPageIndices: [0, 1]) == 2)
+    }
+
+    @Test func pagedSharedQueuesCanStartAtCurrentTrackPage() {
+        let initialPage = SongRenderWindowPolicy.initialPageIndex(totalCount: 240, anchorIndex: 118, storedLimit: 50)
+        let slots = SongRenderWindowPolicy.pagedRenderSlots(
+            totalCount: 240,
+            storedLimit: 50,
+            loadedPageIndices: [initialPage]
+        )
+
+        #expect(initialPage == 2)
+        #expect(slots.map(\.index) == Array(100..<150))
+        #expect(SongRenderWindowPolicy.previousPageIndexToLoad(storedLimit: 50, loadedPageIndices: [2]) == 1)
+        #expect(SongRenderWindowPolicy.nextPageIndexToLoad(totalCount: 240, storedLimit: 50, loadedPageIndices: [2]) == 3)
+    }
+
+    @Test func pendingPageShowsLoadingSlotsBeforeRowsAreLoaded() {
+        let slots = SongRenderWindowPolicy.pagedRenderSlots(
+            totalCount: 120,
+            storedLimit: 50,
+            loadedPageIndices: [0],
+            pendingPageIndices: [1]
+        )
+
+        #expect(slots.count == 100)
+        #expect(slots.filter(\.isLoaded).map(\.index) == Array(0..<50))
+        #expect(slots.filter { !$0.isLoaded }.map(\.index) == Array(50..<100))
+    }
+
     @Test func fullRangeLoadedModeKeepsFiniteQueuesActionableWithoutEarlierPlaceholderRows() {
         let range = SongRenderWindowPolicy.renderRange(
             totalCount: 120,

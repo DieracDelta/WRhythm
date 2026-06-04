@@ -354,8 +354,7 @@ struct MacSidebar: View {
                             songIds: displayedQueue.map(\.id),
                             currentIndex: displayedCurrentIndex
                         ),
-                        anchorIndexHint: displayedCurrentIndex,
-                        renderMode: .fullRangeLoaded
+                        anchorIndexHint: displayedCurrentIndex
                     ) { _, item in
                         Button(action: {
                             selection = .nowPlaying
@@ -405,8 +404,7 @@ struct MacSidebar: View {
                                 songIds: remoteQueue.map(\.id),
                                 currentIndex: remote.currentIndex
                             ),
-                            anchorIndexHint: remote.currentIndex,
-                            renderMode: .fullRangeLoaded
+                            anchorIndexHint: remote.currentIndex
                         ) { _, item in
                             Button(action: {
                                 selection = .nowPlaying

@@ -100,8 +100,7 @@ struct PhoneQueueView: View {
                             songIds: songs.map(\.id),
                             currentIndex: currentIndex
                         ),
-                        anchorIndexHint: currentIndex,
-                        renderMode: .fullRangeLoaded
+                        anchorIndexHint: currentIndex
                     ) { _, item in
                         Button(action: {
                             play(item.index)
