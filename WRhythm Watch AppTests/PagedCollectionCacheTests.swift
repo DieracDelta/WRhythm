@@ -51,6 +51,29 @@ struct PagedCollectionCacheTests {
         #expect(cache.elements == Array(0..<10))
     }
 
+    @Test func albumMetadataCacheIsNotCappedByRenderedRowLimit() {
+        // Given
+        var cache = PagedCollectionCache<Int>(
+            pageSize: 20,
+            maxLoadedPages: AlbumMetadataPagingPolicy.maxLoadedPages(forRenderedLimit: 50)
+        )
+
+        // When
+        for page in 0..<8 {
+            let lowerBound = page * 20
+            cache.storePage(
+                index: page,
+                elements: Array(lowerBound..<(lowerBound + 20)),
+                hasMoreAfterPage: true
+            )
+        }
+
+        // Then
+        #expect(cache.loadedPageIndices == Array(0..<8))
+        #expect(cache.elements.count == 160)
+        #expect(cache.nextPageIndex == 8)
+    }
+
     @Test func endOfPaginationIsTracked() {
         // Given
         var cache = PagedCollectionCache<Int>(pageSize: 2, maxLoadedPages: 3)

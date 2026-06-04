@@ -77,6 +77,12 @@ nonisolated enum AudioMuseSearchResultLimitPolicy: Sendable {
     }
 }
 
+nonisolated enum AlbumMetadataPagingPolicy: Sendable {
+    static func maxLoadedPages(forRenderedLimit _: Int?) -> Int? {
+        nil
+    }
+}
+
 @MainActor
 final class LibraryDataManager: ObservableObject {
     // MARK: - Artists
@@ -332,12 +338,9 @@ final class LibraryDataManager: ObservableObject {
     private static func albumMaxLoadedPages() -> Int? {
         let storedValue = UserDefaults.standard.object(forKey: SongRenderWindowPolicy.userDefaultsKey) as? Int
             ?? SongRenderWindowPolicy.defaultLimit
-        guard let limit = SongRenderWindowPolicy.effectiveLimit(storedValue) else {
-            return nil
-        }
-
-        let visiblePages = Int(ceil(Double(limit) / Double(albumPageSize)))
-        return max(3, visiblePages + 2)
+        return AlbumMetadataPagingPolicy.maxLoadedPages(
+            forRenderedLimit: SongRenderWindowPolicy.effectiveLimit(storedValue)
+        )
     }
 
     private func resetAlbumPageCache() {
