@@ -351,11 +351,27 @@ struct RadioPlaylistsView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
             }
-            Button(action: player.dismissPlaylistGenError) {
-                Image(systemName: "xmark")
+            HStack(spacing: WRhythmSpacing.sm) {
+#if os(macOS) || os(iOS)
+                Button("Copy Error") {
+                    WRhythmClipboard.copy(
+                        WRhythmErrorCopyPolicy.copyText(
+                            title: message,
+                            message: details
+                        )
+                    )
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(WRhythmTheme.accent)
+                .accessibilityLabel("Copy Playlist Gen error")
+#endif
+
+                Button(action: player.dismissPlaylistGenError) {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Dismiss Playlist Gen error")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Dismiss Playlist Gen error")
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 10)
@@ -1079,8 +1095,12 @@ private struct SonicTrackSearchPicker: View {
     @Binding var query: String
     @Binding var selectedSong: Song?
     @State private var results: [Song] = []
+    @State private var resultPage = 0
+    @State private var canGoNext = false
     @State private var isSearching = false
     @State private var errorMessage: String?
+
+    private let pageSize = SonicTrackSearchPagingPolicy.defaultPageSize
 
     var body: some View {
         VStack(alignment: .leading, spacing: WRhythmSpacing.sm) {
@@ -1113,21 +1133,93 @@ private struct SonicTrackSearchPicker: View {
                 Text(errorMessage)
                     .font(WRhythmTypography.rowSubtitle)
                     .foregroundStyle(WRhythmTheme.danger)
-            } else if !results.isEmpty {
-                VStack(spacing: WRhythmSpacing.xs) {
-                    ForEach(results.prefix(5)) { song in
-                        SonicTrackSelectionRow(song: song, isSelected: false) {
-                            selectedSong = song
-                            query = song.title
-                            results = []
+            } else if hasSearchContent {
+                VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
+                    searchSectionHeader
+
+                    if results.isEmpty {
+                        Text("No tracks on this page")
+                            .font(WRhythmTypography.rowSubtitle)
+                            .foregroundStyle(.secondary)
+                            .padding(.vertical, WRhythmSpacing.xs)
+                    } else {
+                        ForEach(results) { song in
+                            SonicTrackSelectionRow(song: song, isSelected: false) {
+                                selectedSong = song
+                                query = song.title
+                                clearResults()
+                            }
                         }
                     }
                 }
+            } else if query.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2 {
+                Text("No track matches")
+                    .font(WRhythmTypography.rowSubtitle)
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, WRhythmSpacing.xs)
             }
         }
         .task(id: query) {
-            await search()
+            resultPage = 0
+            clearResults()
+            await search(debounce: true)
         }
+    }
+
+    private var hasSearchContent: Bool {
+        !results.isEmpty || resultPage > 0 || canGoNext
+    }
+
+    @ViewBuilder
+    private var searchSectionHeader: some View {
+        let canPrevious = SonicTrackSearchPagingPolicy.canGoPrevious(page: resultPage)
+
+        HStack(spacing: WRhythmSpacing.xs) {
+            Text("Tracks")
+                .font(WRhythmTypography.sectionLabel)
+                .foregroundStyle(.secondary)
+
+            Spacer(minLength: WRhythmSpacing.sm)
+
+            if canPrevious || canGoNext {
+                Button {
+                    goToPage(resultPage - 1)
+                } label: {
+                    Image(systemName: "chevron.left")
+                }
+                .buttonStyle(.borderless)
+                .disabled(!canPrevious || isSearching)
+                .accessibilityLabel("Previous tracks page")
+
+                Text("Page \(resultPage + 1)")
+                    .font(WRhythmTypography.metadataEmphasis)
+                    .foregroundStyle(WRhythmTheme.playlistGen)
+                    .monospacedDigit()
+                    .accessibilityHidden(true)
+
+                Button {
+                    goToPage(resultPage + 1)
+                } label: {
+                    Image(systemName: "chevron.right")
+                }
+                .buttonStyle(.borderless)
+                .disabled(!canGoNext || isSearching)
+                .accessibilityLabel("Next tracks page")
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func goToPage(_ page: Int) {
+        resultPage = max(0, page)
+        Task {
+            await search(debounce: false)
+        }
+    }
+
+    private func clearResults() {
+        results = []
+        canGoNext = false
     }
 
     @ViewBuilder
@@ -1140,27 +1232,38 @@ private struct SonicTrackSearchPicker: View {
 #endif
     }
 
-    private func search() async {
+    private func search(debounce: Bool) async {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard selectedSong == nil, trimmedQuery.count >= 2 else {
-            results = []
+            clearResults()
             errorMessage = nil
             isSearching = false
             return
         }
 
         do {
-            try await Task.sleep(for: .milliseconds(250))
+            if debounce {
+                try await Task.sleep(for: .milliseconds(250))
+            }
             guard !Task.isCancelled else { return }
             isSearching = true
             errorMessage = nil
-            let searchResult = try await NavidromeAPI.shared.search(query: trimmedQuery)
-            guard !Task.isCancelled else { return }
-            results = searchResult.song ?? []
+            let capturedPage = resultPage
+            let searchResult = try await NavidromeAPI.shared.search(
+                query: trimmedQuery,
+                songCount: SonicTrackSearchPagingPolicy.requestCount(pageSize: pageSize),
+                songOffset: SonicTrackSearchPagingPolicy.offset(forPage: capturedPage, pageSize: pageSize)
+            )
+            guard !Task.isCancelled,
+                  capturedPage == resultPage,
+                  trimmedQuery == query.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
+            let fetchedSongs = searchResult.song ?? []
+            results = SonicTrackSearchPagingPolicy.visibleItems(fetchedSongs, pageSize: pageSize)
+            canGoNext = SonicTrackSearchPagingPolicy.canGoNextFromLookahead(resultCount: fetchedSongs.count, pageSize: pageSize)
         } catch is CancellationError {
             return
         } catch {
-            results = []
+            clearResults()
             errorMessage = "Search failed"
         }
 

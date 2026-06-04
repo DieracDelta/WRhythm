@@ -1526,6 +1526,20 @@ struct PlaybackSyncPolicyTests {
         ])
     }
 
+    @Test func sonicTrackSearchPagingUsesSubsonicSongOffsets() {
+        let tracks = Array(0..<21)
+
+        #expect(SonicTrackSearchPagingPolicy.requestCount(pageSize: 20) == 21)
+        #expect(SonicTrackSearchPagingPolicy.offset(forPage: 0, pageSize: 20) == 0)
+        #expect(SonicTrackSearchPagingPolicy.offset(forPage: 2, pageSize: 20) == 40)
+        #expect(SonicTrackSearchPagingPolicy.canGoPrevious(page: 0) == false)
+        #expect(SonicTrackSearchPagingPolicy.canGoPrevious(page: 1))
+        #expect(SonicTrackSearchPagingPolicy.canGoNextFromLookahead(resultCount: 21, pageSize: 20))
+        #expect(SonicTrackSearchPagingPolicy.canGoNextFromLookahead(resultCount: 20, pageSize: 20) == false)
+        #expect(SonicTrackSearchPagingPolicy.visibleItems(tracks, pageSize: 20).count == 20)
+        #expect(SonicTrackSearchPagingPolicy.visiblePages(currentPage: 3, canGoNext: true) == [1, 2, 3])
+    }
+
     @Test func remotePauseRoundTripCanApplyAndAcknowledgeAcrossDevices() {
         let now = Date()
         let macPausedSession = makeSession(outputDeviceID: "mac", isPlaying: false, position: 120.2, updatedAt: now)

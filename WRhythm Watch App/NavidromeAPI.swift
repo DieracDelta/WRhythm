@@ -2171,6 +2171,34 @@ nonisolated enum AudioMuseAlchemySeedSearchPagingPolicy: Sendable {
     }
 }
 
+nonisolated enum SonicTrackSearchPagingPolicy: Sendable {
+    static let defaultPageSize = SearchPaginationPolicy.defaultPageSize
+
+    static func requestCount(pageSize: Int = defaultPageSize) -> Int {
+        SearchPaginationPolicy.sanitizedPageSize(pageSize) + 1
+    }
+
+    static func offset(forPage page: Int, pageSize: Int = defaultPageSize) -> Int {
+        SearchPaginationPolicy.offset(forPage: page, pageSize: pageSize)
+    }
+
+    static func canGoPrevious(page: Int) -> Bool {
+        SearchPaginationPolicy.canGoPrevious(page: page)
+    }
+
+    static func canGoNextFromLookahead(resultCount: Int, pageSize: Int = defaultPageSize) -> Bool {
+        resultCount > SearchPaginationPolicy.sanitizedPageSize(pageSize)
+    }
+
+    static func visiblePages(currentPage: Int, canGoNext: Bool, radius: Int = 2) -> [Int] {
+        SearchPaginationPolicy.visiblePages(currentPage: currentPage, canGoNext: canGoNext, radius: radius)
+    }
+
+    static func visibleItems<Element>(_ items: [Element], pageSize: Int = defaultPageSize) -> [Element] {
+        Array(items.prefix(SearchPaginationPolicy.sanitizedPageSize(pageSize)))
+    }
+}
+
 struct AudioMuseLoginRequest: Encodable {
     let username: String
     let password: String
