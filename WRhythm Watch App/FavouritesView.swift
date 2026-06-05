@@ -321,7 +321,7 @@ struct FavouritesView: View {
                                 }
 
                                 SlidingRenderWindowForEach(artistsToShow, estimatedRowHeight: 64, resetToken: artistResetToken) { _, artist in
-                                    NavigationLink(destination: ArtistDetailView(artistId: artist.id, artistName: artist.name)) {
+                                    NavigationLink(destination: ArtistDetailView(artistId: artist.id, artistName: artist.name).id(artist.id)) {
                                         WRhythmCollectionRow(
                                             title: artist.name,
                                             subtitle: artist.albumCount.map { "\($0) albums" },

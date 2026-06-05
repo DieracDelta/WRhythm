@@ -257,7 +257,7 @@ struct TrackContextMenuItems: View {
         }
 
         if let artistId = song.artistId, let artist = song.artist {
-            NavigationLink(destination: ArtistDetailView(artistId: artistId, artistName: artist)) {
+            NavigationLink(destination: ArtistDetailView(artistId: artistId, artistName: artist).id(artistId)) {
                 Label("Go to Artist", systemImage: "person.fill")
             }
         }
@@ -315,7 +315,7 @@ struct ArtistContextMenuItems: View {
             Label("Add to Queue", systemImage: "text.badge.plus")
         }
 
-        NavigationLink(destination: ArtistDetailView(artistId: artistId, artistName: artistName)) {
+        NavigationLink(destination: ArtistDetailView(artistId: artistId, artistName: artistName).id(artistId)) {
             Label("Go to Artist", systemImage: "person.fill")
         }
     }
@@ -550,7 +550,7 @@ private struct WRhythmAlbumDetailTrackActionsModifier: ViewModifier {
                 }
 
                 if let artistId = song.artistId, let artist = song.artist {
-                    NavigationLink(destination: ArtistDetailView(artistId: artistId, artistName: artist)) {
+                    NavigationLink(destination: ArtistDetailView(artistId: artistId, artistName: artist).id(artistId)) {
                         Label("Go to Artist", systemImage: "person.fill")
                     }
                 }

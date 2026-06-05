@@ -7,6 +7,17 @@
 
 import SwiftUI
 
+nonisolated struct ArtistDetailStatePolicy: Sendable {
+    static func shouldResetDisplayedArtist(currentArtistID: String?, requestedArtistID: String) -> Bool {
+        guard let currentArtistID else { return false }
+        return currentArtistID != requestedArtistID
+    }
+
+    static func shouldApplyFetchedArtist(fetchedArtistID: String, requestedArtistID: String) -> Bool {
+        fetchedArtistID == requestedArtistID
+    }
+}
+
 struct ArtistDetailView: View {
     let artistId: String
     let artistName: String
@@ -33,9 +44,9 @@ struct ArtistDetailView: View {
     var body: some View {
         content
         .navigationTitle(artistName)
-        .onAppear {
+        .task(id: "\(artistId)-\(offlineMode)") {
             if !offlineMode {
-                loadArtist()
+                await loadArtist(for: artistId)
             }
         }
         .task(id: "\(artistId)-\(experimentalAudioMuseFeaturesEnabled)-\(offlineMode)") {
@@ -70,6 +81,30 @@ struct ArtistDetailView: View {
     @ViewBuilder
     private var offlineArtistContent: some View {
         let albums = downloadedAlbumSummaries(for: artistName)
+#if os(iOS)
+        phoneArtistContent(
+            title: artistName,
+            subtitle: "\(albums.count) downloaded album\(albums.count == 1 ? "" : "s")",
+            detail: "Offline artist",
+            coverArtId: albums.first?.coverArt,
+            albumsAreEmpty: albums.isEmpty,
+            playAction: { playAllDownloadedSongs(for: artistName) },
+            shuffleAction: { shuffleAllDownloadedSongs(for: artistName) },
+            trailingAction: {
+                EmptyView()
+            }
+        ) {
+            if albums.isEmpty {
+                WRhythmEmptyState(
+                    systemImage: "arrow.down.circle",
+                    title: "No downloaded albums",
+                    message: "Download music while online to access this artist offline"
+                )
+            } else {
+                albumSection(albums: albums, mode: "offline")
+            }
+        }
+#else
         WRhythmScreen(coverArtId: albums.first?.coverArt) {
             WRhythmHeroHeader(
                 title: artistName,
@@ -109,11 +144,43 @@ struct ArtistDetailView: View {
                 albumSection(albums: albums, mode: "offline")
             }
         }
+#endif
     }
 
+    @ViewBuilder
     private func onlineArtistContent(_ artist: ArtistWithAlbums) -> some View {
         let albums = filteredAlbums(artist.album)
-        return WRhythmScreen(coverArtId: albums.first?.coverArt) {
+#if os(iOS)
+        phoneArtistContent(
+            title: artistName,
+            subtitle: "\(albums.count) album\(albums.count == 1 ? "" : "s")",
+            detail: "Artist",
+            coverArtId: artist.coverArt ?? albums.first?.coverArt,
+            albumsAreEmpty: albums.isEmpty,
+            playAction: { playAllSongs(artist) },
+            shuffleAction: { shuffleAllSongs(artist) },
+            trailingAction: {
+                if isArtistDownloaded(artist) {
+                    Button(action: {
+                        deleteArtist(artist)
+                    }) {
+                        Label("Delete", systemImage: "trash")
+                    }
+                    .tint(WRhythmTheme.danger)
+                } else {
+                    Button(action: {
+                        downloadArtist(artist)
+                    }) {
+                        Label("Download", systemImage: "arrow.down.circle")
+                    }
+                }
+            }
+        ) {
+            similarArtistsSection()
+            albumSection(albums: albums, mode: "online")
+        }
+#else
+        WRhythmScreen(coverArtId: albums.first?.coverArt) {
             WRhythmHeroHeader(
                 title: artistName,
                 subtitle: "\(albums.count) album\(albums.count == 1 ? "" : "s")",
@@ -161,7 +228,131 @@ struct ArtistDetailView: View {
 
             albumSection(albums: albums, mode: "online")
         }
+#endif
     }
+
+#if os(iOS)
+    private func phoneArtistContent<BodyContent: View, TrailingAction: View>(
+        title: String,
+        subtitle: String,
+        detail: String,
+        coverArtId: String?,
+        albumsAreEmpty: Bool,
+        playAction: @escaping () -> Void,
+        shuffleAction: @escaping () -> Void,
+        @ViewBuilder trailingAction: () -> TrailingAction,
+        @ViewBuilder bodyContent: () -> BodyContent
+    ) -> some View {
+        WRhythmScreen(coverArtId: coverArtId, contentMaxWidth: 760) {
+            WRhythmCard(style: .glass) {
+                VStack(alignment: .leading, spacing: WRhythmSpacing.md) {
+                    HStack(alignment: .center, spacing: WRhythmSpacing.md) {
+                        WRhythmArtworkThumbnail(
+                            coverArtId: coverArtId,
+                            fallbackSystemImage: "person.fill",
+                            tint: WRhythmTheme.artist,
+                            size: 58
+                        )
+
+                        VStack(alignment: .leading, spacing: WRhythmSpacing.xxs) {
+                            Text(title)
+                                .font(WRhythmTypography.featureTitle)
+                                .lineLimit(2)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            Text(subtitle)
+                                .font(WRhythmTypography.rowSubtitle)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+
+                            Text(detail)
+                                .font(WRhythmTypography.metadata)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+
+                        Spacer(minLength: 0)
+                    }
+
+                    ViewThatFits(in: .horizontal) {
+                        artistActionRow(
+                            albumsAreEmpty: albumsAreEmpty,
+                            playAction: playAction,
+                            shuffleAction: shuffleAction,
+                            trailingAction: trailingAction
+                        )
+
+                        artistActionColumn(
+                            albumsAreEmpty: albumsAreEmpty,
+                            playAction: playAction,
+                            shuffleAction: shuffleAction,
+                            trailingAction: trailingAction
+                        )
+                    }
+                }
+            }
+
+            bodyContent()
+        }
+    }
+
+    private func artistActionRow<TrailingAction: View>(
+        albumsAreEmpty: Bool,
+        playAction: @escaping () -> Void,
+        shuffleAction: @escaping () -> Void,
+        @ViewBuilder trailingAction: () -> TrailingAction
+    ) -> some View {
+        HStack(spacing: WRhythmSpacing.xs) {
+            artistActionButtons(
+                albumsAreEmpty: albumsAreEmpty,
+                playAction: playAction,
+                shuffleAction: shuffleAction,
+                trailingAction: trailingAction
+            )
+        }
+        .buttonStyle(.bordered)
+    }
+
+    private func artistActionColumn<TrailingAction: View>(
+        albumsAreEmpty: Bool,
+        playAction: @escaping () -> Void,
+        shuffleAction: @escaping () -> Void,
+        @ViewBuilder trailingAction: () -> TrailingAction
+    ) -> some View {
+        VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
+            artistActionButtons(
+                albumsAreEmpty: albumsAreEmpty,
+                playAction: playAction,
+                shuffleAction: shuffleAction,
+                trailingAction: trailingAction
+            )
+        }
+        .buttonStyle(.bordered)
+    }
+
+    @ViewBuilder
+    private func artistActionButtons<TrailingAction: View>(
+        albumsAreEmpty: Bool,
+        playAction: @escaping () -> Void,
+        shuffleAction: @escaping () -> Void,
+        @ViewBuilder trailingAction: () -> TrailingAction
+    ) -> some View {
+        Button(action: playAction) {
+            Label("Play All", systemImage: "play.fill")
+        }
+        .buttonStyle(.borderedProminent)
+        .disabled(albumsAreEmpty)
+
+        Button(action: shuffleAction) {
+            Label("Shuffle", systemImage: "shuffle")
+        }
+        .disabled(albumsAreEmpty)
+
+        artistRadioLink(label: "Generate")
+
+        trailingAction()
+    }
+#endif
 
     @ViewBuilder
     private func similarArtistsSection() -> some View {
@@ -183,7 +374,7 @@ struct ArtistDetailView: View {
                         .padding(.vertical, WRhythmSpacing.sm)
                     } else {
                         ForEach(similarArtists.prefix(8)) { artist in
-                            NavigationLink(destination: ArtistDetailView(artistId: artist.id, artistName: artist.name)) {
+                            NavigationLink(destination: ArtistDetailView(artistId: artist.id, artistName: artist.name).id(artist.id)) {
                                 WRhythmCollectionRow(
                                     title: artist.name,
                                     subtitle: artist.albumCount.map { "\($0) albums" },
@@ -239,7 +430,7 @@ struct ArtistDetailView: View {
         }
     }
 
-    private func artistRadioLink() -> some View {
+    private func artistRadioLink(label: String? = nil) -> some View {
         NavigationLink(destination: RadioOptionsView(
             sourceSong: Song(
                 id: artistId,
@@ -262,7 +453,11 @@ struct ArtistDetailView: View {
             sourceTitle: artistName,
             sourceType: .artist
         )) {
-            Image(systemName: "music.note.list")
+            if let label {
+                Label(label, systemImage: "music.note.list")
+            } else {
+                Image(systemName: "music.note.list")
+            }
         }
     }
 
@@ -285,21 +480,38 @@ struct ArtistDetailView: View {
     }
 
     private func loadArtist() {
+        let requestedArtistId = artistId
+        Task {
+            await loadArtist(for: requestedArtistId)
+        }
+    }
+
+    private func loadArtist(for requestedArtistId: String) async {
         isLoading = true
         errorMessage = ""
+        if ArtistDetailStatePolicy.shouldResetDisplayedArtist(
+            currentArtistID: artist?.id,
+            requestedArtistID: requestedArtistId
+        ) {
+            artist = nil
+        }
 
-        Task {
-            do {
-                let fetchedArtist = try await NavidromeAPI.shared.getArtist(id: artistId)
-                await MainActor.run {
-                    self.artist = fetchedArtist
-                    self.isLoading = false
+        do {
+            let fetchedArtist = try await NavidromeAPI.shared.getArtist(id: requestedArtistId)
+            await MainActor.run {
+                guard ArtistDetailStatePolicy.shouldApplyFetchedArtist(
+                    fetchedArtistID: fetchedArtist.id,
+                    requestedArtistID: requestedArtistId
+                ) else {
+                    return
                 }
-            } catch {
-                await MainActor.run {
-                    self.errorMessage = error.localizedDescription
-                    self.isLoading = false
-                }
+                self.artist = fetchedArtist
+                self.isLoading = false
+            }
+        } catch {
+            await MainActor.run {
+                self.errorMessage = error.localizedDescription
+                self.isLoading = false
             }
         }
     }

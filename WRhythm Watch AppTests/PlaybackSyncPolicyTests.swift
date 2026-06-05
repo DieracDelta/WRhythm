@@ -3669,6 +3669,54 @@ struct PlaybackSyncPolicyTests {
         #expect(queue.filter { $0.artist == "Cryoshell" }.count == 11)
     }
 
+    @Test func playlistGenerationForArtistDoesNotInsertSyntheticArtistAsTrack() {
+        let artistID = "1LeR7Ted62RCcpQC8EXoeR"
+        let similarSongs = [
+            makeSong(id: "EKgvYkW9bkvFt4Cxx9AIZS", title: "The Call", artist: "League of Legends"),
+            makeSong(id: "Y8J6Cq5Tx9tHrrUjRlyt6s", title: "Bard: Mountain", artist: "League of Legends")
+        ]
+        let fallbackSongs = [
+            makeSong(id: "fallback-1", title: "Fallback 1"),
+            makeSong(id: artistID, title: "Artist ID Should Not Become A Track")
+        ]
+
+        let queue = PlaylistGenerationPolicy.queue(
+            primarySongs: similarSongs,
+            fallbackSongs: fallbackSongs,
+            requestedCount: 3,
+            excludedIDs: [artistID]
+        )
+
+        #expect(queue.map(\.id) == ["EKgvYkW9bkvFt4Cxx9AIZS", "Y8J6Cq5Tx9tHrrUjRlyt6s", "fallback-1"])
+        #expect(!queue.contains { $0.id == artistID })
+    }
+
+    @Test func artistDetailStateResetsWhenNavigatingToDifferentArtist() {
+        #expect(ArtistDetailStatePolicy.shouldResetDisplayedArtist(
+            currentArtistID: "1LeR7Ted62RCcpQC8EXoeR",
+            requestedArtistID: "4RfW7CdMb1PN7OjMJmvZWj"
+        ))
+        #expect(ArtistDetailStatePolicy.shouldResetDisplayedArtist(
+            currentArtistID: "4RfW7CdMb1PN7OjMJmvZWj",
+            requestedArtistID: "4RfW7CdMb1PN7OjMJmvZWj"
+        ) == false)
+        #expect(ArtistDetailStatePolicy.shouldResetDisplayedArtist(
+            currentArtistID: nil,
+            requestedArtistID: "4RfW7CdMb1PN7OjMJmvZWj"
+        ) == false)
+    }
+
+    @Test func artistDetailStateIgnoresLateFetchForPreviousArtist() {
+        #expect(ArtistDetailStatePolicy.shouldApplyFetchedArtist(
+            fetchedArtistID: "1LeR7Ted62RCcpQC8EXoeR",
+            requestedArtistID: "4RfW7CdMb1PN7OjMJmvZWj"
+        ) == false)
+        #expect(ArtistDetailStatePolicy.shouldApplyFetchedArtist(
+            fetchedArtistID: "4RfW7CdMb1PN7OjMJmvZWj",
+            requestedArtistID: "4RfW7CdMb1PN7OjMJmvZWj"
+        ))
+    }
+
     @Test func playlistGenerationWarnsWhenSimilarityReturnsOnlyOneAlbum() throws {
         let warning = try #require(PlaylistGenerationPolicy.shortResultWarning(
             similarCount: 11,

@@ -17,7 +17,7 @@ struct RadioOptionsView: View {
     @State private var isProcessing = false
     @Environment(\.dismiss) private var dismiss
 
-    enum RadioSourceType {
+    enum RadioSourceType: Equatable {
         case song
         case album
         case artist
@@ -113,7 +113,16 @@ struct RadioOptionsView: View {
 
     private func playRadio() {
         isProcessing = true
-        AudioPlayer.shared.startPlaylistGeneration(for: sourceSong, count: selectedCount)
+        switch sourceType {
+        case .artist:
+            AudioPlayer.shared.startArtistPlaylistGeneration(
+                artistId: sourceSong.id,
+                artistName: sourceTitle,
+                count: selectedCount
+            )
+        case .album, .song:
+            AudioPlayer.shared.startPlaylistGeneration(for: sourceSong, count: selectedCount)
+        }
         isProcessing = false
         dismissAfterStateUpdates()
     }
@@ -123,15 +132,27 @@ struct RadioOptionsView: View {
         Task {
             do {
                 print("📻 Downloading radio for: \(sourceTitle) (count: \(selectedCount))")
-                let similarSongs = try await NavidromeAPI.shared.getSimilarSongsForSong(sourceSong, count: selectedCount)
-                print("📻 ID3 similar songs returned \(similarSongs.count) songs")
-
-                let primaryQueue = PlaylistGenerationPolicy.queue(
-                    sourceSong: sourceSong,
-                    primarySongs: similarSongs,
-                    fallbackSongs: [],
-                    requestedCount: selectedCount
-                )
+                let similarSongs: [Song]
+                let primaryQueue: [Song]
+                if sourceType == .artist {
+                    similarSongs = try await NavidromeAPI.shared.getSimilarSongs2(artistId: sourceSong.id, count: selectedCount)
+                    print("📻 Artist similar songs returned \(similarSongs.count) songs")
+                    primaryQueue = PlaylistGenerationPolicy.queue(
+                        primarySongs: similarSongs,
+                        fallbackSongs: [],
+                        requestedCount: selectedCount,
+                        excludedIDs: [sourceSong.id]
+                    )
+                } else {
+                    similarSongs = try await NavidromeAPI.shared.getSimilarSongsForSong(sourceSong, count: selectedCount)
+                    print("📻 ID3 similar songs returned \(similarSongs.count) songs")
+                    primaryQueue = PlaylistGenerationPolicy.queue(
+                        sourceSong: sourceSong,
+                        primarySongs: similarSongs,
+                        fallbackSongs: [],
+                        requestedCount: selectedCount
+                    )
+                }
                 let fallbackSongs: [Song]
                 if PlaylistGenerationPolicy.needsFallback(currentCount: primaryQueue.count, requestedCount: selectedCount) {
                     print("📻 Topping up radio with random songs")
@@ -140,16 +161,23 @@ struct RadioOptionsView: View {
                 } else {
                     fallbackSongs = []
                 }
-                let queue = PlaylistGenerationPolicy.queue(
-                    sourceSong: sourceSong,
-                    primarySongs: similarSongs,
-                    fallbackSongs: fallbackSongs,
-                    requestedCount: selectedCount
-                )
+                let queue = sourceType == .artist
+                    ? PlaylistGenerationPolicy.queue(
+                        primarySongs: similarSongs,
+                        fallbackSongs: fallbackSongs,
+                        requestedCount: selectedCount,
+                        excludedIDs: [sourceSong.id]
+                    )
+                    : PlaylistGenerationPolicy.queue(
+                        sourceSong: sourceSong,
+                        primarySongs: similarSongs,
+                        fallbackSongs: fallbackSongs,
+                        requestedCount: selectedCount
+                    )
 
                 await MainActor.run {
                     isProcessing = false
-                    if queue.count <= 1 {
+                    if queue.isEmpty || (sourceType != .artist && queue.count <= 1) {
                         print("⚠️ No songs found to download for radio")
                     } else {
                         print("✅ Downloading radio: \(queue.count) songs")

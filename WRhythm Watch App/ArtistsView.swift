@@ -133,7 +133,7 @@ struct ArtistsView: View {
                     WRhythmCard {
                         SlidingRenderWindowForEach(sortedArtists, estimatedRowHeight: 64, resetToken: resetToken) { _, artist in
                             let albumCount = downloadedAlbumCount(for: artist.name)
-                            NavigationLink(destination: ArtistDetailView(artistId: "offline-\(artist.name)", artistName: artist.name)) {
+                            NavigationLink(destination: ArtistDetailView(artistId: "offline-\(artist.name)", artistName: artist.name).id("offline-\(artist.name)")) {
                                 WRhythmCollectionRow(
                                     title: artist.name,
                                     subtitle: albumCount > 0 ? "\(albumCount) album\(albumCount == 1 ? "" : "s")" : nil,
@@ -208,7 +208,7 @@ struct ArtistsView: View {
 
                     WRhythmCard {
                         SlidingRenderWindowForEach(sortedArtists, estimatedRowHeight: 64, resetToken: resetToken) { _, artist in
-                            NavigationLink(destination: ArtistDetailView(artistId: artist.id, artistName: artist.name)) {
+                            NavigationLink(destination: ArtistDetailView(artistId: artist.id, artistName: artist.name).id(artist.id)) {
                                 WRhythmCollectionRow(
                                     title: artist.name,
                                     subtitle: artist.albumCount.map { "\($0) albums" },

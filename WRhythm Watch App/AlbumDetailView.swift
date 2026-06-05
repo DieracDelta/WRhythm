@@ -273,7 +273,7 @@ struct AlbumDetailView: View {
             }
 
             if let artist = album.artist, let artistId = album.artistId {
-                NavigationLink(destination: ArtistDetailView(artistId: artistId, artistName: artist)) {
+                NavigationLink(destination: ArtistDetailView(artistId: artistId, artistName: artist).id(artistId)) {
                     WRhythmCard(padding: 12) {
                         WRhythmCollectionRow(
                             title: artist,

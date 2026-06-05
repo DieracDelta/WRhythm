@@ -83,6 +83,32 @@ struct PlaylistGenerationPolicy: Sendable {
         return queue
     }
 
+    nonisolated static func queue(
+        primarySongs: [Song],
+        fallbackSongs: [Song],
+        requestedCount: Int,
+        excludedIDs: Set<String> = []
+    ) -> [Song] {
+        let targetCount = max(requestedCount, 1)
+        var seen = Set<String>()
+        var queue: [Song] = []
+
+        func append(_ song: Song) {
+            guard queue.count < targetCount, !seen.contains(song.id), !excludedIDs.contains(song.id) else { return }
+            seen.insert(song.id)
+            queue.append(song)
+        }
+
+        for song in primarySongs {
+            append(song)
+        }
+        for song in fallbackSongs {
+            append(song)
+        }
+
+        return queue
+    }
+
     nonisolated static func needsFallback(currentCount: Int, requestedCount: Int) -> Bool {
         currentCount < max(requestedCount, 1)
     }
@@ -1828,6 +1854,48 @@ class AudioPlayer: NSObject, ObservableObject {
                 throw PlaylistGenerationError.noSongs
             }
             return .songs(queue)
+        }
+    }
+
+    func startArtistPlaylistGeneration(
+        artistId: String,
+        artistName: String,
+        count: Int,
+        fallbackToRandom: Bool = true
+    ) {
+        startPlaylistGeneration(title: artistName, artist: "Artist") {
+            let requestedCount = max(count, 1)
+            let similarSongs = try await NavidromeAPI.shared.getSimilarSongs2(artistId: artistId, count: requestedCount)
+            let primaryQueue = PlaylistGenerationPolicy.queue(
+                primarySongs: similarSongs,
+                fallbackSongs: [],
+                requestedCount: requestedCount,
+                excludedIDs: [artistId]
+            )
+
+            var fallbackSongs: [Song] = []
+            if fallbackToRandom, PlaylistGenerationPolicy.needsFallback(currentCount: primaryQueue.count, requestedCount: requestedCount) {
+                fallbackSongs = try await NavidromeAPI.shared.getRandomSongs(size: requestedCount)
+            }
+
+            let queue = PlaylistGenerationPolicy.queue(
+                primarySongs: similarSongs,
+                fallbackSongs: fallbackSongs,
+                requestedCount: requestedCount,
+                excludedIDs: [artistId]
+            )
+            guard !queue.isEmpty else {
+                throw PlaylistGenerationError.noSongs
+            }
+
+            let warning = PlaylistGenerationPolicy.shortResultWarning(
+                similarCount: primaryQueue.count,
+                requestedCount: requestedCount,
+                finalCount: queue.count,
+                fallbackCount: max(queue.count - primaryQueue.count, 0),
+                similarDescription: "artist-similar songs"
+            )
+            return .songs(queue, warning: warning)
         }
     }
 
