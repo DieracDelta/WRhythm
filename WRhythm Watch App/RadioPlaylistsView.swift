@@ -802,6 +802,7 @@ private struct AudioMuseMapPlaylistBuilder: View {
 
                 TextField("Search map tracks", text: $query)
                     .textFieldStyle(.roundedBorder)
+                    .wrhythmDismissFocusOnEscape()
 
                 if !selectedSongs.isEmpty {
                     VStack(alignment: .leading, spacing: WRhythmSpacing.xs) {
@@ -1229,6 +1230,7 @@ private struct SonicTrackSearchPicker: View {
 #else
         TextField("Search tracks", text: $query)
             .textFieldStyle(.roundedBorder)
+            .wrhythmDismissFocusOnEscape()
 #endif
     }
 
@@ -1383,6 +1385,7 @@ private struct AudioMuseAlchemySeedSearchPicker: View {
 #else
         TextField("Search artists, albums, tracks, playlists", text: $query)
             .textFieldStyle(.roundedBorder)
+            .wrhythmDismissFocusOnEscape()
 #endif
     }
 

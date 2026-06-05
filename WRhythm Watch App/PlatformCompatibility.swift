@@ -68,6 +68,15 @@ extension View {
 #endif
     }
 
+    @ViewBuilder
+    func wrhythmDismissFocusOnEscape() -> some View {
+#if os(macOS) || os(iOS)
+        self.modifier(WRhythmDismissFocusOnEscapeModifier())
+#else
+        self
+#endif
+    }
+
     func platformExplicitCloseModal() -> some View {
 #if os(macOS)
         self
@@ -84,6 +93,21 @@ extension View {
         }
     }
 }
+
+#if os(macOS) || os(iOS)
+private struct WRhythmDismissFocusOnEscapeModifier: ViewModifier {
+    @FocusState private var isFocused: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .focused($isFocused)
+            .onKeyPress(.escape) {
+                isFocused = false
+                return .handled
+            }
+    }
+}
+#endif
 
 struct PlatformModalCloseButton: View {
     let action: () -> Void

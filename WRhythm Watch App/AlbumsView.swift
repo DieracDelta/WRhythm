@@ -76,6 +76,7 @@ struct AlbumsView: View {
                         VStack(spacing: 16) {
                             TextField("Search albums", text: $searchText)
                                 .platformSearchTextFieldStyle()
+                                .wrhythmDismissFocusOnEscape()
                                 .frame(maxWidth: .infinity)
 
                             Button("Search") {
@@ -203,10 +204,11 @@ struct AlbumsView: View {
                 systemImage: "square.stack",
                 title: "No albums found",
                 message: nil,
-                actionTitle: "Retry"
-            ) {
-                loadAlbums(forceRefresh: true)
-            }
+                actionTitle: "Retry",
+                action: {
+                    loadAlbums(forceRefresh: true)
+                }
+            )
         } else {
             let resetToken = SongRenderWindowPolicy.resetToken(
                 scope: "albums",

@@ -49,6 +49,7 @@ struct DownloadsView: View {
                 if isSearchVisible {
                     TextField("Search downloads", text: $searchText)
                         .platformSearchTextFieldStyle()
+                        .wrhythmDismissFocusOnEscape()
                 }
 
                 if albumSections.isEmpty {

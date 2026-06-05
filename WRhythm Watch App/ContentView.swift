@@ -351,7 +351,8 @@ struct MacSidebar: View {
                         displayedQueue,
                         estimatedRowHeight: 50,
                         resetToken: sidebarQueuePageResetToken(displayedQueue),
-                        anchorIndexHint: displayedCurrentIndex
+                        anchorIndexHint: displayedCurrentIndex,
+                        showsAnchorPageJump: true
                     ) { index, song in
                         Button(action: {
                             selection = .nowPlaying
@@ -398,7 +399,8 @@ struct MacSidebar: View {
                             remoteQueue,
                             estimatedRowHeight: 50,
                             resetToken: sidebarQueuePageResetToken(remoteQueue),
-                            anchorIndexHint: remote.currentIndex
+                            anchorIndexHint: remote.currentIndex,
+                            showsAnchorPageJump: true
                         ) { index, song in
                             Button(action: {
                                 selection = .nowPlaying

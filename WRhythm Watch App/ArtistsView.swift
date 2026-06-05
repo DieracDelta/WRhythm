@@ -58,6 +58,7 @@ struct ArtistsView: View {
                         VStack(spacing: 16) {
                             TextField("Search artists", text: $searchText)
                                 .platformSearchTextFieldStyle()
+                                .wrhythmDismissFocusOnEscape()
                                 .frame(maxWidth: .infinity)
 
                             Button("Search") {
@@ -181,10 +182,11 @@ struct ArtistsView: View {
                 systemImage: "person.2",
                 title: searchText.isEmpty ? "No artists found" : "No artists match",
                 message: nil,
-                actionTitle: "Retry"
-            ) {
-                libraryDataManager.fetchArtists(forceRefresh: true)
-            }
+                actionTitle: "Retry",
+                action: {
+                    libraryDataManager.fetchArtists(forceRefresh: true)
+                }
+            )
         } else {
             let sortedArtists = sortOption.sorted(onlineArtistsToDisplay)
             let resetToken = SongRenderWindowPolicy.resetToken(

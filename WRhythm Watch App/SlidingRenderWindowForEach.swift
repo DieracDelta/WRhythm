@@ -7,6 +7,8 @@ struct SlidingRenderWindowForEach<Element, Row: View>: View {
     private let resetToken: AnyHashable
     private let anchorIndexHint: Int
     private let renderMode: SongRenderWindowPolicy.RenderMode
+    private let showsAnchorPageJump: Bool
+    private let anchorPageJumpTitle: String
     private let row: (Int, Element) -> Row
 
     @AppStorage(SongRenderWindowPolicy.userDefaultsKey) private var storedLimit = SongRenderWindowPolicy.defaultLimit
@@ -22,6 +24,8 @@ struct SlidingRenderWindowForEach<Element, Row: View>: View {
         resetToken: some Hashable = 0,
         anchorIndexHint: Int = 0,
         renderMode: SongRenderWindowPolicy.RenderMode = .paged,
+        showsAnchorPageJump: Bool = false,
+        anchorPageJumpTitle: String = "Current song",
         @ViewBuilder row: @escaping (Int, Element) -> Row
     ) {
         self.items = items
@@ -30,6 +34,8 @@ struct SlidingRenderWindowForEach<Element, Row: View>: View {
         self.resetToken = AnyHashable(resetToken)
         self.anchorIndexHint = anchorIndexHint
         self.renderMode = renderMode
+        self.showsAnchorPageJump = showsAnchorPageJump
+        self.anchorPageJumpTitle = anchorPageJumpTitle
         self.row = row
     }
 
@@ -87,6 +93,22 @@ struct SlidingRenderWindowForEach<Element, Row: View>: View {
                         )
                         scheduleVisiblePages()
                     }
+            }
+
+            if showsAnchorPageJump,
+               renderMode == .paged,
+               let currentPage = SongRenderWindowPolicy.currentAnchorPageIndexToLoad(
+                    totalCount: items.count,
+                    anchorIndex: clampedAnchorIndexHint,
+                    storedLimit: storedLimit,
+                    displayedPageIndex: displayedPageIndex
+               ) {
+                Button(action: {
+                    showPagedWindow(currentPage)
+                }) {
+                    pageNavigationControl(title: anchorPageJumpTitle, systemImage: "scope")
+                }
+                .buttonStyle(.plain)
             }
 
             ForEach(renderSlots) { slot in

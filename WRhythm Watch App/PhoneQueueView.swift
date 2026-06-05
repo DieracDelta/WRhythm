@@ -97,7 +97,8 @@ struct PhoneQueueView: View {
                         estimatedRowHeight: 62,
                         spacing: WRhythmSpacing.xs,
                         resetToken: sidebarQueuePageResetToken(songs),
-                        anchorIndexHint: currentIndex
+                        anchorIndexHint: currentIndex,
+                        showsAnchorPageJump: true
                     ) { index, song in
                         Button(action: {
                             play(index)

@@ -86,6 +86,7 @@ struct PlaylistsView: View {
                     VStack(spacing: 16) {
                         TextField("Search playlists", text: $searchText)
                             .platformSearchTextFieldStyle()
+                            .wrhythmDismissFocusOnEscape()
                             .frame(maxWidth: .infinity)
 
                         Button("Search") {
@@ -195,10 +196,11 @@ struct PlaylistsView: View {
                 systemImage: "music.note.list",
                 title: "No playlists",
                 message: nil,
-                actionTitle: "Retry"
-            ) {
-                libraryDataManager.fetchPlaylists(forceRefresh: true)
-            }
+                actionTitle: "Retry",
+                action: {
+                    libraryDataManager.fetchPlaylists(forceRefresh: true)
+                }
+            )
         } else {
             let sortedPlaylists = sortOption.sorted(filteredPlaylists)
             let resetToken = SongRenderWindowPolicy.resetToken(

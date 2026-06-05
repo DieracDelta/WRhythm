@@ -168,6 +168,41 @@ struct SongRenderWindowPolicyTests {
         #expect(SongRenderWindowPolicy.shouldResetWindowWhenAnchorChanges(renderMode: .fullRangeLoaded))
     }
 
+    @Test func pagedQueuesCanExposeJumpBackToCurrentTrackPage() {
+        #expect(
+            SongRenderWindowPolicy.currentAnchorPageIndexToLoad(
+                totalCount: 240,
+                anchorIndex: 118,
+                storedLimit: 50,
+                displayedPageIndex: 0
+            ) == 2
+        )
+        #expect(
+            SongRenderWindowPolicy.currentAnchorPageIndexToLoad(
+                totalCount: 240,
+                anchorIndex: 118,
+                storedLimit: 50,
+                displayedPageIndex: 2
+            ) == nil
+        )
+        #expect(
+            SongRenderWindowPolicy.currentAnchorPageIndexToLoad(
+                totalCount: 240,
+                anchorIndex: 999,
+                storedLimit: 50,
+                displayedPageIndex: 0
+            ) == 4
+        )
+        #expect(
+            SongRenderWindowPolicy.currentAnchorPageIndexToLoad(
+                totalCount: 240,
+                anchorIndex: 118,
+                storedLimit: SongRenderWindowPolicy.unlimitedSentinel,
+                displayedPageIndex: 0
+            ) == nil
+        )
+    }
+
     @Test func pendingPageShowsLoadingSlotsBeforeRowsAreLoaded() {
         let slots = SongRenderWindowPolicy.pagedRenderSlots(
             totalCount: 120,

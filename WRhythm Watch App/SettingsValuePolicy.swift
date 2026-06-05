@@ -243,6 +243,22 @@ struct SongRenderWindowPolicy: Sendable {
         return displayedPageIndex - 1
     }
 
+    static func currentAnchorPageIndexToLoad(
+        totalCount: Int,
+        anchorIndex: Int,
+        storedLimit: Int,
+        displayedPageIndex: Int
+    ) -> Int? {
+        guard totalCount > 0,
+              let pageSize = pageSize(forStoredLimit: storedLimit) else { return nil }
+
+        let currentPage = pageIndex(
+            forRow: clampedAnchorIndexHint(anchorIndex, totalCount: totalCount),
+            pageSize: pageSize
+        )
+        return currentPage == displayedPageIndex ? nil : currentPage
+    }
+
     static func visiblePageIndices(
         totalCount: Int,
         anchorIndex: Int,

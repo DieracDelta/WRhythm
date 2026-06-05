@@ -366,6 +366,7 @@ struct FavouritesView: View {
             TextField("Search favourites", text: $searchText)
                 .textInputAutocapitalization(.never)
                 .submitLabel(.search)
+                .wrhythmDismissFocusOnEscape()
 
             if !searchText.isEmpty {
                 Button {

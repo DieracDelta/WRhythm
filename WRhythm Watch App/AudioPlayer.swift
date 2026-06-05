@@ -490,7 +490,7 @@ struct PrebufferQualityPresentationPolicy: Sendable {
 }
 
 struct PlaybackFormatPolicy: Sendable {
-    static func effectiveSuffix(suffix: String?, path: String?) -> String? {
+    nonisolated static func effectiveSuffix(suffix: String?, path: String?) -> String? {
         if let suffix = normalized(suffix), !suffix.isEmpty {
             return suffix
         }
@@ -503,7 +503,7 @@ struct PlaybackFormatPolicy: Sendable {
         return extensionName.isEmpty ? nil : extensionName
     }
 
-    static func isMP3(contentType: String?, suffix: String?, path: String?) -> Bool {
+    nonisolated static func isMP3(contentType: String?, suffix: String?, path: String?) -> Bool {
         let normalizedContentType = normalized(contentType)
         let effectiveSuffix = effectiveSuffix(suffix: suffix, path: path)
         return normalizedContentType?.contains("mpeg") == true ||
@@ -511,7 +511,7 @@ struct PlaybackFormatPolicy: Sendable {
             effectiveSuffix == "mp3"
     }
 
-    static func isFormatSupportedNatively(contentType: String?, suffix: String?, path: String?) -> Bool {
+    nonisolated static func isFormatSupportedNatively(contentType: String?, suffix: String?, path: String?) -> Bool {
 #if os(watchOS)
         let supportedTypes = ["audio/mpeg", "audio/mp3", "audio/aac", "audio/mp4", "audio/x-m4a", "audio/wav", "audio/x-wav", "audio/aiff", "audio/x-aiff"]
         let supportedSuffixes = ["mp3", "aac", "m4a", "mp4", "wav", "aiff", "aif"]
@@ -529,7 +529,7 @@ struct PlaybackFormatPolicy: Sendable {
         return supportedSuffixes.contains(suffix)
     }
 
-    static func playbackMimeType(contentType: String?, suffix: String?, url: URL) -> String? {
+    nonisolated static func playbackMimeType(contentType: String?, suffix: String?, url: URL) -> String? {
         switch url.pathExtension.lowercased() {
         case "mp3":
             return "audio/mpeg"
@@ -565,7 +565,7 @@ struct PlaybackFormatPolicy: Sendable {
         }
     }
 
-    private static func normalized(_ value: String?) -> String? {
+    private nonisolated static func normalized(_ value: String?) -> String? {
         value?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()

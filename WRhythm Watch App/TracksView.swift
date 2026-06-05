@@ -156,6 +156,7 @@ struct TracksView: View {
                     VStack(spacing: WRhythmSpacing.md) {
                         TextField(offlineMode ? "Search offline music" : "Search music", text: $searchText)
                             .platformSearchTextFieldStyle()
+                            .wrhythmDismissFocusOnEscape()
                             .frame(maxWidth: .infinity)
 
                         Button("Search") {
@@ -1009,6 +1010,7 @@ struct TracksView: View {
                 .textFieldStyle(.plain)
                 .platformAutocapitalizationNever()
                 .submitLabel(.search)
+                .wrhythmDismissFocusOnEscape()
                 .onSubmit {
                     if !offlineMode {
                         performSearch(query: searchText, debounce: false)
