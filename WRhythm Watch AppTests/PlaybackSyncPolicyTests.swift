@@ -2552,29 +2552,40 @@ struct PlaybackSyncPolicyTests {
         ) == 0)
     }
 
-    @Test func prebufferSchedulingCancelsLowestPriorityActiveTasksWhenLimitDrops() {
-        let keysToCancel = PrebufferSchedulingPolicy.activeKeysToCancel(
+    @Test func prebufferSchedulingPausesLowestPriorityActiveDownloadsWhenLimitDrops() {
+        let keysToPause = PrebufferSchedulingPolicy.activeKeysToPause(
             activeKeys: ["next-1", "next-2", "previous-1"],
             candidateKeys: ["next-1", "next-2", "previous-1"],
             maxConcurrentTasks: 1
         )
 
-        #expect(keysToCancel == ["previous-1", "next-2"])
+        #expect(keysToPause == ["previous-1", "next-2"])
     }
 
-    @Test func prebufferSchedulingCancelsAllActiveTasksWhileRemotePlayerBuffers() {
+    @Test func prebufferSchedulingPausesAllActiveDownloadsWhileRemotePlayerBuffers() {
         let maxConcurrentTasks = PrebufferSchedulingPolicy.effectiveMaxConcurrentTasks(
             configuredMax: 3,
             currentPlaybackIsLocalFile: false,
             playerIsBuffering: true
         )
-        let keysToCancel = PrebufferSchedulingPolicy.activeKeysToCancel(
+        let keysToPause = PrebufferSchedulingPolicy.activeKeysToPause(
             activeKeys: ["next-1", "next-2", "previous-1"],
             candidateKeys: ["next-1", "next-2", "previous-1"],
             maxConcurrentTasks: maxConcurrentTasks
         )
 
-        #expect(keysToCancel == ["previous-1", "next-2", "next-1"])
+        #expect(keysToPause == ["previous-1", "next-2", "next-1"])
+    }
+
+    @Test func prebufferSchedulingResumesHighestPriorityPausedDownloadsWhenCapacityReturns() {
+        let keysToResume = PrebufferSchedulingPolicy.pausedKeysToResume(
+            activeKeys: ["next-1", "next-2", "previous-1"],
+            pausedKeys: ["next-1", "next-2", "previous-1"],
+            candidateKeys: ["next-1", "next-2", "previous-1"],
+            maxConcurrentTasks: 2
+        )
+
+        #expect(keysToResume == ["next-1", "next-2"])
     }
 
     @Test func clearingQueuePreventsStalePrebufferPublicationAndNewScheduling() {

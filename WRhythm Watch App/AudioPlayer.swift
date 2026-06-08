@@ -231,7 +231,7 @@ struct PrebufferSchedulingPolicy: Sendable {
         return playerIsBuffering ? 0 : min(configuredMax, 1)
     }
 
-    static func activeKeysToCancel(
+    static func activeKeysToPause(
         activeKeys: Set<String>,
         candidateKeys: [String],
         maxConcurrentTasks: Int
@@ -253,6 +253,20 @@ struct PrebufferSchedulingPolicy: Sendable {
         }
 
         return Array(keysByLowestPriorityFirst.prefix(activeKeys.count - maxConcurrentTasks))
+    }
+
+    static func pausedKeysToResume(
+        activeKeys: Set<String>,
+        pausedKeys: Set<String>,
+        candidateKeys: [String],
+        maxConcurrentTasks: Int
+    ) -> [String] {
+        let maxConcurrentTasks = max(0, maxConcurrentTasks)
+        let runningCount = activeKeys.subtracting(pausedKeys).count
+        let availableSlots = max(0, maxConcurrentTasks - runningCount)
+        guard availableSlots > 0 else { return [] }
+
+        return Array(candidateKeys.filter { pausedKeys.contains($0) }.prefix(availableSlots))
     }
 }
 
@@ -404,7 +418,7 @@ enum WRhythmLogRedactor {
 }
 
 struct PrebufferProgressPolicy: Sendable {
-    static func normalizedProgress(receivedBytes: Int64, expectedBytes: Int64) -> Double? {
+    nonisolated static func normalizedProgress(receivedBytes: Int64, expectedBytes: Int64) -> Double? {
         guard expectedBytes > 0 else { return nil }
         let progress = Double(max(0, receivedBytes)) / Double(expectedBytes)
         return min(max(progress, 0), 0.99)
@@ -479,6 +493,237 @@ struct PrebufferProgressPolicy: Sendable {
             return "\(readyCount) \(suffix)"
         }
         return "\(readyCount)/\(targetCount) \(suffix)"
+    }
+}
+
+nonisolated private struct PrebufferDownloadTaskHandle: @unchecked Sendable {
+    let task: URLSessionDownloadTask
+}
+
+nonisolated private final class PrebufferDownloadOperation: @unchecked Sendable {
+    let id: String
+    let destinationURL: URL
+    let progressHandler: @Sendable (Double?) async -> Void
+    let continuation: CheckedContinuation<Void, Error>
+    var task: URLSessionDownloadTask?
+    var isFinished = false
+
+    init(
+        id: String,
+        destinationURL: URL,
+        progressHandler: @escaping @Sendable (Double?) async -> Void,
+        continuation: CheckedContinuation<Void, Error>
+    ) {
+        self.id = id
+        self.destinationURL = destinationURL
+        self.progressHandler = progressHandler
+        self.continuation = continuation
+    }
+}
+
+nonisolated private final class PrebufferDownloadController: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
+    private let lock = NSLock()
+    private let sessionLock = NSLock()
+    private var operationsByID: [String: PrebufferDownloadOperation] = [:]
+    private var operationsByTaskIdentifier: [Int: PrebufferDownloadOperation] = [:]
+    private var sessionStorage: URLSession?
+
+    private let delegateQueue: OperationQueue = {
+        let queue = OperationQueue()
+        queue.name = "com.wrhythm.prebuffer.downloads.delegate"
+        queue.qualityOfService = .utility
+        queue.maxConcurrentOperationCount = 1
+        return queue
+    }()
+
+    private var session: URLSession {
+        sessionLock.lock()
+        defer { sessionLock.unlock() }
+
+        if let sessionStorage {
+            return sessionStorage
+        }
+
+        let configuration = URLSessionConfiguration.default
+        configuration.waitsForConnectivity = true
+        configuration.timeoutIntervalForRequest = 30
+        configuration.timeoutIntervalForResource = 300
+        configuration.allowsConstrainedNetworkAccess = true
+        configuration.allowsExpensiveNetworkAccess = true
+        let session = URLSession(configuration: configuration, delegate: self, delegateQueue: delegateQueue)
+        sessionStorage = session
+        return session
+    }
+
+    func download(
+        id: String,
+        from sourceURL: URL,
+        to destinationURL: URL,
+        progressHandler: @escaping @Sendable (Double?) async -> Void
+    ) async throws {
+        try FileManager.default.createDirectory(
+            at: destinationURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+            attributes: nil
+        )
+
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                let operation = PrebufferDownloadOperation(
+                    id: id,
+                    destinationURL: destinationURL,
+                    progressHandler: progressHandler,
+                    continuation: continuation
+                )
+                var request = URLRequest(url: sourceURL)
+                request.cachePolicy = .reloadIgnoringLocalCacheData
+                let task = session.downloadTask(with: request)
+                operation.task = task
+
+                lock.lock()
+                var existingTaskToCancel: URLSessionDownloadTask?
+                var existingCompletion: (() -> Void)?
+                if let existing = operationsByID[id] {
+                    existingTaskToCancel = existing.task
+                    existingCompletion = finishLocked(existing, result: .failure(CancellationError()))
+                }
+                operationsByID[id] = operation
+                operationsByTaskIdentifier[task.taskIdentifier] = operation
+                lock.unlock()
+
+                existingCompletion?()
+                existingTaskToCancel?.cancel()
+                task.resume()
+            }
+        } onCancel: {
+            cancel(id: id)
+        }
+    }
+
+    func suspend(id: String) -> Bool {
+        let task = task(for: id)
+        task?.suspend()
+        return task != nil
+    }
+
+    func resume(id: String) -> Bool {
+        let task = task(for: id)
+        task?.resume()
+        return task != nil
+    }
+
+    func cancel(id: String) {
+        lock.lock()
+        guard let operation = operationsByID[id] else {
+            lock.unlock()
+            return
+        }
+        let task = operation.task
+        let completion = finishLocked(operation, result: .failure(CancellationError()))
+        lock.unlock()
+
+        completion?()
+        task?.cancel()
+    }
+
+    func cancelAll() {
+        lock.lock()
+        let operations = Array(operationsByID.values)
+        let completions = operations.compactMap { operation in
+            finishLocked(operation, result: .failure(CancellationError()))
+        }
+        lock.unlock()
+
+        for completion in completions {
+            completion()
+        }
+        for operation in operations {
+            operation.task?.cancel()
+        }
+    }
+
+    nonisolated func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didWriteData bytesWritten: Int64,
+        totalBytesWritten: Int64,
+        totalBytesExpectedToWrite: Int64
+    ) {
+        let handle = PrebufferDownloadTaskHandle(task: downloadTask)
+        guard let operation = operation(forTaskIdentifier: handle.task.taskIdentifier) else { return }
+        let progress = PrebufferProgressPolicy.normalizedProgress(
+            receivedBytes: totalBytesWritten,
+            expectedBytes: totalBytesExpectedToWrite
+        )
+        Task {
+            await operation.progressHandler(progress)
+        }
+    }
+
+    nonisolated func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didFinishDownloadingTo location: URL
+    ) {
+        let handle = PrebufferDownloadTaskHandle(task: downloadTask)
+        guard let operation = operation(forTaskIdentifier: handle.task.taskIdentifier) else { return }
+
+        do {
+            let destinationDirectory = operation.destinationURL.deletingLastPathComponent()
+            try FileManager.default.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
+            try? FileManager.default.removeItem(at: operation.destinationURL)
+            try FileManager.default.moveItem(at: location, to: operation.destinationURL)
+            complete(operation, result: .success(()))
+        } catch {
+            complete(operation, result: .failure(error))
+        }
+    }
+
+    nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        guard let error else { return }
+        guard let operation = operation(forTaskIdentifier: task.taskIdentifier) else { return }
+        complete(operation, result: .failure(error))
+    }
+
+    private func task(for id: String) -> URLSessionDownloadTask? {
+        lock.lock()
+        defer { lock.unlock() }
+        return operationsByID[id]?.task
+    }
+
+    private func operation(forTaskIdentifier taskIdentifier: Int) -> PrebufferDownloadOperation? {
+        lock.lock()
+        defer { lock.unlock() }
+        return operationsByTaskIdentifier[taskIdentifier]
+    }
+
+    private func complete(_ operation: PrebufferDownloadOperation, result: Result<Void, Error>) {
+        lock.lock()
+        let completion = finishLocked(operation, result: result)
+        lock.unlock()
+
+        completion?()
+    }
+
+    private func finishLocked(
+        _ operation: PrebufferDownloadOperation,
+        result: Result<Void, Error>
+    ) -> (() -> Void)? {
+        guard !operation.isFinished else { return nil }
+        operation.isFinished = true
+        operationsByID.removeValue(forKey: operation.id)
+        if let taskIdentifier = operation.task?.taskIdentifier {
+            operationsByTaskIdentifier.removeValue(forKey: taskIdentifier)
+        }
+
+        return {
+            switch result {
+            case .success:
+                operation.continuation.resume()
+            case .failure(let error):
+                operation.continuation.resume(throwing: error)
+            }
+        }
     }
 }
 
@@ -940,9 +1185,12 @@ class AudioPlayer: NSObject, ObservableObject {
     }
     private var prebufferTasks: [String: Task<Void, Never>] = [:]
     private var prebufferTaskTokens: [String: String] = [:]
+    private var prebufferDownloadKeys: Set<String> = []
+    private var prebufferPausedKeys: Set<String> = []
     private var prebufferProgressByKey: [String: Double] = [:]
     private var prebufferURLs: [String: URL] = [:]
     private var preparedPrebuffers: [String: PreparedPrebuffer] = [:]
+    private let prebufferDownloadController = PrebufferDownloadController()
     private var currentPlaybackURL: URL?
     private var currentPlaybackIsLocalFile = false
     private var playbackRetryTask: Task<Void, Never>?
@@ -2524,64 +2772,6 @@ class AudioPlayer: NSObject, ObservableObject {
         return PreparedPrebuffer(song: song, url: url, asset: asset, qualityLabel: qualityLabel)
     }
 
-    private nonisolated static func downloadPrebufferFile(
-        from url: URL,
-        to destinationURL: URL,
-        progressHandler: @escaping @Sendable (Double?) async -> Void
-    ) async throws {
-        try FileManager.default.createDirectory(
-            at: destinationURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true,
-            attributes: nil
-        )
-        let temporaryURL = destinationURL
-            .deletingLastPathComponent()
-            .appendingPathComponent("\(UUID().uuidString).download", isDirectory: false)
-        try? FileManager.default.removeItem(at: temporaryURL)
-        FileManager.default.createFile(atPath: temporaryURL.path, contents: nil)
-
-        let fileHandle = try FileHandle(forWritingTo: temporaryURL)
-        var didMoveFile = false
-        defer {
-            try? fileHandle.close()
-            if !didMoveFile {
-                try? FileManager.default.removeItem(at: temporaryURL)
-            }
-        }
-
-        let (bytes, response) = try await URLSession.shared.bytes(from: url)
-        let expectedBytes = response.expectedContentLength
-        await progressHandler(PrebufferProgressPolicy.normalizedProgress(receivedBytes: 0, expectedBytes: expectedBytes))
-
-        var receivedBytes: Int64 = 0
-        var chunk = Data()
-        chunk.reserveCapacity(64 * 1_024)
-
-        for try await byte in bytes {
-            try Task.checkCancellation()
-            chunk.append(byte)
-
-            if chunk.count >= 64 * 1_024 {
-                try fileHandle.write(contentsOf: chunk)
-                receivedBytes += Int64(chunk.count)
-                chunk.removeAll(keepingCapacity: true)
-                await progressHandler(PrebufferProgressPolicy.normalizedProgress(receivedBytes: receivedBytes, expectedBytes: expectedBytes))
-            }
-        }
-
-        if !chunk.isEmpty {
-            try fileHandle.write(contentsOf: chunk)
-            receivedBytes += Int64(chunk.count)
-            chunk.removeAll(keepingCapacity: true)
-            await progressHandler(PrebufferProgressPolicy.normalizedProgress(receivedBytes: receivedBytes, expectedBytes: expectedBytes))
-        }
-
-        try fileHandle.close()
-        try? FileManager.default.removeItem(at: destinationURL)
-        try FileManager.default.moveItem(at: temporaryURL, to: destinationURL)
-        didMoveFile = true
-    }
-
     private func scheduleQueuePrebuffer() {
         guard PrebufferOwnershipPolicy.shouldSchedule(isLocalPlaybackOutput: allowsQueuePrebuffering) else {
             suspendPrebufferingForRemoteOutput()
@@ -2647,22 +2837,26 @@ class AudioPlayer: NSObject, ObservableObject {
 
         let staleKeys = prebufferTasks.keys.filter { !desiredDownloadKeys.contains($0) }
         for key in staleKeys {
-            prebufferTasks[key]?.cancel()
-            prebufferTasks.removeValue(forKey: key)
-            prebufferTaskTokens.removeValue(forKey: key)
-            prebufferProgressByKey.removeValue(forKey: key)
+            cancelActivePrebuffer(key: key)
         }
 
-        let excessActiveKeys = PrebufferSchedulingPolicy.activeKeysToCancel(
-            activeKeys: Set(prebufferTasks.keys),
+        let keysToPause = PrebufferSchedulingPolicy.activeKeysToPause(
+            activeKeys: prebufferDownloadKeys,
             candidateKeys: candidateKeys,
             maxConcurrentTasks: maxConcurrentTasks
         )
-        for key in excessActiveKeys {
-            prebufferTasks[key]?.cancel()
-            prebufferTasks.removeValue(forKey: key)
-            prebufferTaskTokens.removeValue(forKey: key)
-            prebufferProgressByKey.removeValue(forKey: key)
+        for key in keysToPause {
+            pauseActivePrebufferDownload(key: key)
+        }
+
+        let keysToResume = PrebufferSchedulingPolicy.pausedKeysToResume(
+            activeKeys: prebufferDownloadKeys,
+            pausedKeys: prebufferPausedKeys,
+            candidateKeys: candidateKeys,
+            maxConcurrentTasks: maxConcurrentTasks
+        )
+        for key in keysToResume {
+            resumeActivePrebufferDownload(key: key)
         }
 
         prunePrebufferRetryState(keeping: desiredDownloadKeys)
@@ -2702,11 +2896,38 @@ class AudioPlayer: NSObject, ObservableObject {
     }
 
     private func cancelPrebufferWork() {
-        prebufferTasks.values.forEach { $0.cancel() }
-        prebufferTasks.removeAll()
-        prebufferTaskTokens.removeAll()
-        prebufferProgressByKey.removeAll()
+        for key in Array(prebufferTasks.keys) {
+            cancelActivePrebuffer(key: key)
+        }
+        prebufferDownloadController.cancelAll()
         clearPrebufferRetryState()
+        updatePrebufferedTrackCount()
+    }
+
+    private func cancelActivePrebuffer(key: String) {
+        let task = prebufferTasks.removeValue(forKey: key)
+        prebufferTaskTokens.removeValue(forKey: key)
+        prebufferDownloadKeys.remove(key)
+        prebufferPausedKeys.remove(key)
+        prebufferProgressByKey.removeValue(forKey: key)
+        prebufferDownloadController.cancel(id: key)
+        task?.cancel()
+    }
+
+    private func pauseActivePrebufferDownload(key: String) {
+        guard prebufferDownloadKeys.contains(key), !prebufferPausedKeys.contains(key) else { return }
+        guard prebufferDownloadController.suspend(id: key) else { return }
+        prebufferPausedKeys.insert(key)
+        updatePrebufferedTrackCount()
+    }
+
+    private func resumeActivePrebufferDownload(key: String) {
+        guard prebufferPausedKeys.contains(key) else { return }
+        guard prebufferDownloadController.resume(id: key) else {
+            prebufferPausedKeys.remove(key)
+            return
+        }
+        prebufferPausedKeys.remove(key)
         updatePrebufferedTrackCount()
     }
 
@@ -2716,12 +2937,15 @@ class AudioPlayer: NSObject, ObservableObject {
         let destinationURL = prebufferURL(for: song)
         let taskToken = UUID().uuidString
         prebufferTaskTokens[key] = taskToken
+        prebufferDownloadKeys.insert(key)
+        prebufferPausedKeys.remove(key)
         prebufferProgressByKey[key] = 0
         updatePrebufferedTrackCount()
 
         prebufferTasks[key] = Task { [weak self] in
             do {
-                try await Self.downloadPrebufferFile(from: url, to: destinationURL) { [weak self] progress in
+                guard let self else { return }
+                try await self.prebufferDownloadController.download(id: key, from: url, to: destinationURL) { [weak self] progress in
                     await MainActor.run { [weak self] in
                         guard let player = self else { return }
                         guard AsyncTaskOwnershipPolicy.isCurrent(capturedToken: taskToken, activeToken: player.prebufferTaskTokens[key]) else { return }
@@ -2735,13 +2959,24 @@ class AudioPlayer: NSObject, ObservableObject {
                 }
                 try Task.checkCancellation()
 
-                await self?.prepareDownloadedPrebuffer(song, key: key, url: destinationURL, taskToken: taskToken, qualityLabel: qualityLabel)
+                await MainActor.run { [weak self] in
+                    guard let player = self else { return }
+                    guard AsyncTaskOwnershipPolicy.isCurrent(capturedToken: taskToken, activeToken: player.prebufferTaskTokens[key]) else { return }
+                    player.prebufferDownloadKeys.remove(key)
+                    player.prebufferPausedKeys.remove(key)
+                    player.prebufferProgressByKey[key] = 1
+                    player.updatePrebufferedTrackCount()
+                }
+
+                await self.prepareDownloadedPrebuffer(song, key: key, url: destinationURL, taskToken: taskToken, qualityLabel: qualityLabel)
             } catch is CancellationError {
                 await MainActor.run { [weak self] in
                     guard let player = self else { return }
                     guard AsyncTaskOwnershipPolicy.isCurrent(capturedToken: taskToken, activeToken: player.prebufferTaskTokens[key]) else { return }
                     player.prebufferTasks.removeValue(forKey: key)
                     player.prebufferTaskTokens.removeValue(forKey: key)
+                    player.prebufferDownloadKeys.remove(key)
+                    player.prebufferPausedKeys.remove(key)
                     player.prebufferProgressByKey.removeValue(forKey: key)
                     player.updatePrebufferedTrackCount()
                 }
@@ -2751,6 +2986,8 @@ class AudioPlayer: NSObject, ObservableObject {
                     guard AsyncTaskOwnershipPolicy.isCurrent(capturedToken: taskToken, activeToken: player.prebufferTaskTokens[key]) else { return }
                     player.prebufferTasks.removeValue(forKey: key)
                     player.prebufferTaskTokens.removeValue(forKey: key)
+                    player.prebufferDownloadKeys.remove(key)
+                    player.prebufferPausedKeys.remove(key)
                     player.prebufferProgressByKey.removeValue(forKey: key)
                     player.updatePrebufferedTrackCount()
                     print("⚠️ Failed to prebuffer \(song.title): \(WRhythmLogRedactor.errorSummary(error))")
@@ -2763,6 +3000,8 @@ class AudioPlayer: NSObject, ObservableObject {
     private func preparePrebufferedFile(_ song: Song, key: String, url: URL, qualityLabel: String) {
         let taskToken = UUID().uuidString
         prebufferTaskTokens[key] = taskToken
+        prebufferDownloadKeys.remove(key)
+        prebufferPausedKeys.remove(key)
         prebufferTasks[key] = Task { [weak self] in
             await self?.prepareDownloadedPrebuffer(song, key: key, url: url, taskToken: taskToken, qualityLabel: qualityLabel)
         }
@@ -2785,6 +3024,8 @@ class AudioPlayer: NSObject, ObservableObject {
                     if AsyncTaskOwnershipPolicy.isCurrent(capturedToken: taskToken, activeToken: player.prebufferTaskTokens[key]) {
                         player.prebufferTasks.removeValue(forKey: key)
                         player.prebufferTaskTokens.removeValue(forKey: key)
+                        player.prebufferDownloadKeys.remove(key)
+                        player.prebufferPausedKeys.remove(key)
                         player.prebufferProgressByKey.removeValue(forKey: key)
                         player.preparedPrebuffers.removeValue(forKey: key)
                         player.prebufferURLs.removeValue(forKey: key)
@@ -2802,6 +3043,8 @@ class AudioPlayer: NSObject, ObservableObject {
                 player.clearPrebufferRetryState(for: key)
                 player.prebufferTasks.removeValue(forKey: key)
                 player.prebufferTaskTokens.removeValue(forKey: key)
+                player.prebufferDownloadKeys.remove(key)
+                player.prebufferPausedKeys.remove(key)
                 player.prebufferProgressByKey.removeValue(forKey: key)
                 player.updatePrebufferedTrackCount()
                 Task {
@@ -2816,6 +3059,8 @@ class AudioPlayer: NSObject, ObservableObject {
                 guard AsyncTaskOwnershipPolicy.isCurrent(capturedToken: taskToken, activeToken: player.prebufferTaskTokens[key]) else { return }
                 player.prebufferTasks.removeValue(forKey: key)
                 player.prebufferTaskTokens.removeValue(forKey: key)
+                player.prebufferDownloadKeys.remove(key)
+                player.prebufferPausedKeys.remove(key)
                 player.prebufferProgressByKey.removeValue(forKey: key)
                 player.updatePrebufferedTrackCount()
             }
@@ -2825,6 +3070,8 @@ class AudioPlayer: NSObject, ObservableObject {
                 guard AsyncTaskOwnershipPolicy.isCurrent(capturedToken: taskToken, activeToken: player.prebufferTaskTokens[key]) else { return }
                 player.prebufferTasks.removeValue(forKey: key)
                 player.prebufferTaskTokens.removeValue(forKey: key)
+                player.prebufferDownloadKeys.remove(key)
+                player.prebufferPausedKeys.remove(key)
                 player.prebufferProgressByKey.removeValue(forKey: key)
                 player.preparedPrebuffers.removeValue(forKey: key)
                 player.prebufferURLs.removeValue(forKey: key)
@@ -2953,13 +3200,14 @@ class AudioPlayer: NSObject, ObservableObject {
     }
 
     private func updatePrebufferedTrackCount() {
-        let activeCount = prebufferTasks.count
+        let runningDownloadKeys = prebufferDownloadKeys.subtracting(prebufferPausedKeys)
+        let activeCount = runningDownloadKeys.count
         if prebufferingTrackCount != activeCount {
             prebufferingTrackCount = activeCount
         }
         let activePercent = PrebufferProgressPolicy.aggregatePercent(
             progressByKey: prebufferProgressByKey,
-            activeKeys: Set(prebufferTasks.keys)
+            activeKeys: runningDownloadKeys
         )
         if prebufferingProgressPercent != activePercent {
             prebufferingProgressPercent = activePercent
@@ -3030,7 +3278,7 @@ class AudioPlayer: NSObject, ObservableObject {
         let currentSlice = queue.indices.contains(currentIndex) ? [queue[currentIndex]] : []
         let downloadStatuses = PrebufferProgressPolicy.downloadStatuses(
             for: Array(previousSlice) + currentSlice + Array(upcomingSlice),
-            activeKeys: Set(prebufferTasks.keys),
+            activeKeys: runningDownloadKeys,
             progressByKey: prebufferProgressByKey,
             keyForSong: { prebufferKey(for: $0) }
         )
@@ -4067,7 +4315,10 @@ class AudioPlayer: NSObject, ObservableObject {
 #if os(iOS) || os(watchOS) || os(macOS)
         nowPlayingArtworkTask?.cancel()
 #endif
+        prebufferDownloadController.cancelAll()
         prebufferTasks.values.forEach { $0.cancel() }
+        prebufferDownloadKeys.removeAll()
+        prebufferPausedKeys.removeAll()
         prebufferTaskTokens.removeAll()
         if let observer = timeObserver {
             player.removeTimeObserver(observer)
