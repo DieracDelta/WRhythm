@@ -13,8 +13,15 @@ nonisolated struct ArtistDetailStatePolicy: Sendable {
         return currentArtistID != requestedArtistID
     }
 
-    static func shouldApplyFetchedArtist(fetchedArtistID: String, requestedArtistID: String) -> Bool {
-        fetchedArtistID == requestedArtistID
+    static func shouldApplyFetchedArtist(
+        fetchedArtistID: String,
+        requestedArtistID: String,
+        activeArtistID: String
+    ) -> Bool {
+        // Some Subsonic-compatible servers echo a display-name ID from getArtist.
+        // Stale response protection should depend on the route we requested, not
+        // the server's echoed artist identifier.
+        requestedArtistID == activeArtistID
     }
 }
 
@@ -501,7 +508,8 @@ struct ArtistDetailView: View {
             await MainActor.run {
                 guard ArtistDetailStatePolicy.shouldApplyFetchedArtist(
                     fetchedArtistID: fetchedArtist.id,
-                    requestedArtistID: requestedArtistId
+                    requestedArtistID: requestedArtistId,
+                    activeArtistID: artistId
                 ) else {
                     return
                 }

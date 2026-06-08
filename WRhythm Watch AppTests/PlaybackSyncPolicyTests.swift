@@ -3810,11 +3810,21 @@ struct PlaybackSyncPolicyTests {
     @Test func artistDetailStateIgnoresLateFetchForPreviousArtist() {
         #expect(ArtistDetailStatePolicy.shouldApplyFetchedArtist(
             fetchedArtistID: "1LeR7Ted62RCcpQC8EXoeR",
-            requestedArtistID: "4RfW7CdMb1PN7OjMJmvZWj"
+            requestedArtistID: "1LeR7Ted62RCcpQC8EXoeR",
+            activeArtistID: "4RfW7CdMb1PN7OjMJmvZWj"
         ) == false)
         #expect(ArtistDetailStatePolicy.shouldApplyFetchedArtist(
             fetchedArtistID: "4RfW7CdMb1PN7OjMJmvZWj",
-            requestedArtistID: "4RfW7CdMb1PN7OjMJmvZWj"
+            requestedArtistID: "4RfW7CdMb1PN7OjMJmvZWj",
+            activeArtistID: "4RfW7CdMb1PN7OjMJmvZWj"
+        ))
+    }
+
+    @Test func artistDetailStateAcceptsServerEchoedDisplayNameIDForActiveRoute() {
+        #expect(ArtistDetailStatePolicy.shouldApplyFetchedArtist(
+            fetchedArtistID: "Thaehan; Marcin Przybyłowicz; Lofi Girl",
+            requestedArtistID: "e579dc89d3a10784f8b5b2f93b55087e",
+            activeArtistID: "e579dc89d3a10784f8b5b2f93b55087e"
         ))
     }
 
