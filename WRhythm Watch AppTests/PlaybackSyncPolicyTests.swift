@@ -2534,6 +2534,49 @@ struct PlaybackSyncPolicyTests {
         #expect(scheduled == ["d"])
     }
 
+    @Test func prebufferSchedulingProtectsRemoteForegroundPlaybackConcurrency() {
+        #expect(PrebufferSchedulingPolicy.effectiveMaxConcurrentTasks(
+            configuredMax: 3,
+            currentPlaybackIsLocalFile: true,
+            playerIsBuffering: false
+        ) == 3)
+        #expect(PrebufferSchedulingPolicy.effectiveMaxConcurrentTasks(
+            configuredMax: 3,
+            currentPlaybackIsLocalFile: false,
+            playerIsBuffering: false
+        ) == 1)
+        #expect(PrebufferSchedulingPolicy.effectiveMaxConcurrentTasks(
+            configuredMax: 3,
+            currentPlaybackIsLocalFile: false,
+            playerIsBuffering: true
+        ) == 0)
+    }
+
+    @Test func prebufferSchedulingCancelsLowestPriorityActiveTasksWhenLimitDrops() {
+        let keysToCancel = PrebufferSchedulingPolicy.activeKeysToCancel(
+            activeKeys: ["next-1", "next-2", "previous-1"],
+            candidateKeys: ["next-1", "next-2", "previous-1"],
+            maxConcurrentTasks: 1
+        )
+
+        #expect(keysToCancel == ["previous-1", "next-2"])
+    }
+
+    @Test func prebufferSchedulingCancelsAllActiveTasksWhileRemotePlayerBuffers() {
+        let maxConcurrentTasks = PrebufferSchedulingPolicy.effectiveMaxConcurrentTasks(
+            configuredMax: 3,
+            currentPlaybackIsLocalFile: false,
+            playerIsBuffering: true
+        )
+        let keysToCancel = PrebufferSchedulingPolicy.activeKeysToCancel(
+            activeKeys: ["next-1", "next-2", "previous-1"],
+            candidateKeys: ["next-1", "next-2", "previous-1"],
+            maxConcurrentTasks: maxConcurrentTasks
+        )
+
+        #expect(keysToCancel == ["previous-1", "next-2", "next-1"])
+    }
+
     @Test func clearingQueuePreventsStalePrebufferPublicationAndNewScheduling() {
         let desiredKeys = PrebufferSchedulingPolicy.desiredKeys(currentKey: nil, upcomingKeys: [])
         let scheduled = PrebufferSchedulingPolicy.keysToSchedule(

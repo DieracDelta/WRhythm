@@ -219,6 +219,41 @@ struct PrebufferSchedulingPolicy: Sendable {
         }
         return scheduled
     }
+
+    static func effectiveMaxConcurrentTasks(
+        configuredMax: Int,
+        currentPlaybackIsLocalFile: Bool,
+        playerIsBuffering: Bool
+    ) -> Int {
+        let configuredMax = max(0, configuredMax)
+        guard configuredMax > 0 else { return 0 }
+        guard !currentPlaybackIsLocalFile else { return configuredMax }
+        return playerIsBuffering ? 0 : min(configuredMax, 1)
+    }
+
+    static func activeKeysToCancel(
+        activeKeys: Set<String>,
+        candidateKeys: [String],
+        maxConcurrentTasks: Int
+    ) -> [String] {
+        let maxConcurrentTasks = max(0, maxConcurrentTasks)
+        guard activeKeys.count > maxConcurrentTasks else { return [] }
+
+        let priorityByKey = Dictionary(uniqueKeysWithValues: candidateKeys.enumerated().map { index, key in
+            (key, index)
+        })
+
+        let keysByLowestPriorityFirst = activeKeys.sorted { lhs, rhs in
+            let lhsPriority = priorityByKey[lhs] ?? Int.max
+            let rhsPriority = priorityByKey[rhs] ?? Int.max
+            if lhsPriority != rhsPriority {
+                return lhsPriority > rhsPriority
+            }
+            return lhs > rhs
+        }
+
+        return Array(keysByLowestPriorityFirst.prefix(activeKeys.count - maxConcurrentTasks))
+    }
 }
 
 struct PrebufferOwnershipPolicy: Sendable {
@@ -2593,6 +2628,11 @@ class AudioPlayer: NSObject, ObservableObject {
             upcomingKeys: upcomingKeys,
             previousKeys: previousKeys
         )
+        let maxConcurrentTasks = PrebufferSchedulingPolicy.effectiveMaxConcurrentTasks(
+            configuredMax: maxConcurrentPrebuffers,
+            currentPlaybackIsLocalFile: currentPlaybackIsLocalFile,
+            playerIsBuffering: isBuffering
+        )
         var songsByKey: [String: Song] = [:]
         for song in upcomingSongs {
             songsByKey[prebufferKey(for: song)] = song
@@ -2613,6 +2653,18 @@ class AudioPlayer: NSObject, ObservableObject {
             prebufferProgressByKey.removeValue(forKey: key)
         }
 
+        let excessActiveKeys = PrebufferSchedulingPolicy.activeKeysToCancel(
+            activeKeys: Set(prebufferTasks.keys),
+            candidateKeys: candidateKeys,
+            maxConcurrentTasks: maxConcurrentTasks
+        )
+        for key in excessActiveKeys {
+            prebufferTasks[key]?.cancel()
+            prebufferTasks.removeValue(forKey: key)
+            prebufferTaskTokens.removeValue(forKey: key)
+            prebufferProgressByKey.removeValue(forKey: key)
+        }
+
         prunePrebufferRetryState(keeping: desiredDownloadKeys)
         updatePrebufferedTrackCount()
 
@@ -2621,7 +2673,7 @@ class AudioPlayer: NSObject, ObservableObject {
             activeKeys: Set(prebufferTasks.keys),
             preparedKeys: Set(preparedPrebuffers.keys),
             failedKeys: Set(prebufferRetryTasksByKey.keys).union(exhaustedPrebufferRetryKeys),
-            maxConcurrentTasks: maxConcurrentPrebuffers
+            maxConcurrentTasks: maxConcurrentTasks
         )
 
         for key in keysToSchedule {
@@ -3149,7 +3201,6 @@ class AudioPlayer: NSObject, ObservableObject {
         }
         beginRecentlyPlayedTracking(for: song, startTime: startTime)
         beginScrobbleTracking(for: song, startTime: startTime)
-        scheduleQueuePrebuffer()
 
         // Check if song is downloaded first
         let playURL: URL
@@ -3231,6 +3282,7 @@ class AudioPlayer: NSObject, ObservableObject {
         // Clear per-item subscriptions to prevent duplicate notifications.
         playerItemCancellables.removeAll()
         isBuffering = true
+        scheduleQueuePrebuffer()
 
         prepareAudioSessionForPlayback()
 
@@ -3580,6 +3632,7 @@ class AudioPlayer: NSObject, ObservableObject {
                 guard let self, self.player.currentItem === item else { return }
                 if likelyToKeepUp {
                     self.isBuffering = false
+                    self.scheduleQueuePrebuffer()
                 }
             }
             .store(in: &playerItemCancellables)
