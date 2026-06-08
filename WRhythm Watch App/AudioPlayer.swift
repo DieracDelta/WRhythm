@@ -441,17 +441,20 @@ struct PrebufferProgressPolicy: Sendable {
     static func downloadStatuses(
         for songs: [Song],
         activeKeys: Set<String>,
+        pausedKeys: Set<String> = [],
         progressByKey: [String: Double],
         keyForSong: (Song) -> String
     ) -> [PrebufferDownloadStatus] {
         var seen = Set<String>()
+        let statusKeys = activeKeys.union(pausedKeys)
         return songs.compactMap { song in
             let key = keyForSong(song)
-            guard activeKeys.contains(key), !seen.contains(key) else { return nil }
+            guard statusKeys.contains(key), !seen.contains(key) else { return nil }
             seen.insert(key)
             return PrebufferDownloadStatus(
                 song: song,
-                progressPercent: percent(for: progressByKey[key])
+                progressPercent: percent(for: progressByKey[key]),
+                isPaused: pausedKeys.contains(key)
             )
         }
     }
@@ -463,6 +466,7 @@ struct PrebufferProgressPolicy: Sendable {
         nextTargetCount: Int,
         activeCount: Int,
         activePercent: Int?,
+        pausedCount: Int = 0,
         playerIsBuffering: Bool,
         playerBufferPercent: Int?
     ) -> String? {
@@ -477,6 +481,9 @@ struct PrebufferProgressPolicy: Sendable {
             } else {
                 parts.append("\(activeCount) downloading")
             }
+        }
+        if pausedCount > 0 {
+            parts.append("\(pausedCount) paused")
         }
         if playerIsBuffering {
             if let playerBufferPercent, playerBufferPercent > 0 {
@@ -967,11 +974,12 @@ struct PrebufferAvailabilityPresentationPolicy: Sendable {
 struct PrebufferDownloadStatus: Identifiable, Equatable, Sendable {
     let song: Song
     let progressPercent: Int?
+    var isPaused = false
 
     var id: String { song.id }
 
     static func == (lhs: PrebufferDownloadStatus, rhs: PrebufferDownloadStatus) -> Bool {
-        lhs.song.id == rhs.song.id && lhs.progressPercent == rhs.progressPercent
+        lhs.song.id == rhs.song.id && lhs.progressPercent == rhs.progressPercent && lhs.isPaused == rhs.isPaused
     }
 }
 
@@ -1271,6 +1279,7 @@ class AudioPlayer: NSObject, ObservableObject {
             nextTargetCount: nextPrebufferTargetCount,
             activeCount: prebufferingTrackCount,
             activePercent: prebufferingProgressPercent,
+            pausedCount: prebufferPausedKeys.count,
             playerIsBuffering: isBuffering,
             playerBufferPercent: currentBufferPercent
         )
@@ -3279,6 +3288,7 @@ class AudioPlayer: NSObject, ObservableObject {
         let downloadStatuses = PrebufferProgressPolicy.downloadStatuses(
             for: Array(previousSlice) + currentSlice + Array(upcomingSlice),
             activeKeys: runningDownloadKeys,
+            pausedKeys: prebufferPausedKeys,
             progressByKey: prebufferProgressByKey,
             keyForSong: { prebufferKey(for: $0) }
         )

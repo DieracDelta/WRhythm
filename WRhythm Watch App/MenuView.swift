@@ -127,7 +127,8 @@ struct MenuView: View {
         AvailableTracksPresentationPolicy.summary(
             previousReadyCount: player.retainedPrebufferedSongs.count,
             nextReadyCount: player.prebufferedSongs.count,
-            downloadingCount: player.prebufferDownloadStatuses.count
+            downloadingCount: player.prebufferDownloadStatuses.filter { !$0.isPaused }.count,
+            pausedCount: player.prebufferDownloadStatuses.filter(\.isPaused).count
         )
     }
 #endif

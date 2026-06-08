@@ -2692,6 +2692,22 @@ struct PlaybackSyncPolicyTests {
         #expect(summary == "20/28 prev available • 16/20 next available • 1 downloading 33%")
     }
 
+    @Test func prebufferProgressSummaryShowsPausedDownloadsSeparately() {
+        let summary = PrebufferProgressPolicy.statusSummary(
+            previousReadyCount: 2,
+            previousTargetCount: 2,
+            nextReadyCount: 3,
+            nextTargetCount: 3,
+            activeCount: 1,
+            activePercent: 44,
+            pausedCount: 2,
+            playerIsBuffering: false,
+            playerBufferPercent: nil
+        )
+
+        #expect(summary == "2 prev available • 3 next available • 1 downloading 44% • 2 paused")
+    }
+
     @Test func prebufferProgressBuildsDownloadingRowsForActiveQueueItems() {
         let songs = [makeSong(id: "previous"), makeSong(id: "current"), makeSong(id: "next")]
         let statuses = PrebufferProgressPolicy.downloadStatuses(
@@ -2706,6 +2722,26 @@ struct PlaybackSyncPolicyTests {
 
         #expect(statuses.map { $0.song.id } == ["current", "next"])
         #expect(statuses.map(\.progressPercent) == [42, 1])
+        #expect(statuses.map(\.isPaused) == [false, false])
+    }
+
+    @Test func prebufferProgressBuildsPausedRowsForSuspendedQueueItems() {
+        let songs = [makeSong(id: "previous"), makeSong(id: "current"), makeSong(id: "next")]
+        let statuses = PrebufferProgressPolicy.downloadStatuses(
+            for: songs,
+            activeKeys: ["current-key"],
+            pausedKeys: ["previous-key", "next-key"],
+            progressByKey: [
+                "previous-key": 0.2,
+                "current-key": 0.42,
+                "next-key": 0.8
+            ],
+            keyForSong: { "\($0.id)-key" }
+        )
+
+        #expect(statuses.map { $0.song.id } == ["previous", "current", "next"])
+        #expect(statuses.map(\.progressPercent) == [20, 42, 80])
+        #expect(statuses.map(\.isPaused) == [true, false, true])
     }
 
     @Test func prebufferProgressRowsIncludePreviousAndUpcomingDownloadsOnce() {
@@ -2727,6 +2763,17 @@ struct PlaybackSyncPolicyTests {
 
         #expect(statuses.map { $0.song.id } == ["previous", "next"])
         #expect(statuses.map(\.progressPercent) == [20, 80])
+    }
+
+    @Test func availableTracksSummaryShowsPausedDownloadsSeparately() {
+        let summary = AvailableTracksPresentationPolicy.summary(
+            previousReadyCount: 1,
+            nextReadyCount: 2,
+            downloadingCount: 0,
+            pausedCount: 3
+        )
+
+        #expect(summary == "1 prev avail | 2 next avail | 3 paused")
     }
 
     @Test func nowPlayingArtworkPolicyAvoidsDuplicateLoadsForCachedOrInFlightSongs() {

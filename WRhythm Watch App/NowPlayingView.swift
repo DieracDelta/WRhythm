@@ -132,7 +132,8 @@ struct NowPlayingView: View {
                                 BufferedTracksButton(
                                     previousCount: player.retainedPrebufferedSongs.count,
                                     nextCount: player.prebufferedSongs.count,
-                                    downloadingCount: player.prebufferDownloadStatuses.count
+                                    downloadingCount: player.prebufferDownloadStatuses.filter { !$0.isPaused }.count,
+                                    pausedCount: player.prebufferDownloadStatuses.filter(\.isPaused).count
                                 ) {
                                     presentedSheet = .bufferedTracks
                                 }
@@ -431,7 +432,8 @@ struct NowPlayingView: View {
 private func bufferedTrackLabel(
     previousCount: Int,
     nextCount: Int,
-    downloadingCount: Int = 0
+    downloadingCount: Int = 0,
+    pausedCount: Int = 0
 ) -> String {
     var parts: [String] = []
     if previousCount > 0 || nextCount > 0 {
@@ -440,6 +442,9 @@ private func bufferedTrackLabel(
     }
     if downloadingCount > 0 {
         parts.append("\(downloadingCount) downloading")
+    }
+    if pausedCount > 0 {
+        parts.append("\(pausedCount) paused")
     }
     return parts.isEmpty ? "No tracks ready" : parts.joined(separator: " | ")
 }
@@ -554,7 +559,8 @@ private struct PhoneLocalNowPlayingContent: View {
                 isBuffering: player.isBuffering,
                 previousBufferedCount: player.retainedPrebufferedSongs.count,
                 nextBufferedCount: player.prebufferedSongs.count,
-                downloadingCount: player.prebufferDownloadStatuses.count,
+                downloadingCount: player.prebufferDownloadStatuses.filter { !$0.isPaused }.count,
+                pausedCount: player.prebufferDownloadStatuses.filter(\.isPaused).count,
                 showBufferedTracks: { presentedSheet = .bufferedTracks }
             )
 
@@ -697,6 +703,7 @@ private struct PhoneRemoteNowPlayingContent: View {
                     previousBufferedCount: 0,
                     nextBufferedCount: playback.prebufferedTrackCount ?? 0,
                     downloadingCount: 0,
+                    pausedCount: 0,
                     showBufferedTracks: { presentedSheet = .bufferedTracks }
                 )
 
@@ -841,6 +848,7 @@ private struct PhoneTrackSummary: View {
     let previousBufferedCount: Int
     let nextBufferedCount: Int
     let downloadingCount: Int
+    let pausedCount: Int
     let showBufferedTracks: () -> Void
 
     var body: some View {
@@ -875,11 +883,12 @@ private struct PhoneTrackSummary: View {
                     WRhythmStatusPill(text: "Buffering", systemImage: "hourglass", tint: WRhythmTheme.warning)
                 }
 
-                if previousBufferedCount > 0 || nextBufferedCount > 0 || downloadingCount > 0 {
+                if previousBufferedCount > 0 || nextBufferedCount > 0 || downloadingCount > 0 || pausedCount > 0 {
                     BufferedTracksButton(
                         previousCount: previousBufferedCount,
                         nextCount: nextBufferedCount,
                         downloadingCount: downloadingCount,
+                        pausedCount: pausedCount,
                         action: showBufferedTracks
                     )
                 }
@@ -962,6 +971,7 @@ private struct BufferedTracksButton: View {
     let previousCount: Int
     let nextCount: Int
     var downloadingCount = 0
+    var pausedCount = 0
     let action: () -> Void
 
     var body: some View {
@@ -970,7 +980,8 @@ private struct BufferedTracksButton: View {
                 text: bufferedTrackLabel(
                     previousCount: previousCount,
                     nextCount: nextCount,
-                    downloadingCount: downloadingCount
+                    downloadingCount: downloadingCount,
+                    pausedCount: pausedCount
                 ),
                 systemImage: "arrow.down.circle",
                 tint: .secondary
@@ -980,7 +991,8 @@ private struct BufferedTracksButton: View {
         .accessibilityLabel(bufferedTrackLabel(
             previousCount: previousCount,
             nextCount: nextCount,
-            downloadingCount: downloadingCount
+            downloadingCount: downloadingCount,
+            pausedCount: pausedCount
         ))
     }
 }

@@ -924,7 +924,8 @@ struct MacMiniPlayerBar: View {
                                 availableTracksSummary(
                                     previous: previousBufferedSongs.count,
                                     next: nextBufferedSongs.count,
-                                    downloading: downloadStatuses.count
+                                    downloading: downloadStatuses.filter { !$0.isPaused }.count,
+                                    paused: downloadStatuses.filter(\.isPaused).count
                                 ),
                                 systemImage: "arrow.down.circle"
                             )
@@ -980,7 +981,7 @@ struct MacMiniPlayerBar: View {
         return parts.joined(separator: " • ")
     }
 
-    private func availableTracksSummary(previous: Int, next: Int, downloading: Int) -> String {
+    private func availableTracksSummary(previous: Int, next: Int, downloading: Int, paused: Int = 0) -> String {
         var parts: [String] = []
         if previous > 0 || next > 0 {
             parts.append("\(previous) prev avail")
@@ -988,6 +989,9 @@ struct MacMiniPlayerBar: View {
         }
         if downloading > 0 {
             parts.append("\(downloading) downloading")
+        }
+        if paused > 0 {
+            parts.append("\(paused) paused")
         }
         return parts.isEmpty ? "No tracks ready" : parts.joined(separator: " | ")
     }

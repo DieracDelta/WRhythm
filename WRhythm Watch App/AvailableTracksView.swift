@@ -8,7 +8,12 @@
 import SwiftUI
 
 struct AvailableTracksPresentationPolicy: Sendable {
-    static func summary(previousReadyCount: Int, nextReadyCount: Int, downloadingCount: Int) -> String {
+    static func summary(
+        previousReadyCount: Int,
+        nextReadyCount: Int,
+        downloadingCount: Int,
+        pausedCount: Int = 0
+    ) -> String {
         var parts: [String] = []
         if previousReadyCount > 0 || nextReadyCount > 0 {
             parts.append("\(previousReadyCount) prev avail")
@@ -16,6 +21,9 @@ struct AvailableTracksPresentationPolicy: Sendable {
         }
         if downloadingCount > 0 {
             parts.append("\(downloadingCount) downloading")
+        }
+        if pausedCount > 0 {
+            parts.append("\(pausedCount) paused")
         }
         return parts.isEmpty ? "No tracks ready" : parts.joined(separator: " | ")
     }
@@ -151,10 +159,10 @@ private struct BufferedTracksListContent: View {
                             coverArtId: status.song.coverArt,
                             artworkSize: 42
                         ) {
-                            Text(status.progressPercent.map { "\($0)%" } ?? "Starting")
+                            Text(statusLabel(for: status))
                                 .font(WRhythmTypography.metadata.weight(.semibold))
                                 .monospacedDigit()
-                                .foregroundStyle(WRhythmTheme.warning)
+                                .foregroundStyle(status.isPaused ? .secondary : WRhythmTheme.warning)
                         }
 
                         if status.id != downloadStatuses.last?.id {
@@ -165,6 +173,16 @@ private struct BufferedTracksListContent: View {
                 }
             }
         }
+    }
+
+    private func statusLabel(for status: PrebufferDownloadStatus) -> String {
+        if status.isPaused {
+            if let progressPercent = status.progressPercent {
+                return "Paused \(progressPercent)%"
+            }
+            return "Paused"
+        }
+        return status.progressPercent.map { "\($0)%" } ?? "Starting"
     }
 
     @ViewBuilder
