@@ -659,6 +659,35 @@ final class NavidromeAPI: ObservableObject {
         return album
     }
 
+    func getSong(id: String) async throws -> Song {
+        guard let url = buildURL(endpoint: "getSong", additionalParams: ["id": id]) else {
+            throw NavidromeError.invalidURL
+        }
+
+        let (data, response) = try await URLSession.shared.data(from: url)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw NavidromeError.unknown
+        }
+
+        guard httpResponse.statusCode == 200 else {
+            throw NavidromeError.apiError("HTTP \(httpResponse.statusCode)")
+        }
+
+        let decoded = try JSONDecoder().decode(SubsonicResponse<SongResponse>.self, from: data)
+        guard decoded.subsonicResponse.status == "ok" else {
+            if let error = decoded.subsonicResponse.error {
+                throw NavidromeError.apiError(error.message)
+            }
+            throw NavidromeError.unknown
+        }
+
+        guard let song = decoded.subsonicResponse.song else {
+            throw NavidromeError.apiError("Song not found")
+        }
+
+        return song
+    }
+
     func getRandomSongs(size: Int = 50) async throws -> [Song] {
         guard let url = buildURL(endpoint: "getRandomSongs", additionalParams: ["size": String(size)]) else {
             throw NavidromeError.invalidURL
@@ -965,7 +994,7 @@ final class NavidromeAPI: ObservableObject {
             throw NavidromeError.apiError(decoded.error ?? "\(mode.label) failed with HTTP \(httpResponse.statusCode)")
         }
 
-        return decoded.songs
+        return await hydratePlayableMetadataIfNeeded(decoded.songs)
     }
 
     func getAudioMuseClapTopQueries() async throws -> [String] {
@@ -1116,7 +1145,7 @@ final class NavidromeAPI: ObservableObject {
             }
             throw NavidromeError.unknown
         }
-        return decoded.subsonicResponse.songs
+        return await hydratePlayableMetadataIfNeeded(decoded.subsonicResponse.songs)
     }
 
     func findAudioMusePrivateSongPath(startSongId: String, endSongId: String) async throws -> [Song] {
@@ -1143,7 +1172,7 @@ final class NavidromeAPI: ObservableObject {
             }
             throw NavidromeError.unknown
         }
-        return decoded.subsonicResponse.songs
+        return await hydratePlayableMetadataIfNeeded(decoded.subsonicResponse.songs)
     }
 
     func getAudioMuseSonicFingerprintSongs() async throws -> [Song] {
@@ -1167,7 +1196,7 @@ final class NavidromeAPI: ObservableObject {
             }
             throw NavidromeError.unknown
         }
-        return decoded.subsonicResponse.songs
+        return await hydratePlayableMetadataIfNeeded(decoded.subsonicResponse.songs)
     }
 
     func getSimilarArtists2(artistId: String, count: Int = 10) async throws -> [Artist] {
@@ -1362,7 +1391,32 @@ final class NavidromeAPI: ObservableObject {
         }
 
         let decoded = try JSONDecoder().decode(AudioMuseMapTrackSearchResponse.self, from: data)
-        return decoded.songs
+        return await hydratePlayableMetadataIfNeeded(decoded.songs)
+    }
+
+    private func hydratePlayableMetadataIfNeeded(_ songs: [Song]) async -> [Song] {
+        guard songs.contains(where: SongMetadataHydrationPolicy.needsHydration) else {
+            return songs
+        }
+
+        var hydratedSongs: [Song] = []
+        hydratedSongs.reserveCapacity(songs.count)
+
+        for song in songs {
+            guard SongMetadataHydrationPolicy.needsHydration(song) else {
+                hydratedSongs.append(song)
+                continue
+            }
+
+            do {
+                let hydrated = try await getSong(id: song.id)
+                hydratedSongs.append(SongMetadataHydrationPolicy.merged(thin: song, hydrated: hydrated))
+            } catch {
+                hydratedSongs.append(song)
+            }
+        }
+
+        return hydratedSongs
     }
 
     private func resolveAudioMuseAlchemyItems(from seeds: [AudioMuseAlchemySeed]) async throws -> [AudioMuseAlchemyRequest.Item] {
@@ -2540,6 +2594,13 @@ struct StarredContent: Decodable {
     let song: [Song]?
 }
 
+struct SongResponse: Decodable {
+    let status: String
+    let version: String
+    let error: SubsonicError?
+    let song: Song?
+}
+
 struct SearchResponse: Decodable {
     let status: String
     let version: String
@@ -2551,4 +2612,36 @@ struct SearchResult: Codable, Sendable {
     let artist: [Artist]?
     let album: [AlbumSummary]?
     let song: [Song]?
+}
+
+enum SongMetadataHydrationPolicy {
+    static func needsHydration(_ song: Song) -> Bool {
+        song.contentType == nil ||
+            song.suffix == nil ||
+            song.duration == nil ||
+            song.path == nil
+    }
+
+    static func merged(thin: Song, hydrated: Song) -> Song {
+        guard thin.id == hydrated.id else { return thin }
+
+        return Song(
+            id: thin.id,
+            title: hydrated.title.isEmpty ? thin.title : hydrated.title,
+            album: hydrated.album ?? thin.album,
+            albumId: hydrated.albumId ?? thin.albumId,
+            artist: hydrated.artist ?? thin.artist,
+            artistId: hydrated.artistId ?? thin.artistId,
+            track: hydrated.track ?? thin.track,
+            year: hydrated.year ?? thin.year,
+            genre: hydrated.genre ?? thin.genre,
+            coverArt: hydrated.coverArt ?? thin.coverArt,
+            size: hydrated.size ?? thin.size,
+            contentType: hydrated.contentType ?? thin.contentType,
+            suffix: hydrated.suffix ?? thin.suffix,
+            duration: hydrated.duration ?? thin.duration,
+            bitRate: hydrated.bitRate ?? thin.bitRate,
+            path: hydrated.path ?? thin.path
+        )
+    }
 }

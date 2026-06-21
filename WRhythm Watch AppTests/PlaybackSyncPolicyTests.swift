@@ -3626,6 +3626,64 @@ struct PlaybackSyncPolicyTests {
     }
 
     @MainActor
+    @Test func audioMuseThinSongsHydratePlayableMetadataBeforePlayback() {
+        let thin = Song(
+            id: "PFMzfPlmqgh9d4wALfJtur",
+            title: "Eco-Dome Al'dani",
+            album: "World of Warcraft: Ghosts of K'aresh (Original Soundtrack)",
+            albumId: nil,
+            artist: "Adam Burgess; Blizzard Entertainment; World of Warcraft",
+            artistId: nil,
+            track: nil,
+            year: nil,
+            genre: nil,
+            coverArt: "thin-cover",
+            size: nil,
+            contentType: nil,
+            suffix: nil,
+            duration: nil,
+            bitRate: nil,
+            path: nil
+        )
+        let hydrated = Song(
+            id: "PFMzfPlmqgh9d4wALfJtur",
+            title: "Eco-Dome Al'dani",
+            album: "World of Warcraft: Ghosts of K'aresh (Original Soundtrack)",
+            albumId: nil,
+            artist: "Adam Burgess; Blizzard Entertainment; World of Warcraft",
+            artistId: "artist-1",
+            track: 3,
+            year: 2025,
+            genre: nil,
+            coverArt: "server-cover",
+            size: 17_642_368,
+            contentType: "audio/flac",
+            suffix: "flac",
+            duration: 189,
+            bitRate: 746,
+            path: "/storage/media/musiclibrary/003. Eco-Dome Al'dani.flac"
+        )
+
+        #expect(SongMetadataHydrationPolicy.needsHydration(thin))
+
+        let merged = SongMetadataHydrationPolicy.merged(thin: thin, hydrated: hydrated)
+
+        #expect(merged.contentType == "audio/flac")
+        #expect(merged.suffix == "flac")
+        #expect(merged.duration == 189)
+        #expect(merged.path?.hasSuffix(".flac") == true)
+        #expect(merged.coverArt == "server-cover")
+        #expect(!PlaybackFormatPolicy.isMP3(contentType: merged.contentType, suffix: merged.suffix, path: merged.path))
+#if !os(watchOS)
+        #expect(PlaybackFormatPolicy.isFormatSupportedNatively(
+            contentType: merged.contentType,
+            suffix: merged.suffix,
+            path: merged.path
+        ))
+#endif
+    }
+
+    @MainActor
     @Test func audioMuseAlchemySeedPolicyAddsAndRemovesDistinctSeedTypes() {
         let songSeed = AudioMuseAlchemySeed(kind: .song, sourceID: "seed-1", title: "Seed Track", subtitle: "Artist", coverArt: nil)
         let albumSeed = AudioMuseAlchemySeed(kind: .album, sourceID: "seed-1", title: "Seed Album", subtitle: "Artist", coverArt: nil)
