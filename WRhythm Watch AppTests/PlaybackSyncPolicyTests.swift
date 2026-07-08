@@ -3374,6 +3374,13 @@ struct PlaybackSyncPolicyTests {
     }
 
     @MainActor
+    @Test func audioMuseFeatureActionsReprobeStaleNegativeSupportCache() {
+        #expect(AudioMuseFeatureProbePolicy.shouldProbeForAction(cachedSupport: nil))
+        #expect(AudioMuseFeatureProbePolicy.shouldProbeForAction(cachedSupport: false))
+        #expect(AudioMuseFeatureProbePolicy.shouldProbeForAction(cachedSupport: true) == false)
+    }
+
+    @MainActor
     @Test func audioMusePrivateFeatureVisibilityRequiresSettingAndSupport() {
         #expect(!AudioMuseFeatureVisibilityPolicy.isVisible(
             experimentalEnabled: false,

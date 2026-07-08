@@ -2022,7 +2022,9 @@ class AudioPlayer: NSObject, ObservableObject {
             let privateSonicSupported: Bool
             if UserDefaults.standard.bool(forKey: "experimentalAudioMuseFeaturesEnabled") {
                 if let cachedPrivateSonicSupport = await api.audioMusePrivateSonicSupported {
-                    privateSonicSupported = cachedPrivateSonicSupport
+                    privateSonicSupported = AudioMuseFeatureProbePolicy.shouldProbeForAction(cachedSupport: cachedPrivateSonicSupport)
+                        ? await api.checkAudioMuseFeatureSupport(.privateSonic)
+                        : cachedPrivateSonicSupport
                 } else {
                     privateSonicSupported = await api.checkAudioMuseFeatureSupport(.privateSonic)
                 }

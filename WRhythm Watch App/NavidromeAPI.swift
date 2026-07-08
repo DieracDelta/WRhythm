@@ -2024,6 +2024,12 @@ enum AudioMuseFeatureSupportPolicy {
     }
 }
 
+enum AudioMuseFeatureProbePolicy {
+    static func shouldProbeForAction(cachedSupport: Bool?) -> Bool {
+        cachedSupport != true
+    }
+}
+
 enum AudioMuseFeatureVisibilityPolicy {
     static func isVisible(experimentalEnabled: Bool, supported: Bool?) -> Bool {
         experimentalEnabled && supported == true
