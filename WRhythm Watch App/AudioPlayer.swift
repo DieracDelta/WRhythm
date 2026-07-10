@@ -228,7 +228,7 @@ struct PrebufferSchedulingPolicy: Sendable {
         let configuredMax = max(0, configuredMax)
         guard configuredMax > 0 else { return 0 }
         guard !currentPlaybackIsLocalFile else { return configuredMax }
-        return playerIsBuffering ? 0 : min(configuredMax, 1)
+        return min(configuredMax, 1)
     }
 
     static func activeKeysToPause(
@@ -3477,11 +3477,6 @@ class AudioPlayer: NSObject, ObservableObject {
             preparedAsset = nil
             playbackQualitySummary = makePlaybackQualitySummary(source: .local, qualityLabel: downloadedQualityLabel(for: song))
             print("🎵 Playing from local file before preparation completed: \(localURL.lastPathComponent)")
-        } else if let prebufferURL = existingPrebufferURL(for: song) {
-            playURL = prebufferURL
-            preparedAsset = nil
-            playbackQualitySummary = makePlaybackQualitySummary(source: .local, qualityLabel: preparedQualityLabel(for: song) ?? prebufferQualityLabel(for: song))
-            print("🎵 Playing from cached queue file before preparation completed: \(prebufferURL.lastPathComponent)")
         } else {
             if shouldTranscodeForPlayback(song) {
                 let bitRate = StreamingQuality.current.maxBitRate ?? StreamingQuality.max.rawValue

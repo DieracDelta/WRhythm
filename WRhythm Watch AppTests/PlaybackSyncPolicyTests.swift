@@ -2549,7 +2549,7 @@ struct PlaybackSyncPolicyTests {
             configuredMax: 3,
             currentPlaybackIsLocalFile: false,
             playerIsBuffering: true
-        ) == 0)
+        ) == 1)
     }
 
     @Test func prebufferSchedulingPausesLowestPriorityActiveDownloadsWhenLimitDrops() {
@@ -2562,7 +2562,7 @@ struct PlaybackSyncPolicyTests {
         #expect(keysToPause == ["previous-1", "next-2"])
     }
 
-    @Test func prebufferSchedulingPausesAllActiveDownloadsWhileRemotePlayerBuffers() {
+    @Test func prebufferSchedulingKeepsOneActiveDownloadWhileRemotePlayerBuffers() {
         let maxConcurrentTasks = PrebufferSchedulingPolicy.effectiveMaxConcurrentTasks(
             configuredMax: 3,
             currentPlaybackIsLocalFile: false,
@@ -2574,7 +2574,7 @@ struct PlaybackSyncPolicyTests {
             maxConcurrentTasks: maxConcurrentTasks
         )
 
-        #expect(keysToPause == ["previous-1", "next-2", "next-1"])
+        #expect(keysToPause == ["previous-1", "next-2"])
     }
 
     @Test func prebufferSchedulingResumesHighestPriorityPausedDownloadsWhenCapacityReturns() {
